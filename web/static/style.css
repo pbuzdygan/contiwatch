@@ -257,6 +257,79 @@ h2 {
   margin-bottom: 12px;
 }
 
+.server-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.server-header-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.server-header-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.server-title {
+  background: none;
+  color: var(--text);
+  padding: 0;
+  border-radius: 0;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.server-title:hover {
+  color: var(--accent);
+}
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  border: 1px solid transparent;
+}
+
+.status-online {
+  background: #e8f6ee;
+  color: #1e7f46;
+  border-color: #a7dfbe;
+}
+
+.status-pending {
+  background: #fff3e0;
+  color: #b26a00;
+  border-color: #ffd7a3;
+}
+
+.status-offline {
+  background: #fdecea;
+  color: #b3261e;
+  border-color: #f5b1ac;
+}
+
+.server-summary {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.server-body {
+  margin-top: 12px;
+}
+
 .actions .scan-scope {
   display: flex;
   align-items: center;

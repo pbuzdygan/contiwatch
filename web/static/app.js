@@ -98,33 +98,76 @@ function renderStatus(results) {
     const card = document.createElement("div");
     card.className = "server-card";
 
-    const title = document.createElement("h3");
-    const statusLabel = result.error ? `offline (${result.error})` : "online";
-    title.textContent = `${result.server_name} (${result.local ? "local" : "remote"})`;
-    card.appendChild(title);
-
-    const meta = document.createElement("div");
-    meta.className = "tag";
     const checkedAt = result.checked_at ? new Date(result.checked_at) : null;
     const hasCheckedAt = checkedAt && !Number.isNaN(checkedAt.getTime()) && checkedAt.getTime() > 0;
-    meta.textContent = hasCheckedAt ? checkedAt.toLocaleString() : "Scan not run yet";
-    card.appendChild(meta);
+    const isOffline = Boolean(result.error);
+    const statusLabel = isOffline ? "offline" : (hasCheckedAt ? "online" : "pending");
 
-    if (!result.local || result.error) {
-      const statusTag = document.createElement("span");
-      statusTag.className = "tag";
-      statusTag.textContent = `status: ${statusLabel}`;
-      card.appendChild(statusTag);
+    const header = document.createElement("div");
+    header.className = "server-header";
+
+    const headerLeft = document.createElement("div");
+    headerLeft.className = "server-header-left";
+
+    const titleBtn = document.createElement("button");
+    titleBtn.type = "button";
+    titleBtn.className = "server-title";
+    titleBtn.textContent = `${result.server_name} (${result.local ? "local" : "remote"})`;
+    headerLeft.appendChild(titleBtn);
+
+    const statusBadge = document.createElement("span");
+    statusBadge.className = `status-badge status-${statusLabel}`;
+    statusBadge.textContent = statusLabel;
+    headerLeft.appendChild(statusBadge);
+
+    const summary = document.createElement("span");
+    summary.className = "server-summary";
+    if (!hasCheckedAt) {
+      summary.textContent = "Scan not run yet.";
+    } else if (!result.containers || result.containers.length === 0) {
+      summary.textContent = "No containers found.";
+    } else {
+      const total = result.containers.length;
+      const updates = result.containers.filter((container) => container.update_available).length;
+      summary.textContent = updates === 0
+        ? "All up to date."
+        : `Updates: ${updates} / ${total} scanned.`;
+    }
+    headerLeft.appendChild(summary);
+
+    const headerRight = document.createElement("div");
+    headerRight.className = "server-header-right";
+    const scanInfo = document.createElement("span");
+    scanInfo.className = "tag";
+    scanInfo.textContent = hasCheckedAt ? checkedAt.toLocaleString() : "Last scan: not run yet";
+    headerRight.appendChild(scanInfo);
+
+    header.appendChild(headerLeft);
+    header.appendChild(headerRight);
+    card.appendChild(header);
+
+    const body = document.createElement("div");
+    body.className = "server-body hidden";
+
+    titleBtn.addEventListener("click", () => {
+      body.classList.toggle("hidden");
+    });
+
+    if (isOffline && result.error) {
+      const errorTag = document.createElement("p");
+      errorTag.className = "hint";
+      errorTag.textContent = `Error: ${result.error}`;
+      body.appendChild(errorTag);
     }
 
     if (!hasCheckedAt) {
       const empty = document.createElement("p");
       empty.textContent = "Scan has not been run yet.";
-      card.appendChild(empty);
+      body.appendChild(empty);
     } else if (!result.containers || result.containers.length === 0) {
       const empty = document.createElement("p");
       empty.textContent = "No containers found.";
-      card.appendChild(empty);
+      body.appendChild(empty);
     } else {
       const updateRequired = result.containers.filter((container) => container.update_available);
       const upToDate = result.containers.filter((container) => !container.update_available);
@@ -288,9 +331,10 @@ function renderStatus(results) {
 
       grid.appendChild(leftCol);
       grid.appendChild(rightCol);
-      card.appendChild(grid);
+      body.appendChild(grid);
     }
 
+    card.appendChild(body);
     statusEl.appendChild(card);
   });
 }
