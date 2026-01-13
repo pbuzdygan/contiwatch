@@ -104,17 +104,23 @@ function renderStatus(results) {
 
     const meta = document.createElement("div");
     meta.className = "tag";
-    meta.textContent = new Date(result.checked_at).toLocaleString();
+    const checkedAt = result.checked_at ? new Date(result.checked_at) : null;
+    const hasCheckedAt = checkedAt && !Number.isNaN(checkedAt.getTime()) && checkedAt.getTime() > 0;
+    meta.textContent = hasCheckedAt ? checkedAt.toLocaleString() : "Scan not run yet";
     card.appendChild(meta);
 
-    if (!result.local) {
+    if (!result.local || result.error) {
       const statusTag = document.createElement("span");
       statusTag.className = "tag";
       statusTag.textContent = `status: ${statusLabel}`;
       card.appendChild(statusTag);
     }
 
-    if (!result.containers || result.containers.length === 0) {
+    if (!hasCheckedAt) {
+      const empty = document.createElement("p");
+      empty.textContent = "Scan has not been run yet.";
+      card.appendChild(empty);
+    } else if (!result.containers || result.containers.length === 0) {
       const empty = document.createElement("p");
       empty.textContent = "No containers found.";
       card.appendChild(empty);
@@ -380,8 +386,16 @@ async function refreshStatus() {
       return a.local ? -1 : 1;
     });
   }
-  if (results[0] && results[0].checked_at) {
-    lastScanEl.textContent = `Last scan: ${new Date(results[0].checked_at).toLocaleString()}`;
+  const firstCheckedAt = results && results[0] ? results[0].checked_at : "";
+  if (firstCheckedAt) {
+    const ts = new Date(firstCheckedAt);
+    if (!Number.isNaN(ts.getTime()) && ts.getTime() > 0) {
+      lastScanEl.textContent = `Last scan: ${ts.toLocaleString()}`;
+    } else {
+      lastScanEl.textContent = "Last scan: not run yet";
+    }
+  } else {
+    lastScanEl.textContent = "Last scan: not run yet";
   }
   renderStatus(results);
 }

@@ -506,12 +506,26 @@ func (s *Server) runScan(ctx context.Context) (dockerwatcher.ScanResult, error) 
 			watcher, err := dockerwatcher.NewWithHost(dockerHostFromSocket(local.Socket))
 			if err != nil {
 				s.addLog("error", fmt.Sprintf("scan failed: %s: %v", local.Name, err))
+				results = append(results, dockerwatcher.ScanResult{
+					ServerName: local.Name,
+					ServerURL:  local.Socket,
+					Local:      true,
+					CheckedAt:  time.Now(),
+					Error:      err.Error(),
+				})
 				continue
 			}
 			result, err := watcher.Scan(ctx, cfg)
 			_ = watcher.Close()
 			if err != nil {
 				s.addLog("error", fmt.Sprintf("scan failed: %s: %v", local.Name, err))
+				results = append(results, dockerwatcher.ScanResult{
+					ServerName: local.Name,
+					ServerURL:  local.Socket,
+					Local:      true,
+					CheckedAt:  time.Now(),
+					Error:      err.Error(),
+				})
 				continue
 			}
 			result.ServerName = local.Name

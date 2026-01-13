@@ -6,7 +6,7 @@ services:
       - "8080:8080"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - ./contiwatch_agent_data:/data
+      - contiwatch_agent_data:/data
     environment:
       CONTIWATCH_ADDR: ":8080"
       CONTIWATCH_CONFIG: "/data/config.json"
@@ -16,3 +16,6 @@ services:
       PUID: "obtain_using_id_command_on_host"
       PGID: "obtain_using_id_command_on_host"
     restart: unless-stopped
+
+volumes:
+  contiwatch_agent_data:
