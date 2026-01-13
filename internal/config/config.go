@@ -38,7 +38,7 @@ const (
 
 func DefaultConfig() Config {
 	return Config{
-		ScanIntervalSec:         300,
+		ScanIntervalSec:         60 * 1440,
 		SchedulerEnabled:        false,
 		GlobalPolicy:            PolicyNotifyOnly,
 		DiscordWebhookURL:       "",

@@ -337,6 +337,7 @@ func (s *Server) handleScan(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, err)
 			return
 		}
+		s.sendScanNotification(cfg, result)
 		s.addLog("info", fmt.Sprintf("manual scan finished: containers=%d", len(result.Containers)))
 		writeJSON(w, http.StatusOK, result)
 		return
@@ -353,6 +354,7 @@ func (s *Server) handleScan(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadGateway, err)
 			return
 		}
+		s.sendScanNotification(cfg, result)
 		s.addLog("info", fmt.Sprintf("manual scan finished: containers=%d", len(result.Containers)))
 		writeJSON(w, http.StatusOK, result)
 		return
@@ -448,11 +450,11 @@ func (s *Server) handleUpdateContainer(w http.ResponseWriter, r *http.Request) {
 		s.addLog("info", fmt.Sprintf("update skipped %s: %s", result.Name, result.Message))
 	}
 
-	if s.discord != nil && result.Updated && discordNotificationsEnabled(cfg) {
-		const discordBlue = 0x3498DB
-		description := fmt.Sprintf("Updated: 1\n\nContainers updated:\n- %s\n\nState: %s → %s", result.Name, result.PreviousState, result.CurrentState)
-		_ = s.discord.SendEmbed("Contiwatch updates applied", description, discordBlue)
+	serverLabel := serverName
+	if serverLabel == "" {
+		serverLabel = "local"
 	}
+	s.sendUpdateNotification(cfg, serverLabel, result)
 
 	s.lastScanMutex.Lock()
 	for i := range s.lastScan.Containers {
@@ -560,13 +562,6 @@ func (s *Server) runScan(ctx context.Context) (dockerwatcher.ScanResult, error) 
 
 	cfg := s.store.Get()
 	results := []dockerwatcher.ScanResult{}
-	scannedCount := 0
-	updatesAvailableCount := 0
-	readyToUpdateCount := 0
-	skippedCount := 0
-	updatedCount := 0
-	containersWithUpdates := []string{}
-	updatedContainers := []string{}
 
 	if len(cfg.LocalServers) == 0 {
 		s.addLog("info", "scan skipped: no local servers configured")
@@ -585,26 +580,7 @@ func (s *Server) runScan(ctx context.Context) (dockerwatcher.ScanResult, error) 
 				continue
 			}
 			results = append(results, result)
-
-			scannedCount += len(result.Containers)
-			for _, container := range result.Containers {
-				if container.Updated {
-					updatedCount++
-					updatedContainers = append(updatedContainers, container.Name)
-				}
-				if !container.UpdateAvailable {
-					continue
-				}
-				updatesAvailableCount++
-				containersWithUpdates = append(containersWithUpdates, container.Name)
-				if strings.HasPrefix(container.Error, "skipped:") {
-					skippedCount++
-					continue
-				}
-				if container.Policy == config.PolicyUpdate && !container.Updated {
-					readyToUpdateCount++
-				}
-			}
+			s.sendScanNotification(cfg, result)
 		}
 	}
 
@@ -620,25 +596,6 @@ func (s *Server) runScan(ctx context.Context) (dockerwatcher.ScanResult, error) 
 		s.lastScan = dockerwatcher.ScanResult{}
 		s.lastScans = nil
 		s.lastScanMutex.Unlock()
-	}
-
-	if s.discord != nil && discordNotificationsEnabled(cfg) {
-		if len(containersWithUpdates) > 0 || updatedCount > 0 {
-			description := fmt.Sprintf(
-				"Scanned images: %d\nUpdates available: %d\nReady to update: %d\nSkipped: %d\nUpdated: %d\n\nContainers with updates:\n- %s",
-				scannedCount,
-				updatesAvailableCount,
-				readyToUpdateCount,
-				skippedCount,
-				updatedCount,
-				strings.Join(containersWithUpdates, "\n- "),
-			)
-			if updatedCount > 0 {
-				description += "\n\nContainers updated:\n- " + strings.Join(updatedContainers, "\n- ")
-			}
-			const discordBlue = 0x3498DB
-			_ = s.discord.SendEmbed("Contiwatch updates:", description, discordBlue)
-		}
 	}
 
 	if len(results) == 0 {
@@ -731,13 +688,105 @@ func (s *Server) updateRemoteContainer(ctx context.Context, remote config.Remote
 func (s *Server) triggerRemoteScans(ctx context.Context, remotes []config.RemoteServer) {
 	for _, remote := range remotes {
 		s.addLog("info", fmt.Sprintf("remote scan started: %s", remote.Name))
-		_, err := s.scanRemoteServer(ctx, remote)
+		result, err := s.scanRemoteServer(ctx, remote)
 		if err != nil {
 			s.addLog("error", fmt.Sprintf("remote scan failed: %s: %v", remote.Name, err))
 			continue
 		}
+		cfg := s.store.Get()
+		s.sendScanNotification(cfg, result)
 		s.addLog("info", fmt.Sprintf("remote scan finished: %s", remote.Name))
 	}
+}
+
+func (s *Server) sendScanNotification(cfg config.Config, result dockerwatcher.ScanResult) {
+	if s.discord == nil || !discordNotificationsEnabled(cfg) {
+		return
+	}
+	scannedCount := len(result.Containers)
+	updatesAvailableCount := 0
+	readyToUpdateCount := 0
+	skippedCount := 0
+	updatedCount := 0
+	containersWithUpdates := []string{}
+	updatedContainers := []string{}
+
+	for _, container := range result.Containers {
+		if container.Updated {
+			updatedCount++
+			updatedContainers = append(updatedContainers, container.Name)
+		}
+		if !container.UpdateAvailable {
+			continue
+		}
+		updatesAvailableCount++
+		containersWithUpdates = append(containersWithUpdates, container.Name)
+		if strings.HasPrefix(container.Error, "skipped:") {
+			skippedCount++
+			continue
+		}
+		if container.Policy == config.PolicyUpdate && !container.Updated {
+			readyToUpdateCount++
+		}
+	}
+
+	if updatesAvailableCount == 0 && updatedCount == 0 {
+		return
+	}
+
+	serverLabel := result.ServerName
+	if serverLabel == "" {
+		if result.Local {
+			serverLabel = "local"
+		} else {
+			serverLabel = "remote"
+		}
+	}
+	scope := "remote"
+	if result.Local {
+		scope = "local"
+	}
+
+	description := fmt.Sprintf(
+		"Server: %s (%s)\nScanned images: %d\nUpdates available: %d\nReady to update: %d\nSkipped: %d\nUpdated: %d",
+		serverLabel,
+		scope,
+		scannedCount,
+		updatesAvailableCount,
+		readyToUpdateCount,
+		skippedCount,
+		updatedCount,
+	)
+	if updatesAvailableCount > 0 {
+		description += "\n\nContainers with updates:\n- " + strings.Join(containersWithUpdates, "\n- ")
+	}
+	if updatedCount > 0 {
+		description += "\n\nContainers updated:\n- " + strings.Join(updatedContainers, "\n- ")
+	}
+	const discordBlue = 0x3498DB
+	_ = s.discord.SendEmbed("Contiwatch updates:", description, discordBlue)
+}
+
+func (s *Server) sendUpdateNotification(cfg config.Config, serverName string, result dockerwatcher.UpdateResult) {
+	if s.discord == nil || !discordNotificationsEnabled(cfg) {
+		return
+	}
+	status := "not updated"
+	if result.Updated {
+		status = "updated"
+	} else if result.Message != "" {
+		status = result.Message
+	}
+	description := fmt.Sprintf(
+		"Server: %s\nContainer: %s\nResult: %s\nPrevious state: %s\nCurrent state: %s",
+		serverName,
+		result.Name,
+		status,
+		result.PreviousState,
+		result.CurrentState,
+	)
+	const discordBlue = 0x3498DB
+	_ = s.discord.SendEmbed("Contiwatch updates:", description, discordBlue)
 }
 
 type logEntry struct {

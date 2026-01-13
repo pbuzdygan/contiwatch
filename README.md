@@ -59,7 +59,7 @@ docker pull ghcr.io/<owner>/<repo>:dev_<version>
 
 ## Config file
 `/data/config.json` fields include:
-- `scan_interval_sec`
+- `scan_interval_sec` (in seconds; UI shows minutes)
 - `scheduler_enabled` (if `true`, periodic scans run every `scan_interval_sec`)
 - `global_policy`
 - `discord_webhook_url`

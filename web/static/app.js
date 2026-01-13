@@ -381,7 +381,7 @@ async function refreshConfig() {
   const cfg = await fetchJSON("/api/config");
   currentConfig = cfg;
   schedulerEnabledInput.checked = Boolean(cfg.scheduler_enabled);
-  scanIntervalInput.value = cfg.scan_interval_sec;
+  scanIntervalInput.value = Math.max(1, Math.round(cfg.scan_interval_sec / 60));
   globalPolicySelect.value = cfg.global_policy;
   discordInput.value = cfg.discord_webhook_url || "";
   discordEnabledInput.checked = cfg.discord_notifications_enabled !== false;
@@ -390,9 +390,10 @@ async function refreshConfig() {
 
   const enabled = Boolean(cfg.scheduler_enabled);
   const interval = Number(cfg.scan_interval_sec);
+  const intervalMinutes = Math.max(1, Math.round(interval / 60));
   if (enabled) {
     schedulerStateEl.textContent = Number.isFinite(interval) && interval > 0
-      ? `Scheduler: on (${interval}s)`
+      ? `Scheduler: on (${intervalMinutes}m)`
       : "Scheduler: on";
   } else {
     schedulerStateEl.textContent = "Scheduler: off";
@@ -616,9 +617,10 @@ logsLevelSelect.addEventListener("change", refreshLogs);
 
 configForm.addEventListener("submit", async (event) => {
   event.preventDefault();
+  const intervalMinutes = Number(scanIntervalInput.value);
   const payload = {
     scheduler_enabled: schedulerEnabledInput.checked,
-    scan_interval_sec: Number(scanIntervalInput.value),
+    scan_interval_sec: Number.isFinite(intervalMinutes) && intervalMinutes > 0 ? intervalMinutes * 60 : 0,
     global_policy: globalPolicySelect.value,
     discord_webhook_url: discordInput.value.trim(),
     discord_notifications_enabled: discordEnabledInput.checked,
