@@ -2,11 +2,19 @@ FROM golang:1.22-alpine AS builder
 WORKDIR /src
 RUN apk add --no-cache git
 
+ARG TARGETOS
+ARG TARGETARCH
+ARG TARGETVARIANT
+
 COPY go.* ./
 RUN --mount=type=cache,target=/go/pkg/mod go mod download
 
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -mod=mod -o /out/contiwatch ./cmd/contiwatch
+RUN CGO_ENABLED=0 \
+    GOOS="${TARGETOS:-linux}" \
+    GOARCH="${TARGETARCH:-amd64}" \
+    GOARM="${TARGETVARIANT#v}" \
+    go build -mod=mod -o /out/contiwatch ./cmd/contiwatch
 
 FROM alpine:3.20
 WORKDIR /app

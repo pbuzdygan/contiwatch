@@ -1,18 +1,18 @@
 services:
   contiwatch-agent:
-    image: contiwatch:latest
+    image: ghcr.io/pbuzdygan/contiwatch:dev_latest
     container_name: contiwatch-agent
     ports:
       - "8080:8080"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - /volume1/buzlab/docker/contiwatch_agent/data:/data
+      - ./contiwatch_agent_data:/data
     environment:
       CONTIWATCH_ADDR: ":8080"
       CONTIWATCH_CONFIG: "/data/config.json"
       CONTIWATCH_AGENT: "true"
       CONTIWATCH_AGENT_TOKEN: "PUT_32_CHAR_TOKEN_HERE"
       TZ: "Europe/Warsaw"
-      PUID: "1026"
-      PGID: "100"
+      PUID: "obtain_using_id_command_on_host"
+      PGID: "obtain_using_id_command_on_host"
     restart: unless-stopped
