@@ -10,6 +10,7 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"runtime/debug"
 
 	"contiwatch/internal/config"
 	"contiwatch/internal/dockerwatcher"
@@ -17,11 +18,29 @@ import (
 	"contiwatch/internal/server"
 )
 
+var Version = "dev"
+
 func discordNotificationsEnabled(cfg config.Config) bool {
 	if cfg.DiscordNotificationsEnabled == nil {
 		return true
 	}
 	return *cfg.DiscordNotificationsEnabled
+}
+
+func resolveVersion() string {
+	if Version != "" && Version != "dev" {
+		return strings.TrimPrefix(Version, "v")
+	}
+	version := strings.TrimSpace(os.Getenv("CONTIWATCH_VERSION"))
+	if version != "" {
+		return version
+	}
+	if info, ok := debug.ReadBuildInfo(); ok {
+		if info.Main.Version != "" && info.Main.Version != "(devel)" {
+			return strings.TrimPrefix(info.Main.Version, "v")
+		}
+	}
+	return "dev"
 }
 
 func main() {
@@ -46,7 +65,8 @@ func main() {
 		log.Fatalf("agent mode requires CONTIWATCH_AGENT_TOKEN")
 	}
 
-	srv := server.New(store, watcher, agentMode, agentToken)
+	version := resolveVersion()
+	srv := server.New(store, watcher, agentMode, agentToken, version)
 	cfg := store.Get()
 	if agentMode && len(cfg.LocalServers) == 0 {
 		if _, err := os.Stat("/var/run/docker.sock"); err == nil {

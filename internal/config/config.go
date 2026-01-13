@@ -89,6 +89,13 @@ func (s *Store) load() error {
 	if cfg.ScanIntervalSec <= 0 {
 		cfg.ScanIntervalSec = DefaultConfig().ScanIntervalSec
 	}
+	if cfg.ScanIntervalSec == 300 &&
+		!cfg.SchedulerEnabled &&
+		cfg.DiscordWebhookURL == "" &&
+		cfg.UpdateStoppedContainers == false &&
+		cfg.GlobalPolicy == DefaultConfig().GlobalPolicy {
+		cfg.ScanIntervalSec = DefaultConfig().ScanIntervalSec
+	}
 	if cfg.GlobalPolicy == "" {
 		cfg.GlobalPolicy = DefaultConfig().GlobalPolicy
 	}

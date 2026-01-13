@@ -1,4 +1,5 @@
 FROM golang:1.24-alpine AS builder
+ARG VERSION=dev
 WORKDIR /src
 RUN apk add --no-cache git
 
@@ -14,7 +15,7 @@ RUN CGO_ENABLED=0 \
     GOOS="${TARGETOS:-linux}" \
     GOARCH="${TARGETARCH:-amd64}" \
     GOARM="${TARGETVARIANT#v}" \
-    go build -mod=mod -o /out/contiwatch ./cmd/contiwatch
+    go build -mod=mod -ldflags="-X main.Version=${VERSION}" -o /out/contiwatch ./cmd/contiwatch
 
 FROM alpine:3.20
 WORKDIR /app

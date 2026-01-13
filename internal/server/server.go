@@ -42,15 +42,17 @@ type Server struct {
 
 	agentMode  bool
 	agentToken string
+	version    string
 }
 
-func New(store *config.Store, watcher *dockerwatcher.Watcher, agentMode bool, agentToken string) *Server {
+func New(store *config.Store, watcher *dockerwatcher.Watcher, agentMode bool, agentToken string, version string) *Server {
 	s := &Server{
 		store:      store,
 		watcher:    watcher,
 		mux:        http.NewServeMux(),
 		agentMode:  agentMode,
 		agentToken: agentToken,
+		version:    version,
 	}
 	s.routes()
 	return s
@@ -103,6 +105,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/update/", s.handleUpdateContainer)
 	s.mux.HandleFunc("/api/logs", s.handleLogs)
 	s.mux.HandleFunc("/api/aggregate", s.handleAggregate)
+	s.mux.HandleFunc("/api/version", s.handleVersion)
 
 	if !s.agentMode {
 		staticDir := "/app/web/static"
@@ -281,6 +284,10 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.lastScan)
 }
 
+func (s *Server) handleVersion(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]string{"version": s.version})
+}
+
 func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
@@ -320,8 +327,8 @@ func (s *Server) handleScan(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, err)
 			return
 		}
-		s.triggerRemoteScans(r.Context(), cfg.RemoteServers)
-		s.addLog("info", fmt.Sprintf("manual scan finished: containers=%d", len(result.Containers)))
+		go s.triggerRemoteScans(r.Context(), cfg.RemoteServers)
+		s.addLog("info", fmt.Sprintf("manual scan finished (local batch): servers=%d", len(cfg.LocalServers)))
 		writeJSON(w, http.StatusOK, result)
 		return
 	case strings.HasPrefix(scope, "local:"):
@@ -331,12 +338,14 @@ func (s *Server) handleScan(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, errors.New("local server not found"))
 			return
 		}
+		s.addLog("info", fmt.Sprintf("local scan started: %s", local.Name))
 		result, err := s.scanLocalServer(r.Context(), cfg, local)
 		if err != nil {
 			s.addLog("error", fmt.Sprintf("manual scan failed: %s: %v", local.Name, err))
 			writeError(w, http.StatusInternalServerError, err)
 			return
 		}
+		s.addLog("info", fmt.Sprintf("local scan finished: %s %s", local.Name, s.formatScanSummary(result)))
 		s.sendScanNotification(cfg, result)
 		s.addLog("info", fmt.Sprintf("manual scan finished: containers=%d", len(result.Containers)))
 		writeJSON(w, http.StatusOK, result)
@@ -348,12 +357,14 @@ func (s *Server) handleScan(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, errors.New("remote server not found"))
 			return
 		}
+		s.addLog("info", fmt.Sprintf("remote scan started: %s", remote.Name))
 		result, err := s.scanRemoteServer(r.Context(), remote)
 		if err != nil {
 			s.addLog("error", fmt.Sprintf("manual scan failed: %s: %v", remote.Name, err))
 			writeError(w, http.StatusBadGateway, err)
 			return
 		}
+		s.addLog("info", fmt.Sprintf("remote scan finished: %s %s", remote.Name, s.formatScanSummary(result)))
 		s.sendScanNotification(cfg, result)
 		s.addLog("info", fmt.Sprintf("manual scan finished: containers=%d", len(result.Containers)))
 		writeJSON(w, http.StatusOK, result)
@@ -479,12 +490,22 @@ func (s *Server) handleAggregate(w http.ResponseWriter, r *http.Request) {
 
 	results := []dockerwatcher.ScanResult{}
 	s.lastScanMutex.RLock()
-	localScans := s.lastScans
+	localScans := append([]dockerwatcher.ScanResult(nil), s.lastScans...)
 	s.lastScanMutex.RUnlock()
+	localByName := make(map[string]dockerwatcher.ScanResult, len(localScans))
 	for _, local := range localScans {
-		if !local.CheckedAt.IsZero() {
-			results = append(results, local)
+		localByName[local.ServerName] = local
+	}
+	for _, local := range cfg.LocalServers {
+		if existing, ok := localByName[local.Name]; ok {
+			results = append(results, existing)
+			continue
 		}
+		results = append(results, dockerwatcher.ScanResult{
+			ServerName: local.Name,
+			ServerURL:  local.Socket,
+			Local:      true,
+		})
 	}
 
 	client := &http.Client{Timeout: 5 * time.Second}
@@ -567,6 +588,7 @@ func (s *Server) runScan(ctx context.Context) (dockerwatcher.ScanResult, error) 
 		s.addLog("info", "scan skipped: no local servers configured")
 	} else {
 		for _, local := range cfg.LocalServers {
+			s.addLog("info", fmt.Sprintf("local scan started: %s", local.Name))
 			result, err := s.scanLocalServer(ctx, cfg, local)
 			if err != nil {
 				s.addLog("error", fmt.Sprintf("scan failed: %s: %v", local.Name, err))
@@ -579,6 +601,7 @@ func (s *Server) runScan(ctx context.Context) (dockerwatcher.ScanResult, error) 
 				})
 				continue
 			}
+			s.addLog("info", fmt.Sprintf("local scan finished: %s %s", local.Name, s.formatScanSummary(result)))
 			results = append(results, result)
 			s.sendScanNotification(cfg, result)
 		}
@@ -686,51 +709,79 @@ func (s *Server) updateRemoteContainer(ctx context.Context, remote config.Remote
 }
 
 func (s *Server) triggerRemoteScans(ctx context.Context, remotes []config.RemoteServer) {
+	successCount := 0
+	failCount := 0
 	for _, remote := range remotes {
 		s.addLog("info", fmt.Sprintf("remote scan started: %s", remote.Name))
 		result, err := s.scanRemoteServer(ctx, remote)
 		if err != nil {
 			s.addLog("error", fmt.Sprintf("remote scan failed: %s: %v", remote.Name, err))
+			failCount++
 			continue
 		}
 		cfg := s.store.Get()
+		s.addLog("info", fmt.Sprintf("remote scan finished: %s %s", remote.Name, s.formatScanSummary(result)))
 		s.sendScanNotification(cfg, result)
-		s.addLog("info", fmt.Sprintf("remote scan finished: %s", remote.Name))
+		successCount++
 	}
+	if len(remotes) > 0 {
+		s.addLog("info", fmt.Sprintf("remote scans completed: ok=%d failed=%d", successCount, failCount))
+	}
+}
+
+func (s *Server) formatScanSummary(result dockerwatcher.ScanResult) string {
+	summary := s.buildScanSummary(result)
+	return fmt.Sprintf(
+		"containers=%d updates=%d ready=%d skipped=%d updated=%d",
+		summary.total,
+		summary.updates,
+		summary.ready,
+		summary.skipped,
+		summary.updated,
+	)
+}
+
+type scanSummary struct {
+	total       int
+	updates     int
+	ready       int
+	skipped     int
+	updated     int
+	updateNames []string
+	updatedNames []string
+}
+
+func (s *Server) buildScanSummary(result dockerwatcher.ScanResult) scanSummary {
+	summary := scanSummary{
+		total: len(result.Containers),
+	}
+	for _, container := range result.Containers {
+		if container.Updated {
+			summary.updated++
+			summary.updatedNames = append(summary.updatedNames, container.Name)
+		}
+		if !container.UpdateAvailable {
+			continue
+		}
+		summary.updates++
+		summary.updateNames = append(summary.updateNames, container.Name)
+		if strings.HasPrefix(container.Error, "skipped:") {
+			summary.skipped++
+			continue
+		}
+		if container.Policy == config.PolicyUpdate && !container.Updated {
+			summary.ready++
+		}
+	}
+	return summary
 }
 
 func (s *Server) sendScanNotification(cfg config.Config, result dockerwatcher.ScanResult) {
 	if s.discord == nil || !discordNotificationsEnabled(cfg) {
 		return
 	}
-	scannedCount := len(result.Containers)
-	updatesAvailableCount := 0
-	readyToUpdateCount := 0
-	skippedCount := 0
-	updatedCount := 0
-	containersWithUpdates := []string{}
-	updatedContainers := []string{}
-
-	for _, container := range result.Containers {
-		if container.Updated {
-			updatedCount++
-			updatedContainers = append(updatedContainers, container.Name)
-		}
-		if !container.UpdateAvailable {
-			continue
-		}
-		updatesAvailableCount++
-		containersWithUpdates = append(containersWithUpdates, container.Name)
-		if strings.HasPrefix(container.Error, "skipped:") {
-			skippedCount++
-			continue
-		}
-		if container.Policy == config.PolicyUpdate && !container.Updated {
-			readyToUpdateCount++
-		}
-	}
-
-	if updatesAvailableCount == 0 && updatedCount == 0 {
+	summary := s.buildScanSummary(result)
+	if summary.updates == 0 && summary.updated == 0 {
 		return
 	}
 
@@ -751,17 +802,17 @@ func (s *Server) sendScanNotification(cfg config.Config, result dockerwatcher.Sc
 		"Server: %s (%s)\nScanned images: %d\nUpdates available: %d\nReady to update: %d\nSkipped: %d\nUpdated: %d",
 		serverLabel,
 		scope,
-		scannedCount,
-		updatesAvailableCount,
-		readyToUpdateCount,
-		skippedCount,
-		updatedCount,
+		summary.total,
+		summary.updates,
+		summary.ready,
+		summary.skipped,
+		summary.updated,
 	)
-	if updatesAvailableCount > 0 {
-		description += "\n\nContainers with updates:\n- " + strings.Join(containersWithUpdates, "\n- ")
+	if summary.updates > 0 {
+		description += "\n\nContainers with updates:\n- " + strings.Join(summary.updateNames, "\n- ")
 	}
-	if updatedCount > 0 {
-		description += "\n\nContainers updated:\n- " + strings.Join(updatedContainers, "\n- ")
+	if summary.updated > 0 {
+		description += "\n\nContainers updated:\n- " + strings.Join(summary.updatedNames, "\n- ")
 	}
 	const discordBlue = 0x3498DB
 	_ = s.discord.SendEmbed("Contiwatch updates:", description, discordBlue)

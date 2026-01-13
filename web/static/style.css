@@ -102,6 +102,9 @@ body.sidebar-pinned .menu-btn {
   transition: transform 160ms ease-out;
   z-index: 50;
   padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .sidebar.pinned .sidebar-header .icon-btn {
@@ -328,6 +331,21 @@ h2 {
 
 .server-body {
   margin-top: 12px;
+}
+
+.sidebar-footer {
+  margin-top: auto;
+  padding-top: 16px;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.sidebar-footer span {
+  display: inline-block;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: #fff;
 }
 
 .actions .scan-scope {

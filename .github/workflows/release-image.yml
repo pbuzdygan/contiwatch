@@ -37,8 +37,10 @@ jobs:
           image="ghcr.io/${{ github.repository }}"
           if [ "$target" = "dev" ]; then
             echo "tags=${image}:dev_latest,${image}:dev_${tag}" >> "$GITHUB_OUTPUT"
+            echo "version=dev${tag}" >> "$GITHUB_OUTPUT"
           elif [ "$target" = "main" ]; then
             echo "tags=${image}:latest,${image}:${tag}" >> "$GITHUB_OUTPUT"
+            echo "version=${tag}" >> "$GITHUB_OUTPUT"
           else
             echo "Release target must be 'dev' or 'main' (got: $target)" >&2
             exit 1
@@ -51,5 +53,7 @@ jobs:
           push: true
           platforms: linux/amd64,linux/arm/v7,linux/arm64
           tags: ${{ steps.tags.outputs.tags }}
+          build-args: |
+            VERSION=${{ steps.tags.outputs.version }}
           cache-from: type=gha
           cache-to: type=gha,mode=max

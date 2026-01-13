@@ -41,6 +41,7 @@ const clearLogsBtn = document.getElementById("clear-logs");
 const logsLevelSelect = document.getElementById("logs-level");
 const logsStatusEl = document.getElementById("logs-status");
 const logsListEl = document.getElementById("logs-list");
+const appVersionEl = document.getElementById("app-version");
 
 let currentScanController = null;
 let currentView = "status";
@@ -49,6 +50,7 @@ let logsRefreshTimer = null;
 let currentConfig = null;
 let cachedLocals = [];
 let cachedRemotes = [];
+let scanFollowUpTimer = null;
 
 async function fetchJSON(url, options = {}) {
   const res = await fetch(url, options);
@@ -481,6 +483,20 @@ async function refreshStatus() {
     lastScanEl.textContent = "Last scan: not run yet";
   }
   renderStatus(results);
+  return results;
+}
+
+async function refreshVersion() {
+  if (!appVersionEl) return;
+  try {
+    const payload = await fetchJSON("/api/version");
+    const raw = (payload && payload.version) ? String(payload.version) : "dev";
+    const normalized = raw.startsWith("v") ? raw : `v${raw}`;
+    const display = raw.startsWith("dev") ? `v${raw}` : normalized;
+    appVersionEl.textContent = `Release: ${display}`;
+  } catch (err) {
+    appVersionEl.textContent = "Release: vdev";
+  }
 }
 
 async function refreshLogs() {
@@ -558,6 +574,32 @@ function setScanningUI(isScanning) {
   stopBtn.classList.toggle("hidden", !isScanning);
 }
 
+function startScanFollowUp(startedAt) {
+  if (scanFollowUpTimer) {
+    window.clearInterval(scanFollowUpTimer);
+  }
+  const startedAtMs = startedAt instanceof Date ? startedAt.getTime() : Date.now();
+  let attempts = 0;
+  scanFollowUpTimer = window.setInterval(async () => {
+    attempts += 1;
+    const results = await refreshStatus();
+    const remotes = Array.isArray(results)
+      ? results.filter((result) => !result.local)
+      : [];
+    const allDone = remotes.every((remote) => {
+      const checkedAt = remote.checked_at ? new Date(remote.checked_at).getTime() : 0;
+      if (!checkedAt || Number.isNaN(checkedAt)) {
+        return false;
+      }
+      return checkedAt >= startedAtMs;
+    });
+    if (allDone || attempts >= 30) {
+      window.clearInterval(scanFollowUpTimer);
+      scanFollowUpTimer = null;
+    }
+  }, 2000);
+}
+
 function showToast(message, timeoutMs = 8000) {
   if (!toastEl) return;
   if (!message) return;
@@ -618,6 +660,7 @@ function goToStatus() {
 scanBtn.addEventListener("click", async () => {
   if (currentScanController) return;
   currentScanController = new AbortController();
+  const scanStart = new Date();
   setScanningUI(true);
   try {
     const scope = scanScopeSelect ? scanScopeSelect.value : "all";
@@ -635,6 +678,9 @@ scanBtn.addEventListener("click", async () => {
     currentScanController = null;
     setScanningUI(false);
     await refreshStatus();
+    if (scanScopeSelect && scanScopeSelect.value === "all") {
+      startScanFollowUp(scanStart);
+    }
     await refreshLogs();
   }
 });
@@ -802,6 +848,7 @@ async function init() {
   await refreshConfig();
   await refreshServers();
   await refreshStatus();
+  await refreshVersion();
   if (localSocketInput && !localSocketInput.value) {
     localSocketInput.value = "/var/run/docker.sock";
   }
