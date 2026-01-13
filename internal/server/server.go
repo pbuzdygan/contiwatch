@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"path"
 	"strings"
@@ -319,7 +320,7 @@ func (s *Server) handleScan(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, err)
 			return
 		}
-		go s.triggerRemoteScans(r.Context(), cfg.RemoteServers)
+		s.triggerRemoteScans(r.Context(), cfg.RemoteServers)
 		s.addLog("info", fmt.Sprintf("manual scan finished: containers=%d", len(result.Containers)))
 		writeJSON(w, http.StatusOK, result)
 		return
@@ -387,7 +388,16 @@ func (s *Server) handleUpdateContainer(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	cfg := s.store.Get()
-	serverName := strings.TrimSpace(r.URL.Query().Get("server"))
+	serverParam := strings.TrimSpace(r.URL.Query().Get("server"))
+	isRemote := false
+	serverName := serverParam
+	switch {
+	case strings.HasPrefix(serverParam, "remote:"):
+		isRemote = true
+		serverName = strings.TrimPrefix(serverParam, "remote:")
+	case strings.HasPrefix(serverParam, "local:"):
+		serverName = strings.TrimPrefix(serverParam, "local:")
+	}
 	if serverName == "" {
 		if len(cfg.LocalServers) == 1 {
 			serverName = cfg.LocalServers[0].Name
@@ -396,24 +406,40 @@ func (s *Server) handleUpdateContainer(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	localServer, ok := findLocalServer(cfg.LocalServers, serverName)
-	if !ok {
-		writeError(w, http.StatusNotFound, errors.New("local server not found"))
-		return
-	}
-	watcher, err := dockerwatcher.NewWithHost(dockerHostFromSocket(localServer.Socket))
-	if err != nil {
-		s.addLog("error", fmt.Sprintf("update failed: %s: %v", containerID, err))
-		writeError(w, http.StatusInternalServerError, err)
-		return
-	}
-	defer watcher.Close()
 
-	result, err := watcher.UpdateContainer(r.Context(), containerID, cfg)
-	if err != nil {
-		s.addLog("error", fmt.Sprintf("update failed: %s: %v", containerID, err))
-		writeError(w, http.StatusInternalServerError, err)
-		return
+	var result dockerwatcher.UpdateResult
+	var err error
+	if isRemote {
+		remote, ok := findRemoteServer(cfg.RemoteServers, serverName)
+		if !ok {
+			writeError(w, http.StatusNotFound, errors.New("remote server not found"))
+			return
+		}
+		result, err = s.updateRemoteContainer(r.Context(), remote, containerID)
+		if err != nil {
+			s.addLog("error", fmt.Sprintf("update failed: %s: %v", containerID, err))
+			writeError(w, http.StatusBadGateway, err)
+			return
+		}
+	} else {
+		localServer, ok := findLocalServer(cfg.LocalServers, serverName)
+		if !ok {
+			writeError(w, http.StatusNotFound, errors.New("local server not found"))
+			return
+		}
+		watcher, err := dockerwatcher.NewWithHost(dockerHostFromSocket(localServer.Socket))
+		if err != nil {
+			s.addLog("error", fmt.Sprintf("update failed: %s: %v", containerID, err))
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		defer watcher.Close()
+		result, err = watcher.UpdateContainer(r.Context(), containerID, cfg)
+		if err != nil {
+			s.addLog("error", fmt.Sprintf("update failed: %s: %v", containerID, err))
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
 	}
 	log.Printf("manual update: container=%s updated=%t previous=%s current=%s msg=%s", result.Name, result.Updated, result.PreviousState, result.CurrentState, result.Message)
 	if result.Updated {
@@ -668,12 +694,49 @@ func (s *Server) scanRemoteServer(ctx context.Context, remote config.RemoteServe
 	return payload, nil
 }
 
+func (s *Server) updateRemoteContainer(ctx context.Context, remote config.RemoteServer, containerID string) (dockerwatcher.UpdateResult, error) {
+	if remote.URL == "" {
+		return dockerwatcher.UpdateResult{}, errors.New("missing url")
+	}
+	updateURL := strings.TrimSuffix(remote.URL, "/") + "/api/update/" + url.PathEscape(containerID)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, updateURL, nil)
+	if err != nil {
+		return dockerwatcher.UpdateResult{}, err
+	}
+	if remote.Token != "" {
+		req.Header.Set("Authorization", "Bearer "+remote.Token)
+	}
+	client := &http.Client{Timeout: 60 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return dockerwatcher.UpdateResult{}, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		var payload struct {
+			Error string `json:"error"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&payload); err == nil && payload.Error != "" {
+			return dockerwatcher.UpdateResult{}, errors.New(payload.Error)
+		}
+		return dockerwatcher.UpdateResult{}, fmt.Errorf("status %d", resp.StatusCode)
+	}
+	var result dockerwatcher.UpdateResult
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return dockerwatcher.UpdateResult{}, err
+	}
+	return result, nil
+}
+
 func (s *Server) triggerRemoteScans(ctx context.Context, remotes []config.RemoteServer) {
 	for _, remote := range remotes {
+		s.addLog("info", fmt.Sprintf("remote scan started: %s", remote.Name))
 		_, err := s.scanRemoteServer(ctx, remote)
 		if err != nil {
 			s.addLog("error", fmt.Sprintf("remote scan failed: %s: %v", remote.Name, err))
+			continue
 		}
+		s.addLog("info", fmt.Sprintf("remote scan finished: %s", remote.Name))
 	}
 }
 

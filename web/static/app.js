@@ -171,7 +171,6 @@ function renderStatus(results) {
         row.appendChild(policySpan);
 
         const canUpdate =
-          result.local &&
           container.update_available &&
           !container.updated &&
           !container.paused &&
@@ -189,7 +188,7 @@ function renderStatus(results) {
           updatedBtn.disabled = true;
           actions.appendChild(updatedBtn);
           row.appendChild(actions);
-        } else if (result.local && container.update_available) {
+        } else if (container.update_available) {
           const actions = document.createElement("div");
           actions.className = "row-actions";
 
@@ -225,7 +224,10 @@ function renderStatus(results) {
             updateState.textContent = "Updating…";
             let updateResult = null;
             try {
-              const serverParam = encodeURIComponent(result.server_name || "local");
+              const scope = result.local
+                ? `local:${result.server_name || "local"}`
+                : `remote:${result.server_name || "remote"}`;
+              const serverParam = encodeURIComponent(scope);
               updateResult = await fetchJSON(`/api/update/${encodeURIComponent(container.id)}?server=${serverParam}`, { method: "POST" });
               if (updateResult.updated) {
                 updateState.textContent = `Updated (${updateResult.previous_state} → ${updateResult.current_state})`;
