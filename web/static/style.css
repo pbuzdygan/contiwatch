@@ -257,6 +257,22 @@ h2 {
   margin-bottom: 12px;
 }
 
+.actions .scan-scope {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.actions .scan-scope select {
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: white;
+  color: var(--text);
+}
+
 button {
   border: none;
   background: var(--accent);

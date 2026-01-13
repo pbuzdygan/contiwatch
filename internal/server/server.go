@@ -303,19 +303,62 @@ func (s *Server) handleScan(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
+	scope := strings.TrimSpace(r.URL.Query().Get("server"))
+	cfg := s.store.Get()
+
 	s.addLog("info", "manual scan started")
-	result, err := s.runScan(r.Context())
-	if err != nil {
-		if errors.Is(err, errScanInProgress) {
-			writeError(w, http.StatusConflict, err)
+	switch {
+	case scope == "" || scope == "all":
+		result, err := s.runScan(r.Context())
+		if err != nil {
+			if errors.Is(err, errScanInProgress) {
+				writeError(w, http.StatusConflict, err)
+				return
+			}
+			s.addLog("error", fmt.Sprintf("manual scan failed: %v", err))
+			writeError(w, http.StatusInternalServerError, err)
 			return
 		}
-		s.addLog("error", fmt.Sprintf("manual scan failed: %v", err))
-		writeError(w, http.StatusInternalServerError, err)
+		go s.triggerRemoteScans(r.Context(), cfg.RemoteServers)
+		s.addLog("info", fmt.Sprintf("manual scan finished: containers=%d", len(result.Containers)))
+		writeJSON(w, http.StatusOK, result)
+		return
+	case strings.HasPrefix(scope, "local:"):
+		name := strings.TrimPrefix(scope, "local:")
+		local, ok := findLocalServer(cfg.LocalServers, name)
+		if !ok {
+			writeError(w, http.StatusNotFound, errors.New("local server not found"))
+			return
+		}
+		result, err := s.scanLocalServer(r.Context(), cfg, local)
+		if err != nil {
+			s.addLog("error", fmt.Sprintf("manual scan failed: %s: %v", local.Name, err))
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		s.addLog("info", fmt.Sprintf("manual scan finished: containers=%d", len(result.Containers)))
+		writeJSON(w, http.StatusOK, result)
+		return
+	case strings.HasPrefix(scope, "remote:"):
+		name := strings.TrimPrefix(scope, "remote:")
+		remote, ok := findRemoteServer(cfg.RemoteServers, name)
+		if !ok {
+			writeError(w, http.StatusNotFound, errors.New("remote server not found"))
+			return
+		}
+		result, err := s.scanRemoteServer(r.Context(), remote)
+		if err != nil {
+			s.addLog("error", fmt.Sprintf("manual scan failed: %s: %v", remote.Name, err))
+			writeError(w, http.StatusBadGateway, err)
+			return
+		}
+		s.addLog("info", fmt.Sprintf("manual scan finished: containers=%d", len(result.Containers)))
+		writeJSON(w, http.StatusOK, result)
+		return
+	default:
+		writeError(w, http.StatusBadRequest, errors.New("invalid scan scope"))
 		return
 	}
-	s.addLog("info", fmt.Sprintf("manual scan finished: containers=%d", len(result.Containers)))
-	writeJSON(w, http.StatusOK, result)
 }
 
 func (s *Server) handleUpdateContainer(w http.ResponseWriter, r *http.Request) {
@@ -503,7 +546,7 @@ func (s *Server) runScan(ctx context.Context) (dockerwatcher.ScanResult, error) 
 		s.addLog("info", "scan skipped: no local servers configured")
 	} else {
 		for _, local := range cfg.LocalServers {
-			watcher, err := dockerwatcher.NewWithHost(dockerHostFromSocket(local.Socket))
+			result, err := s.scanLocalServer(ctx, cfg, local)
 			if err != nil {
 				s.addLog("error", fmt.Sprintf("scan failed: %s: %v", local.Name, err))
 				results = append(results, dockerwatcher.ScanResult{
@@ -515,22 +558,6 @@ func (s *Server) runScan(ctx context.Context) (dockerwatcher.ScanResult, error) 
 				})
 				continue
 			}
-			result, err := watcher.Scan(ctx, cfg)
-			_ = watcher.Close()
-			if err != nil {
-				s.addLog("error", fmt.Sprintf("scan failed: %s: %v", local.Name, err))
-				results = append(results, dockerwatcher.ScanResult{
-					ServerName: local.Name,
-					ServerURL:  local.Socket,
-					Local:      true,
-					CheckedAt:  time.Now(),
-					Error:      err.Error(),
-				})
-				continue
-			}
-			result.ServerName = local.Name
-			result.ServerURL = local.Socket
-			result.Local = true
 			results = append(results, result)
 
 			scannedCount += len(result.Containers)
@@ -592,6 +619,62 @@ func (s *Server) runScan(ctx context.Context) (dockerwatcher.ScanResult, error) 
 		return dockerwatcher.ScanResult{}, nil
 	}
 	return results[0], nil
+}
+
+func (s *Server) scanLocalServer(ctx context.Context, cfg config.Config, local config.LocalServer) (dockerwatcher.ScanResult, error) {
+	watcher, err := dockerwatcher.NewWithHost(dockerHostFromSocket(local.Socket))
+	if err != nil {
+		return dockerwatcher.ScanResult{}, err
+	}
+	defer watcher.Close()
+	result, err := watcher.Scan(ctx, cfg)
+	if err != nil {
+		return dockerwatcher.ScanResult{}, err
+	}
+	result.ServerName = local.Name
+	result.ServerURL = local.Socket
+	result.Local = true
+	return result, nil
+}
+
+func (s *Server) scanRemoteServer(ctx context.Context, remote config.RemoteServer) (dockerwatcher.ScanResult, error) {
+	if remote.URL == "" {
+		return dockerwatcher.ScanResult{}, errors.New("missing url")
+	}
+	url := strings.TrimSuffix(remote.URL, "/") + "/api/scan"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, nil)
+	if err != nil {
+		return dockerwatcher.ScanResult{}, err
+	}
+	if remote.Token != "" {
+		req.Header.Set("Authorization", "Bearer "+remote.Token)
+	}
+	client := &http.Client{Timeout: 60 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return dockerwatcher.ScanResult{}, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return dockerwatcher.ScanResult{}, fmt.Errorf("status %d", resp.StatusCode)
+	}
+	var payload dockerwatcher.ScanResult
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return dockerwatcher.ScanResult{}, err
+	}
+	payload.ServerName = remote.Name
+	payload.ServerURL = remote.URL
+	payload.Local = false
+	return payload, nil
+}
+
+func (s *Server) triggerRemoteScans(ctx context.Context, remotes []config.RemoteServer) {
+	for _, remote := range remotes {
+		_, err := s.scanRemoteServer(ctx, remote)
+		if err != nil {
+			s.addLog("error", fmt.Sprintf("remote scan failed: %s: %v", remote.Name, err))
+		}
+	}
 }
 
 type logEntry struct {
@@ -732,6 +815,15 @@ func removeLocal(servers []config.LocalServer, name string) []config.LocalServer
 		}
 	}
 	return filtered
+}
+
+func findRemoteServer(servers []config.RemoteServer, name string) (config.RemoteServer, bool) {
+	for _, srv := range servers {
+		if strings.EqualFold(srv.Name, name) {
+			return srv, true
+		}
+	}
+	return config.RemoteServer{}, false
 }
 
 func findLocalServer(servers []config.LocalServer, name string) (config.LocalServer, bool) {

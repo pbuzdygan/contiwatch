@@ -2,6 +2,7 @@ const statusEl = document.getElementById("status");
 const lastScanEl = document.getElementById("last-scan");
 const scanBtn = document.getElementById("scan-btn");
 const stopBtn = document.getElementById("stop-btn");
+const scanScopeSelect = document.getElementById("scan-scope");
 const scanStateEl = document.getElementById("scan-state");
 const schedulerStateEl = document.getElementById("scheduler-state");
 const toastEl = document.getElementById("toast");
@@ -216,6 +217,9 @@ function renderStatus(results) {
             if (updateInProgress || currentScanController) return;
             updateInProgress = true;
             scanBtn.disabled = true;
+            if (scanScopeSelect) {
+              scanScopeSelect.disabled = true;
+            }
             updateBtn.disabled = true;
             updateState.classList.remove("hidden");
             updateState.textContent = "Updating…";
@@ -233,6 +237,9 @@ function renderStatus(results) {
             } finally {
               updateInProgress = false;
               scanBtn.disabled = Boolean(currentScanController);
+              if (scanScopeSelect) {
+                scanScopeSelect.disabled = Boolean(currentScanController);
+              }
               updateBtn.disabled = false;
               setTimeout(() => updateState.classList.add("hidden"), 8000);
               await refreshStatus();
@@ -340,6 +347,34 @@ function renderServers(localServers, remoteServers) {
   });
 }
 
+function updateScanScopeOptions() {
+  if (!scanScopeSelect) return;
+  const currentValue = scanScopeSelect.value || "all";
+  const options = [
+    { value: "all", label: "All servers" },
+  ];
+
+  cachedLocals.forEach((local) => {
+    options.push({ value: `local:${local.name}`, label: `Local: ${local.name}` });
+  });
+
+  cachedRemotes.forEach((remote) => {
+    options.push({ value: `remote:${remote.name}`, label: `Remote: ${remote.name}` });
+  });
+
+  scanScopeSelect.innerHTML = "";
+  options.forEach((option) => {
+    const el = document.createElement("option");
+    el.value = option.value;
+    el.textContent = option.label;
+    scanScopeSelect.appendChild(el);
+  });
+
+  if (options.some((option) => option.value === currentValue)) {
+    scanScopeSelect.value = currentValue;
+  }
+}
+
 async function refreshConfig() {
   const cfg = await fetchJSON("/api/config");
   currentConfig = cfg;
@@ -370,6 +405,7 @@ async function refreshServers() {
   cachedLocals = locals || [];
   cachedRemotes = remotes || [];
   renderServers(cachedLocals, cachedRemotes);
+  updateScanScopeOptions();
   if (!cachedLocals.length) {
     statusHintEl.textContent = "No local servers configured. Add a Docker socket in Servers to use Run scan.";
     statusHintEl.classList.remove("hidden");
@@ -468,6 +504,9 @@ function stopLogsAutoRefresh() {
 
 function setScanningUI(isScanning) {
   scanBtn.disabled = isScanning || updateInProgress;
+  if (scanScopeSelect) {
+    scanScopeSelect.disabled = isScanning || updateInProgress;
+  }
   scanStateEl.classList.toggle("hidden", !isScanning);
   stopBtn.classList.toggle("hidden", !isScanning);
 }
@@ -534,7 +573,11 @@ scanBtn.addEventListener("click", async () => {
   currentScanController = new AbortController();
   setScanningUI(true);
   try {
-    await fetchJSON("/api/scan", { method: "POST", signal: currentScanController.signal });
+    const scope = scanScopeSelect ? scanScopeSelect.value : "all";
+    const url = scope && scope !== "all"
+      ? `/api/scan?server=${encodeURIComponent(scope)}`
+      : "/api/scan?server=all";
+    await fetchJSON(url, { method: "POST", signal: currentScanController.signal });
   } catch (err) {
     if (err.name === "AbortError" || /aborted|canceled|cancelled/i.test(err.message)) {
       alert("Scan cancelled.");

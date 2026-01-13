@@ -41,6 +41,12 @@
         <div class="actions">
           <button id="scan-btn">Run scan</button>
           <button id="stop-btn" class="secondary hidden" type="button">Stop</button>
+          <label class="scan-scope">
+            <span>Target</span>
+            <select id="scan-scope">
+              <option value="all">All servers</option>
+            </select>
+          </label>
           <span id="last-scan">No scan yet</span>
           <span id="scan-state" class="tag hidden">Scanning…</span>
           <span id="scheduler-state" class="tag">Scheduler: off</span>
