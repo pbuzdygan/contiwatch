@@ -1,0 +1,25 @@
+services:
+  contiwatch:
+    build: .
+    container_name: contiwatch
+#    user: 1026:100
+    networks:
+      - bridge_v90
+    ports:
+      - "8017:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /volume1/buzlab/docker/contiwatch_dev/data:/data
+    environment:
+      CONTIWATCH_ADDR: ":8080"
+      CONTIWATCH_CONFIG: "/data/config.json"
+      PUID: "1026"
+      PGID: "100"
+      TZ: Europe/Warsaw
+      # Optional: if contiwatch can't infer it from /var/run/docker.sock
+      # DOCKER_GID: "998"
+    restart: unless-stopped
+
+networks:
+  bridge_v90:
+    external: true

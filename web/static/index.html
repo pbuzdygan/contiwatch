@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Contiwatch</title>
+    <link rel="stylesheet" href="/style.css">
+  </head>
+  <body>
+    <header>
+      <button id="menu-btn" class="menu-btn" aria-label="Open menu">☰</button>
+      <h1>Contiwatch</h1>
+      <p>Minimal Docker image watcher</p>
+    </header>
+
+    <div id="overlay" class="overlay hidden"></div>
+    <aside id="sidebar" class="sidebar" aria-hidden="true">
+      <div class="sidebar-header">
+        <h2>Menu</h2>
+        <button id="sidebar-close" class="icon-btn" aria-label="Close menu">✕</button>
+      </div>
+      <label class="pin-row">
+        <input type="checkbox" id="sidebar-pin">
+        Pin sidebar
+      </label>
+      <label class="pin-row">
+        <input type="checkbox" id="sidebar-scheduler">
+        Scheduler enabled
+      </label>
+      <nav class="sidebar-nav">
+        <button type="button" class="sidebar-link" data-view="status">Status</button>
+        <button type="button" class="sidebar-link" data-view="settings">Settings</button>
+        <button type="button" class="sidebar-link" data-view="servers">Servers</button>
+        <button type="button" class="sidebar-link" data-view="logs">Logs</button>
+      </nav>
+    </aside>
+
+    <main>
+      <section id="view-status">
+        <h2>Status</h2>
+        <div class="actions">
+          <button id="scan-btn">Run scan</button>
+          <button id="stop-btn" class="secondary hidden" type="button">Stop</button>
+          <span id="last-scan">No scan yet</span>
+          <span id="scan-state" class="tag hidden">Scanning…</span>
+          <span id="scheduler-state" class="tag">Scheduler: off</span>
+        </div>
+        <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
+        <div id="status-hint" class="hint hidden"></div>
+        <div id="status"></div>
+      </section>
+
+      <section id="view-settings" class="hidden">
+        <div class="view-header">
+          <h2>Settings</h2>
+          <button id="back-from-settings" class="secondary" type="button">Back to status</button>
+        </div>
+        <form id="config-form">
+          <label>
+            <input type="checkbox" id="scheduler-enabled">
+            Scheduler enabled
+          </label>
+          <label>
+            Scan interval (sec)
+            <input type="number" id="scan-interval" min="30" step="30">
+          </label>
+          <label>
+            Global policy
+            <select id="global-policy">
+              <option value="update">update</option>
+              <option value="notify_only">notify_only</option>
+              <option value="skip">skip</option>
+            </select>
+          </label>
+          <label>
+            Discord webhook URL
+            <input type="text" id="discord-url" placeholder="https://discord.com/api/webhooks/...">
+          </label>
+          <label>
+            <input type="checkbox" id="discord-enabled">
+            Discord notifications enabled
+          </label>
+          <label>
+            <input type="checkbox" id="update-stopped">
+            Update stopped containers (keep them stopped)
+          </label>
+          <button type="submit">Save</button>
+        </form>
+      </section>
+
+      <section id="view-servers" class="hidden">
+        <div class="view-header">
+          <h2>Servers</h2>
+          <button id="back-from-servers" class="secondary" type="button">Back to status</button>
+        </div>
+
+        <div class="servers-grid">
+          <div class="servers-col">
+            <h3>Local server</h3>
+            <form id="local-form">
+              <label>
+                Name
+                <input type="text" id="local-name" placeholder="local">
+              </label>
+              <label>
+                Docker socket
+                <input type="text" id="local-socket" placeholder="/var/run/docker.sock">
+              </label>
+              <button type="submit">Add / Update</button>
+            </form>
+
+        <h3>Remote servers</h3>
+        <form id="remote-form">
+          <label>
+            Name
+            <input type="text" id="remote-name" placeholder="prod-01">
+          </label>
+          <label>
+            URL
+            <input type="text" id="remote-url" placeholder="https://10.0.0.10:8080">
+          </label>
+          <label>
+            Token / API key
+            <div class="input-row">
+              <input type="text" id="remote-token" placeholder="32-char token">
+              <button id="generate-token" class="secondary" type="button">Generate</button>
+            </div>
+          </label>
+          <button type="submit">Add / Update</button>
+        </form>
+          </div>
+          <div class="servers-col">
+            <h3>Servers list</h3>
+            <ul id="servers-list"></ul>
+          </div>
+        </div>
+      </section>
+
+      <section id="view-logs" class="hidden">
+        <div class="view-header">
+          <h2>Logs</h2>
+          <button id="back-from-logs" class="secondary" type="button">Back to status</button>
+        </div>
+        <div class="logs-toolbar">
+          <label class="inline-field">
+            Level
+            <select id="logs-level">
+              <option value="all">All</option>
+              <option value="info">Info</option>
+              <option value="error">Error</option>
+            </select>
+          </label>
+          <button id="refresh-logs" class="secondary" type="button">Refresh</button>
+          <button id="clear-logs" class="secondary" type="button">Clear</button>
+          <span id="logs-status" class="tag">Idle</span>
+        </div>
+        <div id="logs-list" class="logs-list"></div>
+      </section>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
