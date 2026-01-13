@@ -48,6 +48,21 @@ func main() {
 
 	srv := server.New(store, watcher, agentMode, agentToken)
 	cfg := store.Get()
+	if agentMode && len(cfg.LocalServers) == 0 {
+		if _, err := os.Stat("/var/run/docker.sock"); err == nil {
+			updated, err := store.Update(func(c *config.Config) {
+				c.LocalServers = []config.LocalServer{{Name: "local", Socket: "/var/run/docker.sock"}}
+			})
+			if err == nil {
+				cfg = updated
+				log.Printf("startup: agent default local server configured (/var/run/docker.sock)")
+			} else {
+				log.Printf("startup: agent default local server not configured: %v", err)
+			}
+		} else {
+			log.Printf("startup: agent local docker socket not found: %v", err)
+		}
+	}
 	srv.UpdateDiscord(cfg.DiscordWebhookURL)
 
 	addr := resolveAddr()
