@@ -3,7 +3,7 @@ module contiwatch
 go 1.22
 
 require (
-	github.com/docker/docker v24.0.9+incompatible
+	github.com/docker/docker v25.0.5+incompatible
 )
 
 require (
