@@ -37,6 +37,19 @@ docker run -d \
 
 Open `http://localhost:8080`.
 
+## Container images (GHCR)
+Main releases (multi-arch):
+```bash
+docker pull ghcr.io/<owner>/<repo>:latest
+docker pull ghcr.io/<owner>/<repo>:<version>
+```
+
+Dev releases (multi-arch):
+```bash
+docker pull ghcr.io/<owner>/<repo>:dev_latest
+docker pull ghcr.io/<owner>/<repo>:dev_<version>
+```
+
 ## Environment
 - `CONTIWATCH_ADDR` (default `:8080`)
 - `CONTIWATCH_CONFIG` (default `/data/config.json`)
