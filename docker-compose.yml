@@ -1,6 +1,6 @@
 services:
   contiwatch:
-    build: .
+    image: ghcr.io/contiwatch/contiwatch:dev_latest
     container_name: contiwatch
 #    user: 1026:100
     networks:
