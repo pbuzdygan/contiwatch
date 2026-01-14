@@ -339,6 +339,40 @@ h2 {
   margin-top: 12px;
 }
 
+.server-item {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: white;
+}
+
+.server-item-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.server-item-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+}
+
+.server-item-meta {
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+.server-item-actions {
+  display: flex;
+  gap: 8px;
+}
+
 .toggle-btn {
   border: none;
   background: none;

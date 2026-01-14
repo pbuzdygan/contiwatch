@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"net/url"
@@ -98,6 +99,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/config", s.handleConfig)
 	s.mux.HandleFunc("/api/servers", s.handleServers)
 	s.mux.HandleFunc("/api/servers/", s.handleServerByName)
+	s.mux.HandleFunc("/api/servers/info", s.handleServersInfo)
 	s.mux.HandleFunc("/api/locals", s.handleLocals)
 	s.mux.HandleFunc("/api/locals/", s.handleLocalByName)
 	s.mux.HandleFunc("/api/status", s.handleStatus)
@@ -278,6 +280,46 @@ func (s *Server) handleServerByName(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, updated.RemoteServers)
 }
 
+type serverInfo struct {
+	Type    string `json:"type"`
+	Name    string `json:"name"`
+	Address string `json:"address"`
+	Version string `json:"version"`
+	Status  string `json:"status"`
+}
+
+func (s *Server) handleServersInfo(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	cfg := s.store.Get()
+	items := []serverInfo{}
+	for _, local := range cfg.LocalServers {
+		items = append(items, serverInfo{
+			Type:    "local",
+			Name:    local.Name,
+			Address: local.Socket,
+			Version: s.version,
+			Status:  "online",
+		})
+	}
+
+	client := &http.Client{Timeout: 5 * time.Second}
+	for _, remote := range cfg.RemoteServers {
+		version, status := fetchRemoteVersion(r.Context(), client, remote)
+		items = append(items, serverInfo{
+			Type:    "remote",
+			Name:    remote.Name,
+			Address: remote.URL,
+			Version: version,
+			Status:  status,
+		})
+	}
+
+	writeJSON(w, http.StatusOK, items)
+}
+
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	s.lastScanMutex.RLock()
 	defer s.lastScanMutex.RUnlock()
@@ -424,6 +466,13 @@ func (s *Server) handleUpdateContainer(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	updateCtx := r.Context()
+	var cancel context.CancelFunc
+	if s.agentMode {
+		updateCtx, cancel = context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+	}
+
 	var result dockerwatcher.UpdateResult
 	var err error
 	if isRemote {
@@ -432,11 +481,21 @@ func (s *Server) handleUpdateContainer(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, errors.New("remote server not found"))
 			return
 		}
-		result, err = s.updateRemoteContainer(r.Context(), remote, containerID)
+		result, err = s.updateRemoteContainer(updateCtx, remote, containerID)
 		if err != nil {
-			s.addLog("error", fmt.Sprintf("update failed: %s: %v", containerID, err))
-			writeError(w, http.StatusBadGateway, err)
-			return
+			if isRemoteUpdateDisconnect(err) {
+				result = dockerwatcher.UpdateResult{
+					ID:      containerID,
+					Name:    shortID(containerID),
+					Updated: false,
+					Message: "update triggered; agent restarting",
+				}
+				s.addLog("warn", fmt.Sprintf("update connection closed: %s (agent restarting)", containerID))
+			} else {
+				s.addLog("error", fmt.Sprintf("update failed: %s: %v", containerID, err))
+				writeError(w, http.StatusBadGateway, err)
+				return
+			}
 		}
 	} else {
 		localServer, ok := findLocalServer(cfg.LocalServers, serverName)
@@ -451,7 +510,7 @@ func (s *Server) handleUpdateContainer(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		defer watcher.Close()
-		result, err = watcher.UpdateContainer(r.Context(), containerID, cfg)
+		result, err = watcher.UpdateContainer(updateCtx, containerID, cfg)
 		if err != nil {
 			s.addLog("error", fmt.Sprintf("update failed: %s: %v", containerID, err))
 			writeError(w, http.StatusInternalServerError, err)
@@ -1010,6 +1069,57 @@ func findRemoteServer(servers []config.RemoteServer, name string) (config.Remote
 		}
 	}
 	return config.RemoteServer{}, false
+}
+
+func isRemoteUpdateDisconnect(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, io.EOF) {
+		return true
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "eof") || strings.Contains(msg, "connection reset") || strings.Contains(msg, "broken pipe")
+}
+
+func shortID(value string) string {
+	if len(value) <= 12 {
+		return value
+	}
+	return value[:12]
+}
+
+func fetchRemoteVersion(ctx context.Context, client *http.Client, remote config.RemoteServer) (string, string) {
+	if remote.URL == "" {
+		return "unknown", "offline"
+	}
+	url := strings.TrimSuffix(remote.URL, "/") + "/api/version"
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return "unknown", "offline"
+	}
+	if remote.Token != "" {
+		req.Header.Set("Authorization", "Bearer "+remote.Token)
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "unknown", "offline"
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "unknown", "offline"
+	}
+	var payload struct {
+		Version string `json:"version"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return "unknown", "offline"
+	}
+	version := strings.TrimSpace(payload.Version)
+	if version == "" {
+		version = "unknown"
+	}
+	return version, "online"
 }
 
 func findLocalServer(servers []config.LocalServer, name string) (config.LocalServer, bool) {

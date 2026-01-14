@@ -28,7 +28,6 @@ const sidebar = document.getElementById("sidebar");
 const sidebarCloseBtn = document.getElementById("sidebar-close");
 const overlay = document.getElementById("overlay");
 const sidebarPin = document.getElementById("sidebar-pin");
-const sidebarSchedulerInput = document.getElementById("sidebar-scheduler");
 const viewStatusEl = document.getElementById("view-status");
 const viewSettingsEl = document.getElementById("view-settings");
 const viewServersEl = document.getElementById("view-servers");
@@ -52,10 +51,10 @@ let currentConfig = null;
 let cachedLocals = [];
 let cachedRemotes = [];
 let scanFollowUpTimer = null;
-let scanAllInProgress = false;
 let scanAllTotal = 0;
 let scanAllDone = 0;
 let scanAllInProgress = false;
+let cachedServerInfo = {};
 
 async function fetchJSON(url, options = {}) {
   const res = await fetch(url, options);
@@ -279,6 +278,7 @@ function renderStatus(results) {
             updateState.classList.remove("hidden");
             updateState.textContent = "Updating…";
             let updateResult = null;
+            let restartHint = false;
             try {
               const scope = result.local
                 ? `local:${result.server_name || "local"}`
@@ -288,7 +288,12 @@ function renderStatus(results) {
               if (updateResult.updated) {
                 updateState.textContent = `Updated (${updateResult.previous_state} → ${updateResult.current_state})`;
               } else {
-                updateState.textContent = updateResult.message || "Not updated";
+                if (updateResult.message && /agent restarting/i.test(updateResult.message)) {
+                  restartHint = true;
+                  updateState.textContent = "Agent restarting — recheck in 30s";
+                } else {
+                  updateState.textContent = updateResult.message || "Not updated";
+                }
               }
             } catch (err) {
               updateState.textContent = `Error: ${err.message}`;
@@ -305,6 +310,9 @@ function renderStatus(results) {
               if (updateResult) {
                 if (updateResult.updated) {
                   showToast(`Updated ${updateResult.name} (${updateResult.previous_state} → ${updateResult.current_state})`);
+                } else if (restartHint) {
+                  showToast("Agent restarting — recheck in 30s.");
+                  window.setTimeout(refreshStatus, 30000);
                 } else {
                   showToast(`${updateResult.name}: ${updateResult.message || "Not updated"}`);
                 }
@@ -374,14 +382,37 @@ function renderServers(localServers, remoteServers) {
   }
 
   items.forEach((item) => {
+    const infoKey = `${item.type}:${item.server.name}`;
+    const info = cachedServerInfo[infoKey] || {};
     const li = document.createElement("li");
-    const tokenLabel = item.type === "remote"
-      ? (item.server.token ? ` (${maskToken(item.server.token)})` : " (token missing)")
-      : "";
-    const label = item.type === "local"
-      ? `${item.server.name} - ${item.server.socket}`
-      : `${item.server.name} - ${item.server.url}${tokenLabel}`;
-    li.textContent = `${item.type.toUpperCase()}: ${label}`;
+    li.className = "server-item";
+
+    const infoBlock = document.createElement("div");
+    infoBlock.className = "server-item-info";
+
+    const nameRow = document.createElement("div");
+    nameRow.className = "server-item-title";
+    nameRow.textContent = item.server.name;
+
+    const typeTag = document.createElement("span");
+    typeTag.className = "tag";
+    typeTag.textContent = item.type.toUpperCase();
+    nameRow.appendChild(typeTag);
+    infoBlock.appendChild(nameRow);
+
+    const addressRow = document.createElement("div");
+    addressRow.className = "server-item-meta";
+    const addressValue = item.type === "local" ? item.server.socket : item.server.url;
+    addressRow.textContent = addressValue || "unknown";
+    infoBlock.appendChild(addressRow);
+
+    const versionRow = document.createElement("div");
+    versionRow.className = "server-item-meta";
+    const versionValue = info.version ? formatVersion(info.version) : "unknown";
+    versionRow.textContent = `Release: ${versionValue}`;
+    infoBlock.appendChild(versionRow);
+
+    li.appendChild(infoBlock);
 
     const editBtn = document.createElement("button");
     editBtn.textContent = "Edit";
@@ -407,10 +438,20 @@ function renderServers(localServers, remoteServers) {
       await refreshStatus();
     });
 
-    li.appendChild(editBtn);
-    li.appendChild(removeBtn);
+    const actions = document.createElement("div");
+    actions.className = "server-item-actions";
+    actions.appendChild(editBtn);
+    actions.appendChild(removeBtn);
+    li.appendChild(actions);
     serversListEl.appendChild(li);
   });
+}
+
+function formatVersion(raw) {
+  const version = String(raw || "").trim();
+  if (!version) return "unknown";
+  if (version.startsWith("v")) return version;
+  return `v${version}`;
 }
 
 function updateScanScopeOptions() {
@@ -450,8 +491,6 @@ async function refreshConfig() {
   discordInput.value = cfg.discord_webhook_url || "";
   discordEnabledInput.checked = cfg.discord_notifications_enabled !== false;
   updateStoppedInput.checked = Boolean(cfg.update_stopped_containers);
-  sidebarSchedulerInput.checked = Boolean(cfg.scheduler_enabled);
-
   const enabled = Boolean(cfg.scheduler_enabled);
   const interval = Number(cfg.scan_interval_sec);
   const intervalMinutes = Math.max(1, Math.round(interval / 60));
@@ -465,12 +504,21 @@ async function refreshConfig() {
 }
 
 async function refreshServers() {
-  const [locals, remotes] = await Promise.all([
+  const [locals, remotes, info] = await Promise.all([
     fetchJSON("/api/locals"),
     fetchJSON("/api/servers"),
+    fetchJSON("/api/servers/info").catch(() => []),
   ]);
   cachedLocals = locals || [];
   cachedRemotes = remotes || [];
+  cachedServerInfo = {};
+  if (Array.isArray(info)) {
+    info.forEach((item) => {
+      if (!item || !item.name || !item.type) return;
+      const key = `${item.type}:${item.name}`;
+      cachedServerInfo[key] = item;
+    });
+  }
   renderServers(cachedLocals, cachedRemotes);
   updateScanScopeOptions();
   if (!cachedLocals.length) {
@@ -794,22 +842,6 @@ configForm.addEventListener("submit", async (event) => {
     alert("Saved");
   } catch (err) {
     alert(err.message);
-  }
-});
-
-sidebarSchedulerInput.addEventListener("change", async () => {
-  try {
-    const cfg = await fetchJSON("/api/config");
-    cfg.scheduler_enabled = sidebarSchedulerInput.checked;
-    await fetchJSON("/api/config", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(cfg),
-    });
-    await refreshConfig();
-  } catch (err) {
-    alert(err.message);
-    sidebarSchedulerInput.checked = !sidebarSchedulerInput.checked;
   }
 });
 
