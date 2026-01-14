@@ -700,7 +700,7 @@ function startScanFollowUp(startedAt) {
       scanAllInProgress = false;
       scanAllTotal = 0;
       scanAllDone = 0;
-      setScanningUI(false);
+      await updateScanState();
     }
   }, 2000);
 }
@@ -709,16 +709,7 @@ function startScanStateWatcher() {
   stopScanStateWatcher();
   scanStateRunning = false;
   scanStateTimer = window.setInterval(async () => {
-    try {
-      const state = await fetchJSON("/api/scan/state");
-      scanStateRunning = Boolean(state && state.running);
-      if (scanStateRunning) {
-        await refreshStatus();
-      }
-      setScanningUI(false);
-    } catch {
-      scanStateRunning = false;
-    }
+    await updateScanState();
   }, 4000);
 }
 
@@ -726,6 +717,20 @@ function stopScanStateWatcher() {
   if (scanStateTimer) {
     window.clearInterval(scanStateTimer);
     scanStateTimer = null;
+  }
+}
+
+async function updateScanState() {
+  try {
+    const state = await fetchJSON("/api/scan/state");
+    scanStateRunning = Boolean(state && state.running);
+    if (scanStateRunning) {
+      await refreshStatus();
+    }
+    setScanningUI(false);
+  } catch {
+    scanStateRunning = false;
+    setScanningUI(false);
   }
 }
 
