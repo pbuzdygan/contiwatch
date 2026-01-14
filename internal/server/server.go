@@ -479,6 +479,14 @@ func (s *Server) handleUpdateContainer(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	cfg := s.store.Get()
+	if pruneOverride := strings.TrimSpace(r.URL.Query().Get("prune")); pruneOverride != "" {
+		switch strings.ToLower(pruneOverride) {
+		case "1", "true", "yes", "on":
+			cfg.PruneDanglingImages = true
+		default:
+			cfg.PruneDanglingImages = false
+		}
+	}
 	serverParam := strings.TrimSpace(r.URL.Query().Get("server"))
 	isRemote := false
 	serverName := serverParam
@@ -535,7 +543,7 @@ func (s *Server) handleUpdateContainer(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, errors.New("remote server not found"))
 			return
 		}
-		result, err = s.updateRemoteContainer(updateCtx, remote, containerID)
+		result, err = s.updateRemoteContainer(updateCtx, remote, containerID, cfg.PruneDanglingImages)
 		if err != nil {
 			if isRemoteUpdateDisconnect(err) {
 				result = dockerwatcher.UpdateResult{
@@ -582,12 +590,14 @@ func (s *Server) handleUpdateContainer(w http.ResponseWriter, r *http.Request) {
 	log.Printf("manual update: server=%s (%s) container=%s updated=%t previous=%s current=%s msg=%s", serverLabel, serverScope, result.Name, result.Updated, result.PreviousState, result.CurrentState, result.Message)
 	if result.Updated {
 		s.addLog("info", fmt.Sprintf("updated %s (%s → %s) on %s (%s)", result.Name, result.PreviousState, result.CurrentState, serverLabel, serverScope))
-		if cfg.PruneDanglingImages {
+		if strings.Contains(result.Message, "prune") {
 			if strings.Contains(result.Message, "prune failed") {
 				s.addLog("error", fmt.Sprintf("prune dangling images failed after update: %s on %s (%s)", result.Name, serverLabel, serverScope))
 			} else {
 				s.addLog("info", fmt.Sprintf("pruned dangling images after update: %s on %s (%s) %s", result.Name, serverLabel, serverScope, result.Message))
 			}
+		} else if cfg.PruneDanglingImages && isRemote {
+			s.addLog("warn", fmt.Sprintf("prune not reported by agent: %s on %s (%s)", result.Name, serverLabel, serverScope))
 		}
 	} else {
 		s.addLog("info", fmt.Sprintf("update skipped %s on %s (%s): %s", result.Name, serverLabel, serverScope, result.Message))
@@ -820,11 +830,14 @@ func (s *Server) scanRemoteServer(ctx context.Context, remote config.RemoteServe
 	return payload, nil
 }
 
-func (s *Server) updateRemoteContainer(ctx context.Context, remote config.RemoteServer, containerID string) (dockerwatcher.UpdateResult, error) {
+func (s *Server) updateRemoteContainer(ctx context.Context, remote config.RemoteServer, containerID string, prune bool) (dockerwatcher.UpdateResult, error) {
 	if remote.URL == "" {
 		return dockerwatcher.UpdateResult{}, errors.New("missing url")
 	}
 	updateURL := strings.TrimSuffix(remote.URL, "/") + "/api/update/" + url.PathEscape(containerID)
+	if prune {
+		updateURL += "?prune=1"
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, updateURL, nil)
 	if err != nil {
 		return dockerwatcher.UpdateResult{}, err
