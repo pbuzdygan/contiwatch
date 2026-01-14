@@ -13,6 +13,7 @@ import (
 	"path"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"contiwatch/internal/config"
@@ -44,6 +45,7 @@ type Server struct {
 	agentMode  bool
 	agentToken string
 	version    string
+	remoteScanRunning int64
 }
 
 func New(store *config.Store, watcher *dockerwatcher.Watcher, agentMode bool, agentToken string, version string) *Server {
@@ -103,6 +105,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/locals", s.handleLocals)
 	s.mux.HandleFunc("/api/locals/", s.handleLocalByName)
 	s.mux.HandleFunc("/api/status", s.handleStatus)
+	s.mux.HandleFunc("/api/scan/state", s.handleScanState)
 	s.mux.HandleFunc("/api/scan", s.handleScan)
 	s.mux.HandleFunc("/api/update/", s.handleUpdateContainer)
 	s.mux.HandleFunc("/api/logs", s.handleLogs)
@@ -326,6 +329,14 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, s.lastScan)
 }
 
+func (s *Server) handleScanState(w http.ResponseWriter, r *http.Request) {
+	s.scanMutex.Lock()
+	scanRunning := s.scanRunning
+	s.scanMutex.Unlock()
+	remoteRunning := atomic.LoadInt64(&s.remoteScanRunning) > 0
+	writeJSON(w, http.StatusOK, map[string]bool{"running": scanRunning || remoteRunning})
+}
+
 func (s *Server) handleVersion(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"version": s.version})
 }
@@ -404,7 +415,9 @@ func (s *Server) handleScan(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.addLog("info", fmt.Sprintf("remote scan started: %s", remote.Name))
+		atomic.AddInt64(&s.remoteScanRunning, 1)
 		result, err := s.scanRemoteServer(r.Context(), remote)
+		atomic.AddInt64(&s.remoteScanRunning, -1)
 		if err != nil {
 			s.addLog("error", fmt.Sprintf("manual scan failed: %s: %v", remote.Name, err))
 			writeError(w, http.StatusBadGateway, err)
@@ -772,6 +785,8 @@ func (s *Server) updateRemoteContainer(ctx context.Context, remote config.Remote
 }
 
 func (s *Server) triggerRemoteScans(ctx context.Context, remotes []config.RemoteServer) {
+	atomic.AddInt64(&s.remoteScanRunning, 1)
+	defer atomic.AddInt64(&s.remoteScanRunning, -1)
 	successCount := 0
 	failCount := 0
 	for _, remote := range remotes {

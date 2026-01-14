@@ -46,7 +46,7 @@ let currentScanController = null;
 let currentView = "status";
 let updateInProgress = false;
 let logsRefreshTimer = null;
-let statusRefreshTimer = null;
+let scanStateTimer = null;
 let currentConfig = null;
 let cachedLocals = [];
 let cachedRemotes = [];
@@ -55,6 +55,7 @@ let scanAllTotal = 0;
 let scanAllDone = 0;
 let scanAllInProgress = false;
 let cachedServerInfo = {};
+let scanStateRunning = false;
 
 async function fetchJSON(url, options = {}) {
   const res = await fetch(url, options);
@@ -108,8 +109,9 @@ function renderStatus(results) {
     const hasCheckedAt = checkedAt && !Number.isNaN(checkedAt.getTime()) && checkedAt.getTime() > 0;
     const isOffline = Boolean(result.error);
     const isPending = !hasCheckedAt && !isOffline;
-    const isScanningRemote = scanAllInProgress && isPending;
-    const statusLabel = isOffline ? "offline" : (hasCheckedAt ? "online" : (isScanningRemote ? "scanning" : "pending"));
+    const isScanningRemote = (scanAllInProgress || scanStateRunning || currentScanController) && isPending;
+    const statusLabel = isOffline ? "offline" : "online";
+    const scanLabel = isScanningRemote ? "scanning" : (isPending ? "pending" : "");
 
     const header = document.createElement("div");
     header.className = "server-header";
@@ -127,6 +129,12 @@ function renderStatus(results) {
     statusBadge.className = `status-badge status-${statusLabel}`;
     statusBadge.textContent = statusLabel;
     headerLeft.appendChild(statusBadge);
+    if (scanLabel) {
+      const scanBadge = document.createElement("span");
+      scanBadge.className = `status-badge status-${scanLabel}`;
+      scanBadge.textContent = scanLabel;
+      headerLeft.appendChild(scanBadge);
+    }
 
     const summary = document.createElement("span");
     summary.className = "server-summary";
@@ -631,29 +639,17 @@ function stopLogsAutoRefresh() {
   }
 }
 
-function startStatusAutoRefresh() {
-  stopStatusAutoRefresh();
-  refreshStatus();
-  statusRefreshTimer = window.setInterval(refreshStatus, 5000);
-}
-
-function stopStatusAutoRefresh() {
-  if (statusRefreshTimer) {
-    window.clearInterval(statusRefreshTimer);
-    statusRefreshTimer = null;
-  }
-}
 
 function setScanningUI(isScanning) {
   scanBtn.disabled = isScanning || updateInProgress;
   if (scanScopeSelect) {
     scanScopeSelect.disabled = isScanning || updateInProgress;
   }
-  const showScanState = isScanning || scanAllInProgress;
+  const showScanState = isScanning || scanAllInProgress || scanStateRunning;
   scanStateEl.classList.toggle("hidden", !showScanState);
   stopBtn.classList.toggle("hidden", !isScanning);
   if (showScanState) {
-    if (scanAllInProgress && !isScanning) {
+    if ((scanAllInProgress || scanStateRunning) && !isScanning) {
       const total = scanAllTotal || 0;
       const done = scanAllDone || 0;
       scanStateEl.textContent = total > 0
@@ -707,6 +703,30 @@ function startScanFollowUp(startedAt) {
   }, 2000);
 }
 
+function startScanStateWatcher() {
+  stopScanStateWatcher();
+  scanStateRunning = false;
+  scanStateTimer = window.setInterval(async () => {
+    try {
+      const state = await fetchJSON("/api/scan/state");
+      scanStateRunning = Boolean(state && state.running);
+      if (scanStateRunning) {
+        await refreshStatus();
+      }
+      setScanningUI(false);
+    } catch {
+      scanStateRunning = false;
+    }
+  }, 4000);
+}
+
+function stopScanStateWatcher() {
+  if (scanStateTimer) {
+    window.clearInterval(scanStateTimer);
+    scanStateTimer = null;
+  }
+}
+
 function showToast(message, timeoutMs = 8000) {
   if (!toastEl) return;
   if (!message) return;
@@ -734,9 +754,9 @@ function setView(nextView) {
   }
 
   if (nextView === "status") {
-    startStatusAutoRefresh();
+    startScanStateWatcher();
   } else {
-    stopStatusAutoRefresh();
+    stopScanStateWatcher();
   }
 }
 
@@ -949,6 +969,7 @@ async function init() {
   await refreshConfig();
   await refreshServers();
   await refreshStatus();
+  startScanStateWatcher();
   await refreshVersion();
   if (localSocketInput && !localSocketInput.value) {
     localSocketInput.value = "/var/run/docker.sock";
