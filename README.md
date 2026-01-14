@@ -65,6 +65,7 @@ docker pull ghcr.io/<owner>/<repo>:dev_<version>
 - `discord_webhook_url`
 - `discord_notifications_enabled` (if `false`, no Discord notifications are sent)
 - `update_stopped_containers` (if `true`, `update` policy also updates stopped containers but keeps them stopped)
+- `prune_dangling_images` (if `true`, prune dangling images after updates)
 - `local_servers` (list of local Docker daemons with `name` and `socket`)
 - `remote_servers` (list of remote servers with `name`, `url`, and optional `token`)
 

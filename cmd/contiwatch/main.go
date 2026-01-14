@@ -44,6 +44,13 @@ func resolveVersion() string {
 }
 
 func main() {
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "-version", "--version":
+			fmt.Println(resolveVersion())
+			return
+		}
+	}
 	configPath := server.ResolveConfigPath()
 	_, configStatErr := os.Stat(configPath)
 	configExisted := configStatErr == nil
@@ -102,6 +109,7 @@ func main() {
 	log.Printf("startup: global policy=%s", cfg.GlobalPolicy)
 	log.Printf("startup: update stopped containers=%t", cfg.UpdateStoppedContainers)
 	log.Printf("startup: discord notifications=%t", discordNotificationsEnabled(cfg))
+	log.Printf("startup: release=%s", version)
 	log.Printf("startup: agent mode=%t", agentMode)
 	if agentMode {
 		log.Printf("startup: agent api=enabled (token required)")

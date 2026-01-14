@@ -45,7 +45,7 @@ type Server struct {
 	agentMode  bool
 	agentToken string
 	version    string
-	remoteScanRunning int64
+	remoteScanRunning atomic.Int64
 }
 
 func New(store *config.Store, watcher *dockerwatcher.Watcher, agentMode bool, agentToken string, version string) *Server {
@@ -333,7 +333,7 @@ func (s *Server) handleScanState(w http.ResponseWriter, r *http.Request) {
 	s.scanMutex.Lock()
 	scanRunning := s.scanRunning
 	s.scanMutex.Unlock()
-	remoteRunning := atomic.LoadInt64(&s.remoteScanRunning) > 0
+	remoteRunning := s.remoteScanRunning.Load() > 0
 	writeJSON(w, http.StatusOK, map[string]bool{"running": scanRunning || remoteRunning})
 }
 
@@ -415,9 +415,9 @@ func (s *Server) handleScan(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.addLog("info", fmt.Sprintf("remote scan started: %s", remote.Name))
-		atomic.AddInt64(&s.remoteScanRunning, 1)
+		s.remoteScanRunning.Add(1)
 		result, err := s.scanRemoteServer(r.Context(), remote)
-		atomic.AddInt64(&s.remoteScanRunning, -1)
+		s.remoteScanRunning.Add(-1)
 		if err != nil {
 			s.addLog("error", fmt.Sprintf("manual scan failed: %s: %v", remote.Name, err))
 			writeError(w, http.StatusBadGateway, err)
@@ -533,6 +533,13 @@ func (s *Server) handleUpdateContainer(w http.ResponseWriter, r *http.Request) {
 	log.Printf("manual update: container=%s updated=%t previous=%s current=%s msg=%s", result.Name, result.Updated, result.PreviousState, result.CurrentState, result.Message)
 	if result.Updated {
 		s.addLog("info", fmt.Sprintf("updated %s (%s → %s)", result.Name, result.PreviousState, result.CurrentState))
+		if cfg.PruneDanglingImages {
+			if strings.Contains(result.Message, "prune failed") {
+				s.addLog("error", fmt.Sprintf("prune dangling images failed after update: %s", result.Name))
+			} else {
+				s.addLog("info", fmt.Sprintf("pruned dangling images after update: %s", result.Name))
+			}
+		}
 	} else {
 		s.addLog("info", fmt.Sprintf("update skipped %s: %s", result.Name, result.Message))
 	}
@@ -785,8 +792,8 @@ func (s *Server) updateRemoteContainer(ctx context.Context, remote config.Remote
 }
 
 func (s *Server) triggerRemoteScans(ctx context.Context, remotes []config.RemoteServer) {
-	atomic.AddInt64(&s.remoteScanRunning, 1)
-	defer atomic.AddInt64(&s.remoteScanRunning, -1)
+	s.remoteScanRunning.Add(1)
+	defer s.remoteScanRunning.Add(-1)
 	successCount := 0
 	failCount := 0
 	for _, remote := range remotes {

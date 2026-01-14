@@ -26,6 +26,7 @@ type Config struct {
 	DiscordWebhookURL           string `json:"discord_webhook_url"`
 	DiscordNotificationsEnabled *bool  `json:"discord_notifications_enabled"`
 	UpdateStoppedContainers  bool           `json:"update_stopped_containers"`
+	PruneDanglingImages      bool           `json:"prune_dangling_images"`
 	LocalServers             []LocalServer  `json:"local_servers"`
 	RemoteServers            []RemoteServer `json:"remote_servers"`
 }
@@ -44,6 +45,7 @@ func DefaultConfig() Config {
 		DiscordWebhookURL:       "",
 		DiscordNotificationsEnabled: boolPtr(true),
 		UpdateStoppedContainers: false,
+		PruneDanglingImages:     false,
 		LocalServers:           []LocalServer{},
 		RemoteServers:           []RemoteServer{},
 	}

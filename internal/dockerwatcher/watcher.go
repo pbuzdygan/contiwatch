@@ -12,6 +12,7 @@ import (
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
 )
@@ -355,6 +356,15 @@ func (w *Watcher) UpdateContainer(ctx context.Context, containerID string, cfg c
 		}
 	}
 
+	message := "updated and restored state"
+	if cfg.PruneDanglingImages {
+		if err := w.pruneDanglingImages(ctx); err != nil {
+			message = fmt.Sprintf("updated; prune failed: %v", err)
+		} else {
+			message = "updated and pruned dangling images"
+		}
+	}
+
 	return UpdateResult{
 		ID:            newContainerID,
 		Name:          name,
@@ -362,6 +372,13 @@ func (w *Watcher) UpdateContainer(ctx context.Context, containerID string, cfg c
 		Updated:       true,
 		PreviousState: previousState,
 		CurrentState:  currentState,
-		Message:       "updated and restored state",
+		Message:       message,
 	}, nil
+}
+
+func (w *Watcher) pruneDanglingImages(ctx context.Context) error {
+	args := filters.NewArgs()
+	args.Add("dangling", "true")
+	_, err := w.client.ImagesPrune(ctx, args)
+	return err
 }

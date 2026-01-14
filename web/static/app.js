@@ -14,6 +14,7 @@ const globalPolicySelect = document.getElementById("global-policy");
 const discordInput = document.getElementById("discord-url");
 const discordEnabledInput = document.getElementById("discord-enabled");
 const updateStoppedInput = document.getElementById("update-stopped");
+const pruneDanglingInput = document.getElementById("prune-dangling");
 const localForm = document.getElementById("local-form");
 const localNameInput = document.getElementById("local-name");
 const localSocketInput = document.getElementById("local-socket");
@@ -109,9 +110,9 @@ function renderStatus(results) {
     const hasCheckedAt = checkedAt && !Number.isNaN(checkedAt.getTime()) && checkedAt.getTime() > 0;
     const isOffline = Boolean(result.error);
     const isPending = !hasCheckedAt && !isOffline;
-    const isScanningRemote = (scanAllInProgress || scanStateRunning || currentScanController) && isPending;
+    const isScanningActive = Boolean(scanAllInProgress || scanStateRunning || currentScanController);
     const statusLabel = isOffline ? "offline" : "online";
-    const scanLabel = isScanningRemote ? "scanning" : (isPending ? "pending" : "");
+    const scanLabel = isScanningActive ? "scanning" : (isPending ? "pending" : "");
 
     const header = document.createElement("div");
     header.className = "server-header";
@@ -178,7 +179,7 @@ function renderStatus(results) {
 
     if (!hasCheckedAt) {
       const empty = document.createElement("p");
-      empty.textContent = isScanningRemote ? "Scanning in progress..." : "Scan has not been run yet.";
+      empty.textContent = isScanningActive ? "Scanning in progress..." : "Scan has not been run yet.";
       body.appendChild(empty);
     } else if (!result.containers || result.containers.length === 0) {
       const empty = document.createElement("p");
@@ -499,6 +500,7 @@ async function refreshConfig() {
   discordInput.value = cfg.discord_webhook_url || "";
   discordEnabledInput.checked = cfg.discord_notifications_enabled !== false;
   updateStoppedInput.checked = Boolean(cfg.update_stopped_containers);
+  pruneDanglingInput.checked = Boolean(cfg.prune_dangling_images);
   const enabled = Boolean(cfg.scheduler_enabled);
   const interval = Number(cfg.scan_interval_sec);
   const intervalMinutes = Math.max(1, Math.round(interval / 60));
@@ -851,6 +853,7 @@ configForm.addEventListener("submit", async (event) => {
     discord_webhook_url: discordInput.value.trim(),
     discord_notifications_enabled: discordEnabledInput.checked,
     update_stopped_containers: updateStoppedInput.checked,
+    prune_dangling_images: pruneDanglingInput.checked,
   };
   try {
     await fetchJSON("/api/config", {
