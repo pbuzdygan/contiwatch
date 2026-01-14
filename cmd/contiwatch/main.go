@@ -49,6 +49,29 @@ func main() {
 		case "-version", "--version":
 			fmt.Println(resolveVersion())
 			return
+		case "--self-update":
+			if len(os.Args) < 3 {
+				log.Fatalf("self-update requires container id")
+			}
+			containerID := strings.TrimSpace(os.Args[2])
+			if containerID == "" {
+				log.Fatalf("self-update requires container id")
+			}
+			store, err := config.NewStore(server.ResolveConfigPath())
+			if err != nil {
+				log.Fatalf("config: %v", err)
+			}
+			watcher, err := dockerwatcher.New()
+			if err != nil {
+				log.Fatalf("docker: %v", err)
+			}
+			defer watcher.Close()
+			cfg := store.Get()
+			if _, err := watcher.UpdateContainer(context.Background(), containerID, cfg); err != nil {
+				log.Fatalf("self-update failed: %v", err)
+			}
+			log.Printf("self-update completed: %s", containerID)
+			return
 		}
 	}
 	configPath := server.ResolveConfigPath()

@@ -324,6 +324,12 @@ h2 {
   border-color: #b3dbff;
 }
 
+.status-restarting {
+  background: #e6f0ff;
+  color: #2f5cc9;
+  border-color: #b9ccff;
+}
+
 .status-offline {
   background: #fdecea;
   color: #b3261e;

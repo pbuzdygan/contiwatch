@@ -57,6 +57,8 @@ let scanAllDone = 0;
 let scanAllInProgress = false;
 let cachedServerInfo = {};
 let scanStateRunning = false;
+let selectedScanScope = "all";
+let restartingServers = {};
 
 async function fetchJSON(url, options = {}) {
   const res = await fetch(url, options);
@@ -102,7 +104,19 @@ function renderStatus(results) {
     statusHintEl.classList.add("hidden");
   }
 
-  results.forEach((result) => {
+  const visibleResults = selectedScanScope && selectedScanScope !== "all"
+    ? results.filter((result) => {
+      const prefix = result.local ? "local:" : "remote:";
+      return `${prefix}${result.server_name}` === selectedScanScope;
+    })
+    : results;
+
+  if (!visibleResults.length) {
+    statusEl.textContent = "No matching servers for selected target.";
+    return;
+  }
+
+  visibleResults.forEach((result) => {
     const card = document.createElement("div");
     card.className = "server-card";
 
@@ -110,9 +124,16 @@ function renderStatus(results) {
     const hasCheckedAt = checkedAt && !Number.isNaN(checkedAt.getTime()) && checkedAt.getTime() > 0;
     const isOffline = Boolean(result.error);
     const isPending = !hasCheckedAt && !isOffline;
-    const isScanningActive = Boolean(scanAllInProgress || scanStateRunning || currentScanController);
+    const shouldShowScanning = selectedScanScope && selectedScanScope !== "all"
+      ? `${result.local ? "local:" : "remote:"}${result.server_name}` === selectedScanScope
+      : true;
+    const isScanningActive = Boolean(
+      shouldShowScanning &&
+      (scanAllInProgress || scanStateRunning || currentScanController)
+    );
+    const isRestarting = Boolean(restartingServers[result.server_name] && restartingServers[result.server_name] > Date.now());
     const statusLabel = isOffline ? "offline" : "online";
-    const scanLabel = isScanningActive ? "scanning" : (isPending ? "pending" : "");
+    const scanLabel = isRestarting ? "restarting" : (isScanningActive ? "scanning" : (isPending ? "pending" : ""));
 
     const header = document.createElement("div");
     header.className = "server-header";
@@ -179,7 +200,11 @@ function renderStatus(results) {
 
     if (!hasCheckedAt) {
       const empty = document.createElement("p");
-      empty.textContent = isScanningActive ? "Scanning in progress..." : "Scan has not been run yet.";
+      if (isRestarting) {
+        empty.textContent = "Agent restarting...";
+      } else {
+        empty.textContent = isScanningActive ? "Scanning in progress..." : "Scan has not been run yet.";
+      }
       body.appendChild(empty);
     } else if (!result.containers || result.containers.length === 0) {
       const empty = document.createElement("p");
@@ -234,13 +259,15 @@ function renderStatus(results) {
         policySpan.textContent = `policy: ${container.policy}`;
         row.appendChild(policySpan);
 
+        const isSelfContainer = result.local && container.name === "contiwatch";
         const canUpdate =
           container.update_available &&
           !container.updated &&
           !container.paused &&
           !currentScanController &&
           !updateInProgress &&
-          (container.running || canUpdateStopped);
+          (container.running || canUpdateStopped) &&
+          !isSelfContainer;
 
         if (container.updated) {
           const actions = document.createElement("div");
@@ -266,6 +293,11 @@ function renderStatus(results) {
           infoBtn.type = "button";
           infoBtn.className = "btn-small secondary";
           infoBtn.textContent = "Info";
+
+          if (isSelfContainer) {
+            updateBtn.textContent = "Self-update disabled";
+            updateBtn.disabled = true;
+          }
 
           const updateState = document.createElement("span");
           updateState.className = "tag hidden";
@@ -297,7 +329,7 @@ function renderStatus(results) {
               if (updateResult.updated) {
                 updateState.textContent = `Updated (${updateResult.previous_state} → ${updateResult.current_state})`;
               } else {
-                if (updateResult.message && /agent restarting/i.test(updateResult.message)) {
+                if (updateResult.message && /agent restarting|self update scheduled/i.test(updateResult.message)) {
                   restartHint = true;
                   updateState.textContent = "Agent restarting — recheck in 30s";
                 } else {
@@ -320,8 +352,13 @@ function renderStatus(results) {
                 if (updateResult.updated) {
                   showToast(`Updated ${updateResult.name} (${updateResult.previous_state} → ${updateResult.current_state})`);
                 } else if (restartHint) {
+                  const serverKey = result.server_name || "remote";
+                  restartingServers[serverKey] = Date.now() + 30000;
                   showToast("Agent restarting — recheck in 30s.");
-                  window.setTimeout(refreshStatus, 30000);
+                  window.setTimeout(async () => {
+                    delete restartingServers[serverKey];
+                    await refreshStatus();
+                  }, 30000);
                 } else {
                   showToast(`${updateResult.name}: ${updateResult.message || "Not updated"}`);
                 }
@@ -465,7 +502,7 @@ function formatVersion(raw) {
 
 function updateScanScopeOptions() {
   if (!scanScopeSelect) return;
-  const currentValue = scanScopeSelect.value || "all";
+  const currentValue = scanScopeSelect.value || selectedScanScope || "all";
   const options = [
     { value: "all", label: "All servers" },
   ];
@@ -489,6 +526,14 @@ function updateScanScopeOptions() {
   if (options.some((option) => option.value === currentValue)) {
     scanScopeSelect.value = currentValue;
   }
+  selectedScanScope = scanScopeSelect.value;
+}
+
+if (scanScopeSelect) {
+  scanScopeSelect.addEventListener("change", () => {
+    selectedScanScope = scanScopeSelect.value || "all";
+    refreshStatus();
+  });
 }
 
 async function refreshConfig() {
@@ -804,6 +849,7 @@ scanBtn.addEventListener("click", async () => {
   scanAllInProgress = false;
   scanAllTotal = 0;
   scanAllDone = 0;
+  selectedScanScope = scanScopeSelect ? scanScopeSelect.value : "all";
   setScanningUI(true);
   try {
     const scope = scanScopeSelect ? scanScopeSelect.value : "all";
@@ -823,6 +869,8 @@ scanBtn.addEventListener("click", async () => {
     await refreshStatus();
     if (scanScopeSelect && scanScopeSelect.value === "all") {
       startScanFollowUp(scanStart);
+    } else {
+      await updateScanState();
     }
     await refreshLogs();
   }

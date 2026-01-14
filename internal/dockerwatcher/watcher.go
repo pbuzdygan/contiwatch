@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"time"
 
@@ -381,4 +382,63 @@ func (w *Watcher) pruneDanglingImages(ctx context.Context) error {
 	args.Add("dangling", "true")
 	_, err := w.client.ImagesPrune(ctx, args)
 	return err
+}
+
+func IsSelfContainer(containerID string) bool {
+	hostname, err := os.Hostname()
+	if err != nil || hostname == "" {
+		return false
+	}
+	return strings.HasPrefix(containerID, hostname)
+}
+
+func (w *Watcher) TriggerSelfUpdate(ctx context.Context, containerID string) error {
+	inspect, err := w.client.ContainerInspect(ctx, containerID)
+	if err != nil {
+		return err
+	}
+	imageRef := ""
+	if inspect.Config != nil {
+		imageRef = inspect.Config.Image
+	}
+	if imageRef == "" {
+		return errors.New("missing image reference")
+	}
+	if err := w.pullImage(ctx, imageRef); err != nil {
+		return err
+	}
+
+	nameSuffix := containerID
+	if len(nameSuffix) > 12 {
+		nameSuffix = nameSuffix[:12]
+	}
+	helperName := "contiwatch-updater-" + nameSuffix
+
+	env := []string{
+		"CONTIWATCH_CONFIG=/data/config.json",
+	}
+	var binds []string
+	binds = append(binds, "/var/run/docker.sock:/var/run/docker.sock")
+	for _, mount := range inspect.Mounts {
+		if mount.Destination == "/data" {
+			binds = append(binds, mount.Source+":/data")
+			break
+		}
+	}
+
+	helperConfig := &container.Config{
+		Image: imageRef,
+		Cmd:   []string{"/app/contiwatch", "--self-update", containerID},
+		Env:   env,
+	}
+	helperHost := &container.HostConfig{
+		AutoRemove: true,
+		Binds:      binds,
+	}
+
+	created, err := w.client.ContainerCreate(ctx, helperConfig, helperHost, nil, nil, helperName)
+	if err != nil {
+		return err
+	}
+	return w.client.ContainerStart(ctx, created.ID, types.ContainerStartOptions{})
 }

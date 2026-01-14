@@ -176,11 +176,13 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 				cfg.DiscordNotificationsEnabled = payload.DiscordNotificationsEnabled
 			}
 			cfg.UpdateStoppedContainers = payload.UpdateStoppedContainers
+			cfg.PruneDanglingImages = payload.PruneDanglingImages
 		})
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err)
 			return
 		}
+		s.addLog("info", fmt.Sprintf("settings updated: prune_dangling_images=%t", updated.PruneDanglingImages))
 		s.UpdateDiscord(updated.DiscordWebhookURL)
 		s.UpdateScheduler(updated)
 		writeJSON(w, http.StatusOK, updated)
@@ -490,6 +492,28 @@ func (s *Server) handleUpdateContainer(w http.ResponseWriter, r *http.Request) {
 
 	var result dockerwatcher.UpdateResult
 	var err error
+	if dockerwatcher.IsSelfContainer(containerID) {
+		if !s.agentMode {
+			writeError(w, http.StatusBadRequest, errors.New("self update is only supported in agent mode"))
+			return
+		}
+		if err := s.watcher.TriggerSelfUpdate(updateCtx, containerID); err != nil {
+			s.addLog("error", fmt.Sprintf("self update failed: %s: %v", containerID, err))
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		result = dockerwatcher.UpdateResult{
+			ID:            containerID,
+			Name:          shortID(containerID),
+			Updated:       false,
+			PreviousState: "online",
+			CurrentState:  "online",
+			Message:       "self update scheduled; recheck in 30s",
+		}
+		s.addLog("info", fmt.Sprintf("self update scheduled: %s", containerID))
+		writeJSON(w, http.StatusOK, result)
+		return
+	}
 	if isRemote {
 		remote, ok := findRemoteServer(cfg.RemoteServers, serverName)
 		if !ok {
