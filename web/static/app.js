@@ -767,14 +767,19 @@ function stopScanStateWatcher() {
 
 async function updateScanState() {
   try {
+    const wasRunning = scanStateRunning;
     const state = await fetchJSON("/api/scan/state");
     scanStateRunning = Boolean(state && state.running);
-    if (scanStateRunning) {
+    if (scanStateRunning || wasRunning) {
       await refreshStatus();
     }
     setScanningUI(false);
   } catch {
+    const wasRunning = scanStateRunning;
     scanStateRunning = false;
+    if (wasRunning) {
+      await refreshStatus();
+    }
     setScanningUI(false);
   }
 }

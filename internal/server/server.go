@@ -399,6 +399,19 @@ func (s *Server) handleScan(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, errors.New("local server not found"))
 			return
 		}
+		s.scanMutex.Lock()
+		if s.scanRunning {
+			s.scanMutex.Unlock()
+			writeError(w, http.StatusConflict, errors.New("scan already in progress"))
+			return
+		}
+		s.scanRunning = true
+		s.scanMutex.Unlock()
+		defer func() {
+			s.scanMutex.Lock()
+			s.scanRunning = false
+			s.scanMutex.Unlock()
+		}()
 		s.addLog("info", fmt.Sprintf("local scan started: %s", local.Name))
 		result, err := s.scanLocalServer(r.Context(), cfg, local)
 		if err != nil {
@@ -406,6 +419,7 @@ func (s *Server) handleScan(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, err)
 			return
 		}
+		s.updateLastScans(result)
 		s.addLog("info", fmt.Sprintf("local scan finished: %s %s", local.Name, s.formatScanSummary(result)))
 		s.sendScanNotification(cfg, result)
 		s.addLog("info", fmt.Sprintf("manual scan finished: containers=%d", len(result.Containers)))
@@ -556,23 +570,26 @@ func (s *Server) handleUpdateContainer(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	log.Printf("manual update: container=%s updated=%t previous=%s current=%s msg=%s", result.Name, result.Updated, result.PreviousState, result.CurrentState, result.Message)
-	if result.Updated {
-		s.addLog("info", fmt.Sprintf("updated %s (%s → %s)", result.Name, result.PreviousState, result.CurrentState))
-		if cfg.PruneDanglingImages {
-			if strings.Contains(result.Message, "prune failed") {
-				s.addLog("error", fmt.Sprintf("prune dangling images failed after update: %s", result.Name))
-			} else {
-				s.addLog("info", fmt.Sprintf("pruned dangling images after update: %s", result.Name))
-			}
-		}
-	} else {
-		s.addLog("info", fmt.Sprintf("update skipped %s: %s", result.Name, result.Message))
-	}
-
 	serverLabel := serverName
 	if serverLabel == "" {
 		serverLabel = "local"
+	}
+	serverScope := "local"
+	if isRemote {
+		serverScope = "remote"
+	}
+	log.Printf("manual update: server=%s (%s) container=%s updated=%t previous=%s current=%s msg=%s", serverLabel, serverScope, result.Name, result.Updated, result.PreviousState, result.CurrentState, result.Message)
+	if result.Updated {
+		s.addLog("info", fmt.Sprintf("updated %s (%s → %s) on %s (%s)", result.Name, result.PreviousState, result.CurrentState, serverLabel, serverScope))
+		if cfg.PruneDanglingImages {
+			if strings.Contains(result.Message, "prune failed") {
+				s.addLog("error", fmt.Sprintf("prune dangling images failed after update: %s on %s (%s)", result.Name, serverLabel, serverScope))
+			} else {
+				s.addLog("info", fmt.Sprintf("pruned dangling images after update: %s on %s (%s)", result.Name, serverLabel, serverScope))
+			}
+		}
+	} else {
+		s.addLog("info", fmt.Sprintf("update skipped %s on %s (%s): %s", result.Name, serverLabel, serverScope, result.Message))
 	}
 	s.sendUpdateNotification(cfg, serverLabel, result)
 
@@ -734,6 +751,25 @@ func (s *Server) runScan(ctx context.Context) (dockerwatcher.ScanResult, error) 
 		return dockerwatcher.ScanResult{}, nil
 	}
 	return results[0], nil
+}
+
+func (s *Server) updateLastScans(result dockerwatcher.ScanResult) {
+	s.lastScanMutex.Lock()
+	defer s.lastScanMutex.Unlock()
+	updated := false
+	for i := range s.lastScans {
+		if s.lastScans[i].ServerName == result.ServerName && s.lastScans[i].Local == result.Local {
+			s.lastScans[i] = result
+			updated = true
+			break
+		}
+	}
+	if !updated {
+		s.lastScans = append(s.lastScans, result)
+	}
+	if s.lastScan.ServerName == "" || s.lastScan.ServerName == result.ServerName {
+		s.lastScan = result
+	}
 }
 
 func (s *Server) scanLocalServer(ctx context.Context, cfg config.Config, local config.LocalServer) (dockerwatcher.ScanResult, error) {
@@ -1008,9 +1044,11 @@ func (s *Server) UpdateSchedulerLocked(cfg config.Config) {
 			s.schedulerCancel()
 			s.schedulerCancel = nil
 		}
+		if s.schedulerEnabled {
+			s.addLog("info", "scheduler disabled")
+		}
 		s.schedulerEnabled = false
 		s.schedulerInterval = 0
-		s.addLog("info", "scheduler disabled")
 		return
 	}
 
