@@ -1,0 +1,1041 @@
+<!doctype html>
+<html lang="en" data-theme="auto">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Contiwatch — UI mockup (Sidebar + Dense + Dark palette)</title>
+    <style>
+      :root {
+        /* Example 1 layout + Example 3 palette/density */
+        --primary: #003343;
+        --accent: #4bb7c8;
+
+        --radius: 14px;
+        --control-h: 38px;
+        --shadow: 0 18px 55px rgba(0, 0, 0, 0.45);
+
+        --sidebar-w: 284px;
+        --page-max: 1240px;
+
+        /* default: dark */
+        --bg: #0b1220;
+        --panel: rgba(255, 255, 255, 0.06);
+        --panel-2: rgba(255, 255, 255, 0.04);
+        --text: rgba(255, 255, 255, 0.92);
+        --muted: rgba(255, 255, 255, 0.64);
+        --border: rgba(255, 255, 255, 0.12);
+        --focus: rgba(75, 183, 200, 0.26);
+
+        --gap-1: 8px;
+        --gap-2: 10px;
+        --gap-3: 12px;
+      }
+
+      @media (prefers-color-scheme: light) {
+        :root {
+          --bg: #f7f9fb;
+          --panel: rgba(255, 255, 255, 0.92);
+          --panel-2: rgba(255, 255, 255, 0.72);
+          --text: #0b1720;
+          --muted: rgba(11, 23, 32, 0.62);
+          --border: rgba(11, 23, 32, 0.12);
+          --shadow: 0 18px 45px rgba(0, 0, 0, 0.12);
+          --focus: rgba(75, 183, 200, 0.32);
+        }
+      }
+
+      html[data-theme="light"] body {
+        --bg: #f7f9fb;
+        --panel: rgba(255, 255, 255, 0.92);
+        --panel-2: rgba(255, 255, 255, 0.72);
+        --text: #0b1720;
+        --muted: rgba(11, 23, 32, 0.62);
+        --border: rgba(11, 23, 32, 0.12);
+        --shadow: 0 18px 45px rgba(0, 0, 0, 0.12);
+        --focus: rgba(75, 183, 200, 0.32);
+        color-scheme: light;
+      }
+      html[data-theme="dark"] body {
+        color-scheme: dark;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto,
+          Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+        color: var(--text);
+        background: radial-gradient(1000px 700px at 12% -18%, rgba(75, 183, 200, 0.18), transparent),
+          radial-gradient(900px 600px at 110% 25%, rgba(64, 97, 112, 0.22), transparent),
+          var(--bg);
+      }
+
+      .app {
+        display: grid;
+        grid-template-columns: var(--sidebar-w) 1fr;
+        min-height: 100vh;
+      }
+
+      .sidebar {
+        position: sticky;
+        top: 0;
+        align-self: start;
+        height: 100vh;
+        padding: 14px 12px;
+        border-right: 1px solid var(--border);
+        background: linear-gradient(180deg, rgba(0, 0, 0, 0.12), transparent);
+        overflow: auto;
+        display: flex;
+        flex-direction: column;
+        gap: var(--gap-2);
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 10px 8px;
+      }
+
+      .logo {
+        width: 34px;
+        height: 34px;
+        border-radius: 12px;
+        background: radial-gradient(circle at 30% 20%, rgba(75, 183, 200, 0.95), rgba(0, 51, 67, 0.92));
+        box-shadow: 0 10px 25px rgba(0, 0, 0, 0.25);
+      }
+
+      .brand-title {
+        display: grid;
+        line-height: 1.1;
+        min-width: 0;
+      }
+      .brand-title strong {
+        font-size: 0.98rem;
+        letter-spacing: -0.01em;
+      }
+      .brand-title span {
+        color: var(--muted);
+        font-size: 0.82rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .search {
+        padding: 0 10px;
+      }
+
+      .control {
+        height: var(--control-h);
+        width: 100%;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        background: var(--panel-2);
+        color: var(--text);
+        padding: 0 10px;
+        outline: none;
+        min-width: 0;
+      }
+      .control::placeholder {
+        color: color-mix(in srgb, var(--muted), transparent 25%);
+      }
+      .control:focus {
+        box-shadow: 0 0 0 4px var(--focus);
+        border-color: rgba(75, 183, 200, 0.55);
+      }
+
+      .nav {
+        display: grid;
+        gap: 6px;
+        padding: 6px 10px 8px;
+      }
+
+      .navbtn {
+        height: 38px;
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        border-radius: 12px;
+        border: 1px solid transparent;
+        background: transparent;
+        color: var(--text);
+        padding: 0 10px;
+        text-align: left;
+        cursor: pointer;
+        width: 100%;
+      }
+      .navbtn:hover {
+        background: rgba(75, 183, 200, 0.12);
+        border-color: rgba(75, 183, 200, 0.18);
+      }
+      .navbtn[aria-current="page"] {
+        background: rgba(75, 183, 200, 0.16);
+        border-color: rgba(75, 183, 200, 0.32);
+      }
+      .navbtn .label {
+        flex: 1;
+        min-width: 0;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .navbtn .count {
+        font-size: 0.78rem;
+        color: var(--muted);
+        border: 1px solid var(--border);
+        padding: 1px 8px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.03);
+      }
+
+      .sidebar-footer {
+        margin-top: auto;
+        padding: 10px;
+        display: grid;
+        gap: 10px;
+      }
+
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        height: 32px;
+        padding: 0 10px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.03);
+        color: var(--muted);
+        font-size: 0.85rem;
+        min-width: 0;
+      }
+
+      .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 999px;
+        background: var(--accent);
+        box-shadow: 0 0 0 4px rgba(75, 183, 200, 0.14);
+      }
+
+      .mono {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+          "Liberation Mono", "Courier New", monospace;
+      }
+
+      .content {
+        padding: 16px 16px 48px;
+      }
+
+      .topbar {
+        max-width: var(--page-max);
+        margin: 0 auto 12px;
+        padding: 12px 12px;
+        border-radius: var(--radius);
+        border: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.04);
+        backdrop-filter: blur(10px);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+      }
+
+      .topbar-left {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-width: 0;
+      }
+
+      .topbar-left h1 {
+        margin: 0;
+        font-size: 1.05rem;
+        letter-spacing: -0.01em;
+        white-space: nowrap;
+      }
+
+      .topbar-left .sub {
+        color: var(--muted);
+        font-size: 0.9rem;
+        min-width: 0;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .topbar-right {
+        display: inline-flex;
+        gap: 10px;
+        align-items: center;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+      }
+
+      .btn {
+        height: var(--control-h);
+        padding: 0 12px;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        background: var(--panel);
+        color: var(--text);
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        max-width: 100%;
+      }
+
+      .btn.primary {
+        border-color: rgba(75, 183, 200, 0.55);
+        background: linear-gradient(180deg, rgba(75, 183, 200, 0.95), rgba(64, 97, 112, 0.95));
+        color: #ffffff;
+      }
+
+      .btn:hover {
+        filter: brightness(0.98);
+      }
+      .btn:active {
+        transform: translateY(1px);
+      }
+
+      .truncate {
+        min-width: 0;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .chip {
+        height: 28px;
+        display: inline-flex;
+        align-items: center;
+        padding: 0 10px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.03);
+        color: var(--muted);
+        font-size: 0.82rem;
+        white-space: nowrap;
+      }
+
+      .page {
+        max-width: var(--page-max);
+        margin: 0 auto;
+        display: grid;
+        gap: 12px;
+      }
+
+      .card {
+        border-radius: var(--radius);
+        border: 1px solid var(--border);
+        background: var(--panel);
+        box-shadow: var(--shadow);
+        padding: 12px;
+        min-width: 0;
+      }
+
+      .card h2 {
+        margin: 0 0 10px;
+        font-size: 0.98rem;
+        letter-spacing: -0.01em;
+      }
+
+      .toolbar {
+        display: grid;
+        grid-template-columns: repeat(12, minmax(0, 1fr));
+        gap: var(--gap-2);
+        align-items: end;
+      }
+
+      .col-2 {
+        grid-column: span 2;
+      }
+      .col-3 {
+        grid-column: span 3;
+      }
+      .col-4 {
+        grid-column: span 4;
+      }
+      .col-6 {
+        grid-column: span 6;
+      }
+      .col-12 {
+        grid-column: span 12;
+      }
+
+      .field {
+        display: grid;
+        gap: 6px;
+        min-width: 0;
+      }
+
+      .field label {
+        font-size: 0.82rem;
+        color: var(--muted);
+      }
+
+      .tag {
+        height: 28px;
+        display: inline-flex;
+        align-items: center;
+        padding: 0 10px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.03);
+        color: var(--muted);
+        font-size: 0.82rem;
+        white-space: nowrap;
+      }
+
+      .status {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 5px 10px;
+        border-radius: 999px;
+        font-size: 0.78rem;
+        font-weight: 650;
+        border: 1px solid transparent;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+        white-space: nowrap;
+      }
+      .status.ok {
+        background: rgba(34, 197, 94, 0.12);
+        border-color: rgba(34, 197, 94, 0.25);
+        color: color-mix(in srgb, var(--text), #22c55e 35%);
+      }
+      .status.warn {
+        background: rgba(245, 158, 11, 0.12);
+        border-color: rgba(245, 158, 11, 0.25);
+        color: color-mix(in srgb, var(--text), #f59e0b 35%);
+      }
+      .status.bad {
+        background: rgba(239, 68, 68, 0.12);
+        border-color: rgba(239, 68, 68, 0.25);
+        color: color-mix(in srgb, var(--text), #ef4444 35%);
+      }
+
+      .server-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+      }
+
+      .server {
+        border-radius: var(--radius);
+        border: 1px solid var(--border);
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0.02));
+        padding: 12px;
+        display: grid;
+        gap: 10px;
+        min-width: 0;
+      }
+
+      .server.hidden {
+        display: none;
+      }
+
+      .server-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        min-width: 0;
+      }
+
+      .server-name {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-width: 0;
+      }
+
+      .server-name strong {
+        min-width: 0;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        letter-spacing: -0.01em;
+      }
+
+      .server-meta {
+        color: var(--muted);
+        font-size: 0.85rem;
+        min-width: 0;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .server-actions {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+      }
+
+      .btn.small {
+        height: 34px;
+        border-radius: 12px;
+        padding: 0 10px;
+        font-size: 0.9rem;
+      }
+
+      .kv {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+        padding-top: 8px;
+        border-top: 1px dashed var(--border);
+      }
+
+      .kv .item {
+        min-width: 0;
+      }
+
+      .kv .k {
+        color: var(--muted);
+        font-size: 0.78rem;
+        margin-bottom: 3px;
+      }
+
+      .kv .v {
+        font-size: 0.9rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .view {
+        display: none;
+      }
+      .view.active {
+        display: block;
+      }
+
+      .overlay {
+        display: none;
+      }
+      .mobile-only {
+        display: none;
+      }
+
+      @media (max-width: 980px) {
+        .app {
+          grid-template-columns: 1fr;
+        }
+        .sidebar {
+          position: fixed;
+          left: 0;
+          top: 0;
+          transform: translateX(-102%);
+          transition: transform 170ms ease;
+          z-index: 40;
+          box-shadow: 0 25px 60px rgba(0, 0, 0, 0.35);
+          width: var(--sidebar-w);
+        }
+        body.drawer-open .sidebar {
+          transform: translateX(0);
+        }
+        .overlay {
+          display: block;
+          position: fixed;
+          inset: 0;
+          background: rgba(0, 0, 0, 0.4);
+          z-index: 30;
+          opacity: 0;
+          pointer-events: none;
+          transition: opacity 170ms ease;
+        }
+        body.drawer-open .overlay {
+          opacity: 1;
+          pointer-events: auto;
+        }
+        .mobile-only {
+          display: inline-flex;
+        }
+        .toolbar {
+          grid-template-columns: 1fr;
+        }
+        .col-2,
+        .col-3,
+        .col-4,
+        .col-6,
+        .col-12 {
+          grid-column: span 1;
+        }
+        .server-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="overlay" id="overlay" aria-hidden="true"></div>
+
+    <div class="app">
+      <aside class="sidebar" aria-label="Sidebar menu">
+        <div class="brand">
+          <div class="logo" aria-hidden="true"></div>
+          <div class="brand-title">
+            <strong>Contiwatch</strong>
+            <span>Sidebar (Example 1) + palette & density (Example 3)</span>
+          </div>
+        </div>
+
+        <div class="search">
+          <input
+            id="q"
+            class="control"
+            placeholder="Search servers / containers…"
+            autocomplete="off"
+            spellcheck="false"
+          />
+        </div>
+
+        <nav class="nav" aria-label="Primary">
+          <button class="navbtn" data-view="status" aria-current="page" type="button">
+            <span class="label">Status</span>
+            <span class="count">1</span>
+          </button>
+          <button class="navbtn" data-view="settings" type="button">
+            <span class="label">Settings</span>
+            <span class="count">2</span>
+          </button>
+          <button class="navbtn" data-view="servers" type="button">
+            <span class="label">Servers</span>
+            <span class="count">3</span>
+          </button>
+          <button class="navbtn" data-view="logs" type="button">
+            <span class="label">Logs</span>
+            <span class="count">4</span>
+          </button>
+        </nav>
+
+        <div class="sidebar-footer">
+          <span class="pill"><span class="dot" aria-hidden="true"></span> Release: vdev</span>
+          <span class="pill">Server: <span class="mono truncate">local</span></span>
+        </div>
+      </aside>
+
+      <div class="content">
+        <div class="topbar">
+          <div class="topbar-left">
+            <button class="btn mobile-only" id="open-drawer" type="button" aria-label="Open menu">
+              <span class="truncate">Menu</span>
+            </button>
+            <h1 id="page-title">Status</h1>
+            <div class="sub truncate">Dense spacing + search in sidebar + dark palette.</div>
+          </div>
+          <div class="topbar-right">
+            <span class="chip">Scheduler: off</span>
+            <button class="btn" id="theme-toggle" type="button" title="Theme: auto / light / dark">
+              <span class="truncate" id="theme-label">Auto</span>
+            </button>
+            <button class="btn primary" type="button"><span class="truncate">Run scan</span></button>
+          </div>
+        </div>
+
+        <div class="page">
+          <section class="view active" id="view-status" aria-label="Status view">
+            <div class="card">
+              <h2>Status</h2>
+              <div class="toolbar" role="group" aria-label="Actions">
+                <div class="field col-3">
+                  <label for="target">Target</label>
+                  <select class="control" id="target">
+                    <option>All servers</option>
+                    <option>local</option>
+                    <option>prod-01 (very-long-server-name-that-should-ellipsis)</option>
+                  </select>
+                </div>
+                <div class="field col-3">
+                  <label for="last">Last scan</label>
+                  <input class="control" id="last" value="2026-01-14 09:22:11Z (37s ago)" />
+                </div>
+                <div class="field col-3">
+                  <label for="state">State</label>
+                  <input class="control" id="state" value="Idle" />
+                </div>
+                <div class="col-3" style="display:flex; gap:10px; align-items:end;">
+                  <button class="btn primary" type="button" style="flex:1;">
+                    <span class="truncate">Run scan</span>
+                  </button>
+                  <button class="btn" type="button" style="flex:1;">
+                    <span class="truncate">Stop</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div class="card">
+              <h2>Servers overview</h2>
+              <div class="server-grid" id="server-grid">
+                <div
+                  class="server"
+                  data-search="local /var/run/docker.sock nginx:latest redis:7-alpine"
+                >
+                  <div class="server-head">
+                    <div class="server-name">
+                      <strong title="local">local</strong>
+                      <span class="status ok">online</span>
+                      <span class="status warn">pending scan</span>
+                    </div>
+                    <div class="server-actions">
+                      <button class="btn small" type="button"><span class="truncate">Details</span></button>
+                      <button class="btn small" type="button"><span class="truncate">Scan</span></button>
+                    </div>
+                  </div>
+                  <div class="server-meta" title="/var/run/docker.sock">
+                    Docker socket: <span class="mono">/var/run/docker.sock</span>
+                  </div>
+                  <div class="kv">
+                    <div class="item">
+                      <div class="k">Found updates</div>
+                      <div class="v">3 containers</div>
+                    </div>
+                    <div class="item">
+                      <div class="k">Policy</div>
+                      <div class="v">update</div>
+                    </div>
+                    <div class="item">
+                      <div class="k">Example long value</div>
+                      <div
+                        class="v"
+                        title="ghcr.io/someorg/some-image:dev_latest_with_a_very_long_tag_that_should_not_break_layout"
+                      >
+                        ghcr.io/someorg/some-image:dev_latest_with_a_very_long_tag_that_should_not_break_layout
+                      </div>
+                    </div>
+                    <div class="item">
+                      <div class="k">Scan duration</div>
+                      <div class="v">1.2s</div>
+                    </div>
+                  </div>
+                </div>
+
+                <div
+                  class="server"
+                  data-search="prod-01-europe-west-very-long-name https://10.0.0.10:8080 token xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx postgres:16"
+                >
+                  <div class="server-head">
+                    <div class="server-name">
+                      <strong title="prod-01-europe-west-very-long-name">prod-01-europe-west-very-long-name</strong>
+                      <span class="status bad">offline</span>
+                    </div>
+                    <div class="server-actions">
+                      <button class="btn small" type="button"><span class="truncate">Edit</span></button>
+                      <button class="btn small" type="button"><span class="truncate">Remove</span></button>
+                    </div>
+                  </div>
+                  <div class="server-meta" title="https://10.0.0.10:8080">
+                    URL: <span class="mono">https://10.0.0.10:8080</span>
+                  </div>
+                  <div class="kv">
+                    <div class="item">
+                      <div class="k">Last seen</div>
+                      <div class="v">Never</div>
+                    </div>
+                    <div class="item">
+                      <div class="k">Token</div>
+                      <div class="v" title="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx">xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</div>
+                    </div>
+                    <div class="item">
+                      <div class="k">Reason</div>
+                      <div class="v" title="connect: dial tcp 10.0.0.10:8080: i/o timeout">
+                        connect: dial tcp 10.0.0.10:8080: i/o timeout
+                      </div>
+                    </div>
+                    <div class="item">
+                      <div class="k">Retry</div>
+                      <div class="v">in 30s</div>
+                    </div>
+                  </div>
+                </div>
+
+                <div
+                  class="server"
+                  data-search="staging staging-02 https://10.0.0.20:8080 traefik:v3 grafana:lts"
+                >
+                  <div class="server-head">
+                    <div class="server-name">
+                      <strong title="staging-02">staging-02</strong>
+                      <span class="status ok">online</span>
+                      <span class="status warn">scanning</span>
+                    </div>
+                    <div class="server-actions">
+                      <button class="btn small" type="button"><span class="truncate">Details</span></button>
+                      <button class="btn small" type="button"><span class="truncate">Stop</span></button>
+                    </div>
+                  </div>
+                  <div class="server-meta" title="https://10.0.0.20:8080">
+                    URL: <span class="mono">https://10.0.0.20:8080</span>
+                  </div>
+                  <div class="kv">
+                    <div class="item">
+                      <div class="k">Found updates</div>
+                      <div class="v">0</div>
+                    </div>
+                    <div class="item">
+                      <div class="k">Policy</div>
+                      <div class="v">notify_only</div>
+                    </div>
+                    <div class="item">
+                      <div class="k">Scanning</div>
+                      <div class="v">12 containers</div>
+                    </div>
+                    <div class="item">
+                      <div class="k">ETA</div>
+                      <div class="v">~18s</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="server-meta" id="filter-hint" style="margin-top: 10px;">
+                Type in the sidebar search to filter servers/containers.
+              </div>
+            </div>
+          </section>
+
+          <section class="view" id="view-settings" aria-label="Settings view">
+            <div class="card">
+              <h2>Settings</h2>
+              <div class="toolbar" style="margin-bottom: 10px;">
+                <div class="field col-6">
+                  <label for="interval">Scan interval (minutes)</label>
+                  <input class="control" id="interval" type="number" value="5" />
+                </div>
+                <div class="field col-6">
+                  <label for="policy">Global policy</label>
+                  <select class="control" id="policy">
+                    <option>update</option>
+                    <option>notify_only</option>
+                    <option>skip</option>
+                  </select>
+                </div>
+                <div class="field col-12">
+                  <label for="webhook">Discord webhook URL</label>
+                  <input
+                    class="control"
+                    id="webhook"
+                    value="https://discord.com/api/webhooks/1234567890/very-long-token-should-not-break-anything"
+                    title="https://discord.com/api/webhooks/1234567890/very-long-token-should-not-break-anything"
+                  />
+                </div>
+              </div>
+              <div class="toolbar">
+                <button class="btn" type="button"><span class="truncate">Scheduler enabled</span></button>
+                <button class="btn" type="button"><span class="truncate">Discord notifications enabled</span></button>
+                <button class="btn" type="button"><span class="truncate">Update stopped containers</span></button>
+                <button class="btn" type="button"><span class="truncate">Prune dangling images</span></button>
+                <button class="btn primary" type="button" style="justify-self: end;">
+                  <span class="truncate">Save</span>
+                </button>
+              </div>
+            </div>
+          </section>
+
+          <section class="view" id="view-servers" aria-label="Servers view">
+            <div class="card">
+              <h2>Servers</h2>
+              <div class="server-grid">
+                <div class="server" data-search="local /var/run/docker.sock">
+                  <div class="server-head">
+                    <div class="server-name">
+                      <strong>Local server</strong>
+                      <span class="status ok">connected</span>
+                    </div>
+                    <div class="server-actions">
+                      <button class="btn small" type="button"><span class="truncate">Add / Update</span></button>
+                    </div>
+                  </div>
+                  <div class="toolbar">
+                    <div class="field col-6">
+                      <label>Name</label>
+                      <input class="control" value="local" />
+                    </div>
+                    <div class="field col-6">
+                      <label>Docker socket</label>
+                      <input class="control" value="/var/run/docker.sock" />
+                    </div>
+                  </div>
+                </div>
+                <div class="server" data-search="prod-01 https://10.0.0.10:8080 token">
+                  <div class="server-head">
+                    <div class="server-name">
+                      <strong>Remote server</strong>
+                      <span class="status warn">needs token</span>
+                    </div>
+                    <div class="server-actions">
+                      <button class="btn small" type="button"><span class="truncate">Generate</span></button>
+                      <button class="btn small" type="button"><span class="truncate">Add / Update</span></button>
+                    </div>
+                  </div>
+                  <div class="toolbar">
+                    <div class="field col-6">
+                      <label>Name</label>
+                      <input class="control" value="prod-01" />
+                    </div>
+                    <div class="field col-6">
+                      <label>URL</label>
+                      <input class="control" value="https://10.0.0.10:8080" />
+                    </div>
+                    <div class="field col-12">
+                      <label>Token / API key</label>
+                      <input class="control" value="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="view" id="view-logs" aria-label="Logs view">
+            <div class="card">
+              <h2>Logs</h2>
+              <div class="toolbar" style="margin-bottom: 12px;">
+                <div class="field col-4">
+                  <label>Level</label>
+                  <select class="control">
+                    <option>All</option>
+                    <option>Info</option>
+                    <option>Error</option>
+                  </select>
+                </div>
+                <div class="col-8" style="display:flex; gap:10px; align-items:end; justify-content:flex-end;">
+                  <button class="btn" type="button"><span class="truncate">Refresh</span></button>
+                  <button class="btn" type="button"><span class="truncate">Clear</span></button>
+                  <span class="tag">Idle</span>
+                </div>
+              </div>
+              <div
+                class="mono"
+                style="font-size: 0.9rem; line-height: 1.55; background: var(--panel-2); border: 1px dashed var(--border); border-radius: 12px; padding: 12px;"
+              >
+                <div><span style="color: var(--muted);">INFO</span> 09:22:11 scan started</div>
+                <div><span style="color: var(--muted);">INFO</span> 09:22:12 local: 3 updates found</div>
+                <div><span style="color: color-mix(in srgb, var(--text), #ef4444 35%);">ERROR</span> 09:22:13 prod-01: connect i/o timeout</div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      // View switching
+      const navButtons = Array.from(document.querySelectorAll("[data-view]"));
+      const views = new Map(
+        Array.from(document.querySelectorAll(".view")).map((el) => [
+          el.id.replace("view-", ""),
+          el,
+        ])
+      );
+
+      function setView(name) {
+        for (const btn of navButtons) {
+          btn.setAttribute("aria-current", btn.dataset.view === name ? "page" : "false");
+        }
+        for (const [key, el] of views.entries()) {
+          el.classList.toggle("active", key === name);
+        }
+        const title = document.getElementById("page-title");
+        if (title) title.textContent = name[0].toUpperCase() + name.slice(1);
+        if (window.innerWidth <= 980) closeDrawer();
+      }
+
+      for (const btn of navButtons) {
+        btn.addEventListener("click", () => setView(btn.dataset.view));
+      }
+
+      // Theme toggle: auto -> light -> dark
+      const themeLabel = document.getElementById("theme-label");
+      const themeBtn = document.getElementById("theme-toggle");
+      const themeKey = "contiwatch_mock_theme";
+      const order = ["auto", "light", "dark"];
+
+      function applyTheme(value) {
+        document.documentElement.dataset.theme = value;
+        localStorage.setItem(themeKey, value);
+        if (themeLabel) themeLabel.textContent = value[0].toUpperCase() + value.slice(1);
+      }
+
+      const saved = localStorage.getItem(themeKey);
+      if (saved && order.includes(saved)) applyTheme(saved);
+      else applyTheme("auto");
+
+      themeBtn.addEventListener("click", () => {
+        const current = document.documentElement.dataset.theme || "auto";
+        const idx = order.indexOf(current);
+        applyTheme(order[(idx + 1) % order.length]);
+      });
+
+      // Mobile drawer
+      const overlay = document.getElementById("overlay");
+      const openDrawerBtn = document.getElementById("open-drawer");
+      function openDrawer() {
+        document.body.classList.add("drawer-open");
+        overlay?.setAttribute("aria-hidden", "false");
+      }
+      function closeDrawer() {
+        document.body.classList.remove("drawer-open");
+        overlay?.setAttribute("aria-hidden", "true");
+      }
+      openDrawerBtn?.addEventListener("click", openDrawer);
+      overlay?.addEventListener("click", closeDrawer);
+
+      // Sidebar search: filter server cards in all views
+      const search = document.getElementById("q");
+      const filterHint = document.getElementById("filter-hint");
+      const servers = () => Array.from(document.querySelectorAll(".server"));
+      function normalize(s) {
+        return (s || "").toLowerCase().trim();
+      }
+      function applyFilter(q) {
+        const query = normalize(q);
+        let visible = 0;
+        for (const el of servers()) {
+          const hay = normalize(el.getAttribute("data-search") || el.textContent || "");
+          const match = !query || hay.includes(query);
+          el.classList.toggle("hidden", !match);
+          if (match) visible += 1;
+        }
+        if (filterHint) {
+          filterHint.textContent =
+            query.length === 0
+              ? "Type in the sidebar search to filter servers/containers."
+              : `Filter: “${q}” — showing ${visible} item(s).`;
+        }
+      }
+      search?.addEventListener("input", (e) => applyFilter(e.target.value));
+
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") closeDrawer();
+        if (e.key === "/") {
+          const active = document.activeElement;
+          const isTyping =
+            active &&
+            (active.tagName === "INPUT" ||
+              active.tagName === "TEXTAREA" ||
+              active.tagName === "SELECT" ||
+              active.isContentEditable);
+          if (!isTyping) {
+            e.preventDefault();
+            search?.focus();
+          }
+        }
+        if (e.key === "1") setView("status");
+        if (e.key === "2") setView("settings");
+        if (e.key === "3") setView("servers");
+        if (e.key === "4") setView("logs");
+      });
+    </script>
+  </body>
+</html>
+

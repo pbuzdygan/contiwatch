@@ -27,6 +27,13 @@ func discordNotificationsEnabled(cfg config.Config) bool {
 	return *cfg.DiscordNotificationsEnabled
 }
 
+func discordNotifyOnStartEnabled(cfg config.Config) bool {
+	if cfg.DiscordNotifyOnStart == nil {
+		return true
+	}
+	return *cfg.DiscordNotifyOnStart
+}
+
 func resolveVersion() string {
 	if Version != "" && Version != "dev" {
 		return strings.TrimPrefix(Version, "v")
@@ -157,6 +164,7 @@ func main() {
 	} else {
 		log.Printf("startup: discord webhook=configured")
 	}
+	log.Printf("startup: discord notify on start=%t", discordNotifyOnStartEnabled(cfg))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -171,7 +179,7 @@ func main() {
 	}
 	srv.StartScheduler(ctx)
 
-	if cfg.DiscordWebhookURL != "" && discordNotificationsEnabled(cfg) {
+	if cfg.DiscordWebhookURL != "" && discordNotificationsEnabled(cfg) && discordNotifyOnStartEnabled(cfg) {
 		description := buildStartupDiscordDescription(addr, configPath, configExisted, cfg, schedulerInterval)
 		const discordBlue = 0x3498DB
 		discordClient := notify.NewDiscordClient(cfg.DiscordWebhookURL)

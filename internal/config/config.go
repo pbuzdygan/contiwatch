@@ -25,6 +25,7 @@ type Config struct {
 	GlobalPolicy             string         `json:"global_policy"`
 	DiscordWebhookURL           string `json:"discord_webhook_url"`
 	DiscordNotificationsEnabled *bool  `json:"discord_notifications_enabled"`
+	DiscordNotifyOnStart       *bool  `json:"discord_notify_on_start"`
 	UpdateStoppedContainers  bool           `json:"update_stopped_containers"`
 	PruneDanglingImages      bool           `json:"prune_dangling_images"`
 	LocalServers             []LocalServer  `json:"local_servers"`
@@ -43,7 +44,8 @@ func DefaultConfig() Config {
 		SchedulerEnabled:        false,
 		GlobalPolicy:            PolicyNotifyOnly,
 		DiscordWebhookURL:       "",
-		DiscordNotificationsEnabled: boolPtr(true),
+		DiscordNotificationsEnabled: boolPtr(false),
+		DiscordNotifyOnStart:       boolPtr(false),
 		UpdateStoppedContainers: false,
 		PruneDanglingImages:     false,
 		LocalServers:           []LocalServer{},
@@ -102,7 +104,10 @@ func (s *Store) load() error {
 		cfg.GlobalPolicy = DefaultConfig().GlobalPolicy
 	}
 	if cfg.DiscordNotificationsEnabled == nil {
-		cfg.DiscordNotificationsEnabled = boolPtr(true)
+		cfg.DiscordNotificationsEnabled = boolPtr(false)
+	}
+	if cfg.DiscordNotifyOnStart == nil {
+		cfg.DiscordNotifyOnStart = boolPtr(false)
 	}
 	s.config = cfg
 	return nil
@@ -133,7 +138,10 @@ func (s *Store) Update(update func(*Config)) (Config, error) {
 		s.config.GlobalPolicy = DefaultConfig().GlobalPolicy
 	}
 	if s.config.DiscordNotificationsEnabled == nil {
-		s.config.DiscordNotificationsEnabled = boolPtr(true)
+		s.config.DiscordNotificationsEnabled = boolPtr(false)
+	}
+	if s.config.DiscordNotifyOnStart == nil {
+		s.config.DiscordNotifyOnStart = boolPtr(false)
 	}
 	return s.config, s.saveLocked()
 }

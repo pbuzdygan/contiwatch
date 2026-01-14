@@ -32,6 +32,7 @@ type Server struct {
 	scanMutex     sync.Mutex
 	scanRunning   bool
 	updateRunning bool
+	scanCancel    context.CancelFunc
 
 	schedulerMu       sync.Mutex
 	schedulerCancel   context.CancelFunc
@@ -108,8 +109,10 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/status", s.handleStatus)
 	s.mux.HandleFunc("/api/scan/state", s.handleScanState)
 	s.mux.HandleFunc("/api/scan", s.handleScan)
+	s.mux.HandleFunc("/api/scan/stop", s.handleScanStop)
 	s.mux.HandleFunc("/api/update/", s.handleUpdateContainer)
 	s.mux.HandleFunc("/api/logs", s.handleLogs)
+	s.mux.HandleFunc("/api/notifications/test", s.handleNotificationsTest)
 	s.mux.HandleFunc("/api/aggregate", s.handleAggregate)
 	s.mux.HandleFunc("/api/version", s.handleVersion)
 
@@ -145,7 +148,11 @@ func (s *Server) agentAllowed(path string) bool {
 		return true
 	case path == "/api/scan":
 		return true
+	case path == "/api/scan/stop":
+		return true
 	case path == "/api/logs":
+		return true
+	case path == "/api/notifications/test":
 		return true
 	case strings.HasPrefix(path, "/api/update/"):
 		return true
@@ -163,6 +170,7 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		writeJSON(w, http.StatusOK, s.store.Get())
 	case http.MethodPut:
+		before := s.store.Get()
 		var payload config.Config
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 			writeError(w, http.StatusBadRequest, err)
@@ -176,6 +184,9 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 			if payload.DiscordNotificationsEnabled != nil {
 				cfg.DiscordNotificationsEnabled = payload.DiscordNotificationsEnabled
 			}
+			if payload.DiscordNotifyOnStart != nil {
+				cfg.DiscordNotifyOnStart = payload.DiscordNotifyOnStart
+			}
 			cfg.UpdateStoppedContainers = payload.UpdateStoppedContainers
 			cfg.PruneDanglingImages = payload.PruneDanglingImages
 		})
@@ -183,7 +194,44 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, err)
 			return
 		}
-		s.addLog("info", fmt.Sprintf("settings updated: prune_dangling_images=%t", updated.PruneDanglingImages))
+		changes := []string{}
+		if before.SchedulerEnabled != updated.SchedulerEnabled {
+			changes = append(changes, fmt.Sprintf("scheduler_enabled=%t", updated.SchedulerEnabled))
+		}
+		if before.ScanIntervalSec != updated.ScanIntervalSec {
+			changes = append(changes, fmt.Sprintf("scan_interval_sec=%d", updated.ScanIntervalSec))
+		}
+		if before.GlobalPolicy != updated.GlobalPolicy {
+			changes = append(changes, fmt.Sprintf("global_policy=%s→%s", before.GlobalPolicy, updated.GlobalPolicy))
+		}
+		if before.DiscordNotificationsEnabled == nil ||
+			updated.DiscordNotificationsEnabled == nil ||
+			*before.DiscordNotificationsEnabled != *updated.DiscordNotificationsEnabled {
+			enabled := updated.DiscordNotificationsEnabled != nil && *updated.DiscordNotificationsEnabled
+			changes = append(changes, fmt.Sprintf("discord_notifications_enabled=%t", enabled))
+		}
+		if before.DiscordNotifyOnStart == nil ||
+			updated.DiscordNotifyOnStart == nil ||
+			*before.DiscordNotifyOnStart != *updated.DiscordNotifyOnStart {
+			enabled := updated.DiscordNotifyOnStart != nil && *updated.DiscordNotifyOnStart
+			changes = append(changes, fmt.Sprintf("discord_notify_on_start=%t", enabled))
+		}
+		if before.UpdateStoppedContainers != updated.UpdateStoppedContainers {
+			changes = append(changes, fmt.Sprintf("update_stopped_containers=%t", updated.UpdateStoppedContainers))
+		}
+		if before.PruneDanglingImages != updated.PruneDanglingImages {
+			changes = append(changes, fmt.Sprintf("prune_dangling_images=%t", updated.PruneDanglingImages))
+		}
+		if before.DiscordWebhookURL != updated.DiscordWebhookURL {
+			state := "set"
+			if updated.DiscordWebhookURL == "" {
+				state = "cleared"
+			}
+			changes = append(changes, fmt.Sprintf("discord_webhook_url=%s", state))
+		}
+		if len(changes) > 0 {
+			s.addLog("info", fmt.Sprintf("settings updated: %s", strings.Join(changes, ", ")))
+		}
 		s.UpdateDiscord(updated.DiscordWebhookURL)
 		s.UpdateScheduler(updated)
 		writeJSON(w, http.StatusOK, updated)
@@ -342,6 +390,24 @@ func (s *Server) handleScanState(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]bool{"running": scanRunning || remoteRunning})
 }
 
+func (s *Server) handleScanStop(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	s.scanMutex.Lock()
+	cancel := s.scanCancel
+	active := s.scanRunning || s.remoteScanRunning.Load() > 0
+	s.scanMutex.Unlock()
+	if cancel == nil || !active {
+		writeJSON(w, http.StatusOK, map[string]string{"status": "idle"})
+		return
+	}
+	cancel()
+	s.addLog("warn", "scan cancelled manually")
+	writeJSON(w, http.StatusOK, map[string]string{"status": "stopping"})
+}
+
 func (s *Server) handleVersion(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"version": s.version})
 }
@@ -356,6 +422,26 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 			logs = []logEntry{}
 		}
 		writeJSON(w, http.StatusOK, logs)
+	case http.MethodPost:
+		var payload struct {
+			Level   string `json:"level"`
+			Message string `json:"message"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		level := strings.TrimSpace(payload.Level)
+		if level == "" {
+			level = "info"
+		}
+		message := strings.TrimSpace(payload.Message)
+		if message == "" {
+			writeError(w, http.StatusBadRequest, errors.New("message is required"))
+			return
+		}
+		s.addLog(level, message)
+		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	case http.MethodDelete:
 		s.clearLogs()
 		writeJSON(w, http.StatusOK, map[string]string{"status": "cleared"})
@@ -364,36 +450,77 @@ func (s *Server) handleLogs(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *Server) handleScan(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleNotificationsTest(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
-	scope := strings.TrimSpace(r.URL.Query().Get("server"))
-	cfg := s.store.Get()
-
-	s.addLog("info", "manual scan started")
-	switch {
-	case scope == "" || scope == "all":
-		result, err := s.runScan(r.Context())
-		if err != nil {
-			if errors.Is(err, errScanInProgress) {
-				writeError(w, http.StatusConflict, err)
-				return
-			}
-			s.addLog("error", fmt.Sprintf("manual scan failed: %v", err))
-			writeError(w, http.StatusInternalServerError, err)
-			return
-		}
-		remoteCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-		go func() {
-			defer cancel()
-			s.triggerRemoteScans(remoteCtx, cfg.RemoteServers)
-		}()
-		s.addLog("info", fmt.Sprintf("manual scan finished (local batch): servers=%d", len(cfg.LocalServers)))
-		writeJSON(w, http.StatusOK, result)
+	var payload struct {
+		WebhookURL string `json:"webhook_url"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		writeError(w, http.StatusBadRequest, err)
 		return
-	case strings.HasPrefix(scope, "local:"):
+	}
+	webhookURL := strings.TrimSpace(payload.WebhookURL)
+	if webhookURL == "" {
+		writeError(w, http.StatusBadRequest, errors.New("webhook_url is required"))
+		return
+	}
+	client := notify.NewDiscordClient(webhookURL)
+	const discordBlue = 0x3498DB
+	if err := client.SendEmbed("Contiwatch test", "Webhook verified.", discordBlue); err != nil {
+		s.addLog("warn", fmt.Sprintf("Webhook test - Failed: %v", err))
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	s.addLog("info", "Webhook test - Success")
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (s *Server) handleScan(w http.ResponseWriter, r *http.Request) {
+ 	if r.Method != http.MethodPost {
+ 		w.WriteHeader(http.StatusMethodNotAllowed)
+ 		return
+ 	}
+ 	scope := strings.TrimSpace(r.URL.Query().Get("server"))
+ 	cfg := s.store.Get()
+	ctx, cancel := context.WithCancel(context.Background())
+	s.scanMutex.Lock()
+	s.scanCancel = cancel
+	s.scanMutex.Unlock()
+	defer func() {
+		cancel()
+		s.scanMutex.Lock()
+		s.scanCancel = nil
+		s.scanMutex.Unlock()
+	}()
+
+ 	s.addLog("info", "manual scan started")
+ 	switch {
+ 	case scope == "" || scope == "all":
+		result, err := s.runScan(ctx)
+ 		if err != nil {
+ 			if errors.Is(err, errScanInProgress) {
+ 				writeError(w, http.StatusConflict, err)
+ 				return
+ 			}
+ 			s.addLog("error", fmt.Sprintf("manual scan failed: %v", err))
+ 			writeError(w, http.StatusInternalServerError, err)
+ 			return
+ 		}
+		remoteCtx, remoteCancel := context.WithTimeout(ctx, 2*time.Minute)
+ 		go func() {
+			defer remoteCancel()
+ 			s.triggerRemoteScans(remoteCtx, cfg.RemoteServers)
+			s.scanMutex.Lock()
+			s.scanCancel = nil
+			s.scanMutex.Unlock()
+ 		}()
+ 		s.addLog("info", fmt.Sprintf("manual scan finished (local batch): servers=%d", len(cfg.LocalServers)))
+ 		writeJSON(w, http.StatusOK, result)
+ 		return
+ 	case strings.HasPrefix(scope, "local:"):
 		name := strings.TrimPrefix(scope, "local:")
 		local, ok := findLocalServer(cfg.LocalServers, name)
 		if !ok {
@@ -414,36 +541,58 @@ func (s *Server) handleScan(w http.ResponseWriter, r *http.Request) {
 			s.scanMutex.Unlock()
 		}()
 		s.addLog("info", fmt.Sprintf("local scan started: %s", local.Name))
-		result, err := s.scanLocalServer(r.Context(), cfg, local)
-		if err != nil {
-			s.addLog("error", fmt.Sprintf("manual scan failed: %s: %v", local.Name, err))
-			writeError(w, http.StatusInternalServerError, err)
+		result, err := s.scanLocalServer(ctx, cfg, local)
+ 		if err != nil {
+			if ctx.Err() != nil {
+				result.Error = "scan cancelled manually"
+				s.updateLastScans(result)
+				writeJSON(w, http.StatusOK, result)
+				return
+			}
+ 			s.addLog("error", fmt.Sprintf("manual scan failed: %s: %v", local.Name, err))
+ 			writeError(w, http.StatusInternalServerError, err)
+ 			return
+ 		}
+		if result.Error != "" {
+			s.updateLastScans(result)
+			writeJSON(w, http.StatusOK, result)
 			return
 		}
-		s.updateLastScans(result)
-		s.addLog("info", fmt.Sprintf("local scan finished: %s %s", local.Name, s.formatScanSummary(result)))
-		s.sendScanNotification(cfg, result)
-		s.addLog("info", fmt.Sprintf("manual scan finished: containers=%d", len(result.Containers)))
-		writeJSON(w, http.StatusOK, result)
-		return
-	case strings.HasPrefix(scope, "remote:"):
+ 		s.updateLastScans(result)
+ 		s.addLog("info", fmt.Sprintf("local scan finished: %s %s", local.Name, s.formatScanSummary(result)))
+ 		s.sendScanNotification(cfg, result)
+ 		s.addLog("info", fmt.Sprintf("manual scan finished: containers=%d", len(result.Containers)))
+ 		writeJSON(w, http.StatusOK, result)
+ 		return
+ 	case strings.HasPrefix(scope, "remote:"):
 		name := strings.TrimPrefix(scope, "remote:")
 		remote, ok := findRemoteServer(cfg.RemoteServers, name)
 		if !ok {
 			writeError(w, http.StatusNotFound, errors.New("remote server not found"))
 			return
-		}
-		s.addLog("info", fmt.Sprintf("remote scan started: %s", remote.Name))
-		s.remoteScanRunning.Add(1)
-		result, err := s.scanRemoteServer(r.Context(), remote)
-		s.remoteScanRunning.Add(-1)
-		if err != nil {
-			s.addLog("error", fmt.Sprintf("manual scan failed: %s: %v", remote.Name, err))
-			writeError(w, http.StatusBadGateway, err)
-			return
-		}
-		s.addLog("info", fmt.Sprintf("remote scan finished: %s %s", remote.Name, s.formatScanSummary(result)))
-		s.sendScanNotification(cfg, result)
+ 		}
+ 		s.addLog("info", fmt.Sprintf("remote scan started: %s", remote.Name))
+ 		s.remoteScanRunning.Add(1)
+		result, err := s.scanRemoteServer(ctx, remote)
+ 		s.remoteScanRunning.Add(-1)
+ 		if err != nil {
+			if ctx.Err() != nil {
+				result = dockerwatcher.ScanResult{
+					ServerName: remote.Name,
+					ServerURL:  remote.URL,
+					Local:      false,
+					CheckedAt:  time.Now(),
+					Error:      "scan cancelled manually",
+				}
+				writeJSON(w, http.StatusOK, result)
+				return
+			}
+ 			s.addLog("error", fmt.Sprintf("manual scan failed: %s: %v", remote.Name, err))
+ 			writeError(w, http.StatusBadGateway, err)
+ 			return
+ 		}
+ 		s.addLog("info", fmt.Sprintf("remote scan finished: %s %s", remote.Name, s.formatScanSummary(result)))
+ 		s.sendScanNotification(cfg, result)
 		s.addLog("info", fmt.Sprintf("manual scan finished: containers=%d", len(result.Containers)))
 		writeJSON(w, http.StatusOK, result)
 		return
@@ -724,24 +873,40 @@ func (s *Server) runScan(ctx context.Context) (dockerwatcher.ScanResult, error) 
 	if len(cfg.LocalServers) == 0 {
 		s.addLog("info", "scan skipped: no local servers configured")
 	} else {
-		for _, local := range cfg.LocalServers {
-			s.addLog("info", fmt.Sprintf("local scan started: %s", local.Name))
-			result, err := s.scanLocalServer(ctx, cfg, local)
-			if err != nil {
-				s.addLog("error", fmt.Sprintf("scan failed: %s: %v", local.Name, err))
+	for i, local := range cfg.LocalServers {
+		if ctx.Err() != nil {
+			for _, remaining := range cfg.LocalServers[i:] {
 				results = append(results, dockerwatcher.ScanResult{
-					ServerName: local.Name,
-					ServerURL:  local.Socket,
+					ServerName: remaining.Name,
+					ServerURL:  remaining.Socket,
 					Local:      true,
 					CheckedAt:  time.Now(),
-					Error:      err.Error(),
+					Error:      "scan cancelled manually (not started)",
 				})
-				continue
 			}
-			s.addLog("info", fmt.Sprintf("local scan finished: %s %s", local.Name, s.formatScanSummary(result)))
-			results = append(results, result)
-			s.sendScanNotification(cfg, result)
+			break
 		}
+		s.addLog("info", fmt.Sprintf("local scan started: %s", local.Name))
+		result, err := s.scanLocalServer(ctx, cfg, local)
+		if err != nil {
+			s.addLog("error", fmt.Sprintf("scan failed: %s: %v", local.Name, err))
+			results = append(results, dockerwatcher.ScanResult{
+				ServerName: local.Name,
+				ServerURL:  local.Socket,
+				Local:      true,
+				CheckedAt:  time.Now(),
+				Error:      err.Error(),
+			})
+			continue
+		}
+		if result.Error != "" {
+			results = append(results, result)
+			continue
+		}
+		s.addLog("info", fmt.Sprintf("local scan finished: %s %s", local.Name, s.formatScanSummary(result)))
+		results = append(results, result)
+		s.sendScanNotification(cfg, result)
+	}
 	}
 
 	// Preserve last local scan for /api/status and aggregate.

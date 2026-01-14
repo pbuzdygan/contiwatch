@@ -100,8 +100,16 @@ func (w *Watcher) Scan(ctx context.Context, cfg config.Config) (ScanResult, erro
 	}
 
 	for _, item := range containers {
+		if ctx.Err() != nil {
+			result.Error = "scan cancelled manually"
+			return result, nil
+		}
 		status := w.scanContainer(ctx, item, cfg)
 		result.Containers = append(result.Containers, status)
+		if ctx.Err() != nil {
+			result.Error = "scan cancelled manually"
+			return result, nil
+		}
 	}
 
 	return result, nil

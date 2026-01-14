@@ -1,9 +1,6 @@
 const statusEl = document.getElementById("status");
-const lastScanEl = document.getElementById("last-scan");
 const scanBtn = document.getElementById("scan-btn");
-const stopBtn = document.getElementById("stop-btn");
 const scanScopeSelect = document.getElementById("scan-scope");
-const scanStateEl = document.getElementById("scan-state");
 const schedulerStateEl = document.getElementById("scheduler-state");
 const toastEl = document.getElementById("toast");
 const statusHintEl = document.getElementById("status-hint");
@@ -13,6 +10,7 @@ const scanIntervalInput = document.getElementById("scan-interval");
 const globalPolicySelect = document.getElementById("global-policy");
 const discordInput = document.getElementById("discord-url");
 const discordEnabledInput = document.getElementById("discord-enabled");
+const discordStartupNotifyInput = document.getElementById("discord-startup-notify");
 const updateStoppedInput = document.getElementById("update-stopped");
 const pruneDanglingInput = document.getElementById("prune-dangling");
 const localForm = document.getElementById("local-form");
@@ -24,24 +22,22 @@ const remoteUrlInput = document.getElementById("remote-url");
 const remoteTokenInput = document.getElementById("remote-token");
 const generateTokenBtn = document.getElementById("generate-token");
 const serversListEl = document.getElementById("servers-list");
-const menuBtn = document.getElementById("menu-btn");
 const sidebar = document.getElementById("sidebar");
-const sidebarCloseBtn = document.getElementById("sidebar-close");
-const overlay = document.getElementById("overlay");
-const sidebarPin = document.getElementById("sidebar-pin");
+const sidebarSearch = document.getElementById("sidebar-search");
+const themeToggleBtn = document.getElementById("theme-toggle");
+const themeLabel = document.getElementById("theme-label");
 const viewStatusEl = document.getElementById("view-status");
 const viewSettingsEl = document.getElementById("view-settings");
 const viewServersEl = document.getElementById("view-servers");
 const viewLogsEl = document.getElementById("view-logs");
-const backFromSettingsBtn = document.getElementById("back-from-settings");
-const backFromServersBtn = document.getElementById("back-from-servers");
-const backFromLogsBtn = document.getElementById("back-from-logs");
 const refreshLogsBtn = document.getElementById("refresh-logs");
 const clearLogsBtn = document.getElementById("clear-logs");
 const logsLevelSelect = document.getElementById("logs-level");
-const logsStatusEl = document.getElementById("logs-status");
+const logsAutoToggle = document.getElementById("logs-auto");
 const logsListEl = document.getElementById("logs-list");
 const appVersionEl = document.getElementById("app-version");
+const testWebhookBtn = document.getElementById("test-webhook");
+const saveIntervalBtn = document.getElementById("save-interval");
 
 let currentScanController = null;
 let currentView = "status";
@@ -96,13 +92,7 @@ function renderStatus(results) {
   }
 
   const canUpdateStopped = Boolean(currentConfig && currentConfig.update_stopped_containers);
-  const hasLocalServers = Array.isArray(cachedLocals) && cachedLocals.length > 0;
-  if (!hasLocalServers) {
-    statusHintEl.textContent = "No local servers configured. Add a Docker socket in Servers to use Run scan.";
-    statusHintEl.classList.remove("hidden");
-  } else {
-    statusHintEl.classList.add("hidden");
-  }
+  statusHintEl.classList.add("hidden");
 
   const visibleResults = selectedScanScope && selectedScanScope !== "all"
     ? results.filter((result) => {
@@ -411,6 +401,8 @@ function renderStatus(results) {
     card.appendChild(body);
     statusEl.appendChild(card);
   });
+
+  applySidebarFilter();
 }
 
 function renderServers(localServers, remoteServers) {
@@ -491,6 +483,8 @@ function renderServers(localServers, remoteServers) {
     li.appendChild(actions);
     serversListEl.appendChild(li);
   });
+
+  applySidebarFilter();
 }
 
 function formatVersion(raw) {
@@ -498,6 +492,51 @@ function formatVersion(raw) {
   if (!version) return "unknown";
   if (version.startsWith("v")) return version;
   return `v${version}`;
+}
+
+function normalizeQuery(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function applySidebarFilter(queryOverride) {
+  if (!sidebarSearch) return;
+  const query = normalizeQuery(queryOverride ?? sidebarSearch.value);
+  const cards = Array.from(statusEl ? statusEl.querySelectorAll(".server-card") : []);
+  const listItems = Array.from(serversListEl ? serversListEl.querySelectorAll(".server-item") : []);
+  const targets = cards.concat(listItems);
+  targets.forEach((el) => {
+    const haystack = normalizeQuery(el.textContent);
+    const match = !query || haystack.includes(query);
+    el.classList.toggle("filtered-out", !match);
+  });
+}
+
+const themeModes = ["auto", "light", "dark"];
+const themeStorageKey = "contiwatch_theme";
+
+function applyTheme(mode) {
+  if (!themeModes.includes(mode)) return;
+  if (mode === "auto") {
+    document.documentElement.removeAttribute("data-theme");
+  } else {
+    document.documentElement.setAttribute("data-theme", mode);
+  }
+  localStorage.setItem(themeStorageKey, mode);
+  if (themeLabel) {
+    themeLabel.textContent = mode[0].toUpperCase() + mode.slice(1);
+  }
+}
+
+function initThemeToggle() {
+  const saved = localStorage.getItem(themeStorageKey);
+  applyTheme(saved && themeModes.includes(saved) ? saved : "auto");
+  if (!themeToggleBtn) return;
+  themeToggleBtn.addEventListener("click", () => {
+    const current = localStorage.getItem(themeStorageKey) || "auto";
+    const idx = themeModes.indexOf(current);
+    const next = themeModes[(idx + 1) % themeModes.length];
+    applyTheme(next);
+  });
 }
 
 function updateScanScopeOptions() {
@@ -544,6 +583,9 @@ async function refreshConfig() {
   globalPolicySelect.value = cfg.global_policy;
   discordInput.value = cfg.discord_webhook_url || "";
   discordEnabledInput.checked = cfg.discord_notifications_enabled !== false;
+  if (discordStartupNotifyInput) {
+    discordStartupNotifyInput.checked = cfg.discord_notify_on_start !== false;
+  }
   updateStoppedInput.checked = Boolean(cfg.update_stopped_containers);
   pruneDanglingInput.checked = Boolean(cfg.prune_dangling_images);
   const enabled = Boolean(cfg.scheduler_enabled);
@@ -556,6 +598,39 @@ async function refreshConfig() {
   } else {
     schedulerStateEl.textContent = "Scheduler: off";
   }
+}
+
+function buildConfigPayload(options = {}) {
+  const intervalMinutes = Number(scanIntervalInput.value);
+  const currentInterval = currentConfig ? Number(currentConfig.scan_interval_sec) : 0;
+  const nextInterval = Number.isFinite(intervalMinutes) && intervalMinutes > 0
+    ? intervalMinutes * 60
+    : (currentInterval > 0 ? currentInterval : 0);
+  const useWebhookInput = Boolean(options.useWebhookInput);
+  const webhookValue = useWebhookInput
+    ? discordInput.value.trim()
+    : (currentConfig ? currentConfig.discord_webhook_url || "" : discordInput.value.trim());
+  return {
+    scheduler_enabled: schedulerEnabledInput.checked,
+    scan_interval_sec: nextInterval,
+    global_policy: globalPolicySelect.value,
+    discord_webhook_url: webhookValue,
+    discord_notifications_enabled: discordEnabledInput.checked,
+    discord_notify_on_start: discordStartupNotifyInput ? discordStartupNotifyInput.checked : true,
+    update_stopped_containers: updateStoppedInput.checked,
+    prune_dangling_images: pruneDanglingInput.checked,
+  };
+}
+
+async function saveConfig(options = {}) {
+  const payload = buildConfigPayload(options);
+  const updated = await fetchJSON("/api/config", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  currentConfig = updated;
+  return updated;
 }
 
 async function refreshServers() {
@@ -576,12 +651,7 @@ async function refreshServers() {
   }
   renderServers(cachedLocals, cachedRemotes);
   updateScanScopeOptions();
-  if (!cachedLocals.length) {
-    statusHintEl.textContent = "No local servers configured. Add a Docker socket in Servers to use Run scan.";
-    statusHintEl.classList.remove("hidden");
-  } else {
-    statusHintEl.classList.add("hidden");
-  }
+  statusHintEl.classList.add("hidden");
 }
 
 async function refreshStatus() {
@@ -591,17 +661,6 @@ async function refreshStatus() {
       if (a.local === b.local) return 0;
       return a.local ? -1 : 1;
     });
-  }
-  const firstCheckedAt = results && results[0] ? results[0].checked_at : "";
-  if (firstCheckedAt) {
-    const ts = new Date(firstCheckedAt);
-    if (!Number.isNaN(ts.getTime()) && ts.getTime() > 0) {
-      lastScanEl.textContent = `Last scan: ${ts.toLocaleString()}`;
-    } else {
-      lastScanEl.textContent = "Last scan: not run yet";
-    }
-  } else {
-    lastScanEl.textContent = "Last scan: not run yet";
   }
   renderStatus(results);
   return results;
@@ -623,17 +682,7 @@ async function refreshVersion() {
 async function refreshLogs() {
   if (!logsListEl) return;
   if (viewLogsEl.classList.contains("hidden")) return;
-  logsStatusEl.textContent = "Loading...";
   try {
-    if (!cachedLocals || cachedLocals.length === 0) {
-      logsListEl.innerHTML = "";
-      const empty = document.createElement("p");
-      empty.textContent = "No local servers configured. Add a Docker socket to see operational logs.";
-      logsListEl.appendChild(empty);
-      logsStatusEl.textContent = "Idle";
-      return;
-    }
-
     const logs = await fetchJSON("/api/logs");
     const level = logsLevelSelect ? logsLevelSelect.value : "all";
     const list = Array.isArray(logs) ? logs : [];
@@ -649,23 +698,22 @@ async function refreshLogs() {
       const empty = document.createElement("p");
       empty.textContent = "No logs yet.";
       logsListEl.appendChild(empty);
-      logsStatusEl.textContent = "Idle";
       return;
     }
     filtered.forEach((entry) => {
       const row = document.createElement("div");
       row.className = "log-row";
       const ts = new Date(entry.timestamp).toLocaleString();
+      const level = String(entry.level || "info").toLowerCase();
+      const levelClass = `log-level log-level-${level}`;
       row.innerHTML = `
-        <span class="tag">${ts}</span>
-        <span class="level">${entry.level}</span>
-        <span>${entry.message}</span>
+        <span class="log-ts">${ts}</span>
+        <span class="${levelClass}">${level}</span>
+        <span class="log-msg">${entry.message}</span>
       `;
-      logsListEl.appendChild(row);
+    logsListEl.appendChild(row);
     });
-    logsStatusEl.textContent = "Idle";
   } catch (err) {
-    logsStatusEl.textContent = "Unavailable";
     logsListEl.innerHTML = "";
     const empty = document.createElement("p");
     empty.textContent = "Logs unavailable. Add a server in Servers to enable operational logs.";
@@ -676,6 +724,9 @@ async function refreshLogs() {
 function startLogsAutoRefresh() {
   stopLogsAutoRefresh();
   refreshLogs();
+  if (logsAutoToggle && !logsAutoToggle.checked) {
+    return;
+  }
   logsRefreshTimer = window.setInterval(refreshLogs, 5000);
 }
 
@@ -686,26 +737,44 @@ function stopLogsAutoRefresh() {
   }
 }
 
+async function logClientEvent(level, message) {
+  try {
+    await fetchJSON("/api/logs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ level, message }),
+    });
+  } catch {
+    // Ignore logging failures from UI events.
+  }
+}
+
+function flashButton(btn, text, className, durationMs = 2000) {
+  if (!btn) return;
+  const prevText = btn.textContent;
+  const prevClass = btn.className;
+  btn.textContent = text;
+  if (className) {
+    btn.classList.add(className);
+  }
+  btn.disabled = true;
+  window.setTimeout(() => {
+    btn.textContent = prevText;
+    btn.className = prevClass;
+    btn.disabled = false;
+  }, durationMs);
+}
+
 
 function setScanningUI(isScanning) {
-  scanBtn.disabled = isScanning || updateInProgress;
+  const isActive = isScanning || scanAllInProgress || scanStateRunning;
+  scanBtn.disabled = updateInProgress;
   if (scanScopeSelect) {
-    scanScopeSelect.disabled = isScanning || updateInProgress;
+    scanScopeSelect.disabled = isActive || updateInProgress;
   }
-  const showScanState = isScanning || scanAllInProgress || scanStateRunning;
-  scanStateEl.classList.toggle("hidden", !showScanState);
-  stopBtn.classList.toggle("hidden", !isScanning);
-  if (showScanState) {
-    if ((scanAllInProgress || scanStateRunning) && !isScanning) {
-      const total = scanAllTotal || 0;
-      const done = scanAllDone || 0;
-      scanStateEl.textContent = total > 0
-        ? `Scanning remote servers... (${done}/${total})`
-        : "Scanning remote servers...";
-    } else {
-      scanStateEl.textContent = "Scanning…";
-    }
-  }
+  scanBtn.classList.toggle("secondary", !isActive);
+  scanBtn.classList.toggle("btn-warning", isActive);
+  scanBtn.textContent = isActive ? "Stop scan" : "Run scan";
 }
 
 function startScanFollowUp(startedAt) {
@@ -821,38 +890,20 @@ function setView(nextView) {
   }
 }
 
-function isSidebarPinned() {
-  return sidebar.classList.contains("pinned");
-}
-
-function isSidebarOpen() {
-  return sidebar.classList.contains("open");
-}
-
-function openSidebar() {
-  sidebar.classList.add("open");
-  sidebar.setAttribute("aria-hidden", "false");
-  overlay.classList.toggle("hidden", isSidebarPinned());
-}
-
-function closeSidebar() {
-  if (isSidebarPinned()) return;
-  sidebar.classList.remove("open");
-  sidebar.setAttribute("aria-hidden", "true");
-  overlay.classList.add("hidden");
-}
-
 function goToStatus() {
-  if (isSidebarPinned()) {
-    setView("status");
-    return;
-  }
   setView("status");
-  closeSidebar();
 }
 
 scanBtn.addEventListener("click", async () => {
-  if (currentScanController) return;
+  if (currentScanController) {
+    try {
+      await fetchJSON("/api/scan/stop", { method: "POST" });
+    } catch (err) {
+      showToast(err.message || "Failed to stop scan.");
+    }
+    currentScanController.abort();
+    return;
+  }
   currentScanController = new AbortController();
   const scanStart = new Date();
   scanAllInProgress = false;
@@ -885,15 +936,6 @@ scanBtn.addEventListener("click", async () => {
   }
 });
 
-stopBtn.addEventListener("click", () => {
-  if (currentScanController) {
-    currentScanController.abort();
-  }
-});
-
-backFromSettingsBtn.addEventListener("click", goToStatus);
-backFromServersBtn.addEventListener("click", goToStatus);
-backFromLogsBtn.addEventListener("click", goToStatus);
 refreshLogsBtn.addEventListener("click", refreshLogs);
 clearLogsBtn.addEventListener("click", async () => {
   try {
@@ -904,27 +946,74 @@ clearLogsBtn.addEventListener("click", async () => {
   }
 });
 logsLevelSelect.addEventListener("change", refreshLogs);
+if (logsAutoToggle) {
+  logsAutoToggle.addEventListener("change", async () => {
+    if (viewLogsEl.classList.contains("hidden")) return;
+    if (logsAutoToggle.checked) {
+      startLogsAutoRefresh();
+      await logClientEvent("info", "logs auto refresh enabled");
+    } else {
+      stopLogsAutoRefresh();
+      await logClientEvent("info", "logs auto refresh disabled");
+    }
+    await refreshLogs();
+  });
+}
+
+function attachImmediateSave(input) {
+  if (!input) return;
+  input.addEventListener("change", async () => {
+    try {
+      await saveConfig({ useWebhookInput: false });
+      currentConfig = await fetchJSON("/api/config");
+    } catch (err) {
+      showToast(err.message || "Failed to save setting.");
+    }
+  });
+}
+
+attachImmediateSave(schedulerEnabledInput);
+attachImmediateSave(updateStoppedInput);
+attachImmediateSave(pruneDanglingInput);
+attachImmediateSave(discordEnabledInput);
+attachImmediateSave(discordStartupNotifyInput);
+globalPolicySelect.addEventListener("change", async () => {
+  try {
+    await saveConfig({ useWebhookInput: false });
+    currentConfig = await fetchJSON("/api/config");
+  } catch (err) {
+    showToast(err.message || "Failed to save policy.");
+  }
+});
+
+if (testWebhookBtn) {
+  testWebhookBtn.addEventListener("click", async () => {
+    const url = discordInput.value.trim();
+    if (!url) {
+      showToast("Discord webhook URL is required.");
+      return;
+    }
+    try {
+      await fetchJSON("/api/notifications/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ webhook_url: url }),
+      });
+      await saveConfig({ useWebhookInput: true });
+      await refreshConfig();
+      flashButton(testWebhookBtn, "Test success", "btn-success");
+    } catch (err) {
+      flashButton(testWebhookBtn, "Test failed", "btn-danger");
+    }
+  });
+}
 
 configForm.addEventListener("submit", async (event) => {
   event.preventDefault();
-  const intervalMinutes = Number(scanIntervalInput.value);
-  const payload = {
-    scheduler_enabled: schedulerEnabledInput.checked,
-    scan_interval_sec: Number.isFinite(intervalMinutes) && intervalMinutes > 0 ? intervalMinutes * 60 : 0,
-    global_policy: globalPolicySelect.value,
-    discord_webhook_url: discordInput.value.trim(),
-    discord_notifications_enabled: discordEnabledInput.checked,
-    update_stopped_containers: updateStoppedInput.checked,
-    prune_dangling_images: pruneDanglingInput.checked,
-  };
   try {
-    await fetchJSON("/api/config", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
+    await saveConfig({ useWebhookInput: false });
     await refreshConfig();
-    alert("Saved");
+    flashButton(saveIntervalBtn, "Saved", "btn-success");
   } catch (err) {
     alert(err.message);
   }
@@ -979,36 +1068,13 @@ localForm.addEventListener("submit", async (event) => {
 });
 
 async function init() {
-  // Sidebar state
-  const pinned = localStorage.getItem("sidebarPinned") === "true";
-  sidebarPin.checked = pinned;
-  sidebar.classList.toggle("pinned", pinned);
-  sidebar.classList.toggle("open", pinned);
-  sidebar.setAttribute("aria-hidden", pinned ? "false" : "true");
-  overlay.classList.toggle("hidden", true);
-  document.body.classList.toggle("sidebar-pinned", pinned);
+  sidebar.setAttribute("aria-hidden", "false");
 
-  menuBtn.addEventListener("click", () => {
-    if (isSidebarPinned()) return;
-    if (isSidebarOpen()) {
-      closeSidebar();
-    } else {
-      openSidebar();
-    }
-  });
-  sidebarCloseBtn.addEventListener("click", closeSidebar);
-  overlay.addEventListener("click", closeSidebar);
-  sidebarPin.addEventListener("change", () => {
-    const isPinned = sidebarPin.checked;
-    localStorage.setItem("sidebarPinned", String(isPinned));
-    sidebar.classList.toggle("pinned", isPinned);
-    document.body.classList.toggle("sidebar-pinned", isPinned);
-    if (isPinned) {
-      openSidebar();
-    } else {
-      closeSidebar();
-    }
-  });
+  if (sidebarSearch) {
+    sidebarSearch.addEventListener("input", (event) => {
+      applySidebarFilter(event.target.value);
+    });
+  }
 
   sidebar.querySelectorAll("[data-view]").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -1016,19 +1082,10 @@ async function init() {
       if (nextView) {
         setView(nextView);
       }
-      if (!sidebar.classList.contains("pinned") && nextView === "status") {
-        closeSidebar();
-      }
     });
   });
 
-  document.addEventListener("keydown", (event) => {
-    if (event.key !== "Escape") return;
-    if (isSidebarPinned()) return;
-    if (!isSidebarOpen()) return;
-    closeSidebar();
-  });
-
+  initThemeToggle();
   setView("status");
   setScanningUI(false);
   await refreshConfig();

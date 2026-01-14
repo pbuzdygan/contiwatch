@@ -1,0 +1,621 @@
+<!doctype html>
+<html lang="en" data-theme="auto">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Contiwatch — UI mockup (Dense Dashboard)</title>
+    <style>
+      :root {
+        --primary: #003343;
+        --accent: #4bb7c8;
+
+        --bg: #0b1220;
+        --panel: rgba(255, 255, 255, 0.06);
+        --panel-2: rgba(255, 255, 255, 0.04);
+        --text: rgba(255, 255, 255, 0.92);
+        --muted: rgba(255, 255, 255, 0.64);
+        --border: rgba(255, 255, 255, 0.12);
+        --shadow: 0 18px 55px rgba(0, 0, 0, 0.45);
+        --focus: rgba(75, 183, 200, 0.26);
+
+        --radius: 14px;
+        --control-h: 38px;
+        --sidebar-w: 300px;
+        --page: 1240px;
+      }
+
+      @media (prefers-color-scheme: light) {
+        :root {
+          --bg: #f7f9fb;
+          --panel: rgba(255, 255, 255, 0.9);
+          --panel-2: rgba(255, 255, 255, 0.7);
+          --text: #0b1720;
+          --muted: rgba(11, 23, 32, 0.62);
+          --border: rgba(11, 23, 32, 0.12);
+          --shadow: 0 18px 45px rgba(0, 0, 0, 0.12);
+          --focus: rgba(75, 183, 200, 0.32);
+        }
+      }
+
+      html[data-theme="dark"] body {
+        color-scheme: dark;
+      }
+      html[data-theme="light"] body {
+        --bg: #f7f9fb;
+        --panel: rgba(255, 255, 255, 0.9);
+        --panel-2: rgba(255, 255, 255, 0.7);
+        --text: #0b1720;
+        --muted: rgba(11, 23, 32, 0.62);
+        --border: rgba(11, 23, 32, 0.12);
+        --shadow: 0 18px 45px rgba(0, 0, 0, 0.12);
+        --focus: rgba(75, 183, 200, 0.32);
+        color-scheme: light;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto,
+          Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+        background: radial-gradient(1000px 700px at 12% -18%, rgba(75, 183, 200, 0.18), transparent),
+          radial-gradient(900px 600px at 110% 25%, rgba(64, 97, 112, 0.22), transparent),
+          var(--bg);
+        color: var(--text);
+      }
+
+      .layout {
+        display: grid;
+        grid-template-columns: var(--sidebar-w) 1fr;
+        min-height: 100vh;
+      }
+
+      .sidebar {
+        position: sticky;
+        top: 0;
+        height: 100vh;
+        border-right: 1px solid var(--border);
+        padding: 16px 14px;
+        background: linear-gradient(180deg, rgba(0, 0, 0, 0.12), transparent);
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 10px 10px 14px;
+      }
+      .brand .mark {
+        width: 34px;
+        height: 34px;
+        border-radius: 12px;
+        background: radial-gradient(circle at 30% 20%, rgba(75, 183, 200, 0.95), rgba(0, 51, 67, 0.92));
+      }
+      .brand strong {
+        letter-spacing: -0.01em;
+      }
+      .brand span {
+        color: var(--muted);
+        font-size: 0.82rem;
+      }
+
+      .search {
+        padding: 0 10px 12px;
+      }
+
+      .control {
+        height: var(--control-h);
+        width: 100%;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        background: var(--panel-2);
+        color: var(--text);
+        padding: 0 10px;
+        outline: none;
+      }
+      .control:focus {
+        box-shadow: 0 0 0 4px var(--focus);
+        border-color: rgba(75, 183, 200, 0.55);
+      }
+
+      .nav {
+        display: grid;
+        gap: 6px;
+        padding: 8px 10px 14px;
+      }
+      .navbtn {
+        height: 38px;
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        border-radius: 12px;
+        border: 1px solid transparent;
+        background: transparent;
+        color: var(--text);
+        cursor: pointer;
+        padding: 0 10px;
+      }
+      .navbtn:hover {
+        background: rgba(75, 183, 200, 0.12);
+        border-color: rgba(75, 183, 200, 0.18);
+      }
+      .navbtn[aria-current="page"] {
+        background: rgba(75, 183, 200, 0.16);
+        border-color: rgba(75, 183, 200, 0.32);
+      }
+      .navbtn .t {
+        min-width: 0;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .navbtn .count {
+        margin-left: auto;
+        font-size: 0.78rem;
+        color: var(--muted);
+        border: 1px solid var(--border);
+        padding: 1px 8px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.03);
+      }
+
+      .content {
+        padding: 18px 18px 48px;
+      }
+      .topbar {
+        max-width: var(--page);
+        margin: 0 auto 14px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+      .title {
+        display: grid;
+        gap: 4px;
+        min-width: 0;
+      }
+      .title h1 {
+        margin: 0;
+        font-size: 1.15rem;
+        letter-spacing: -0.01em;
+      }
+      .title p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 0.9rem;
+        min-width: 0;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .btn {
+        height: var(--control-h);
+        padding: 0 12px;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        background: var(--panel);
+        color: var(--text);
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .btn.primary {
+        border-color: rgba(75, 183, 200, 0.55);
+        background: linear-gradient(180deg, rgba(75, 183, 200, 0.95), rgba(64, 97, 112, 0.95));
+        color: #fff;
+      }
+      .chip {
+        height: 28px;
+        display: inline-flex;
+        align-items: center;
+        padding: 0 10px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.03);
+        color: var(--muted);
+        font-size: 0.82rem;
+        white-space: nowrap;
+      }
+
+      .page {
+        max-width: var(--page);
+        margin: 0 auto;
+        display: grid;
+        gap: 12px;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(12, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      .card {
+        border-radius: var(--radius);
+        border: 1px solid var(--border);
+        background: var(--panel);
+        box-shadow: var(--shadow);
+        padding: 14px;
+        min-width: 0;
+      }
+      .card h2 {
+        margin: 0 0 10px;
+        font-size: 0.98rem;
+        letter-spacing: -0.01em;
+      }
+
+      .span-4 {
+        grid-column: span 4;
+      }
+      .span-6 {
+        grid-column: span 6;
+      }
+      .span-8 {
+        grid-column: span 8;
+      }
+      .span-12 {
+        grid-column: span 12;
+      }
+
+      .kpi {
+        display: grid;
+        gap: 4px;
+      }
+      .kpi .k {
+        color: var(--muted);
+        font-size: 0.8rem;
+      }
+      .kpi .v {
+        font-size: 1.3rem;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+      }
+
+      .table {
+        display: grid;
+        gap: 8px;
+      }
+      .row {
+        display: grid;
+        grid-template-columns: 1.2fr 1fr auto;
+        gap: 10px;
+        align-items: center;
+        padding: 10px 10px;
+        border-radius: 12px;
+        border: 1px solid var(--border);
+        background: var(--panel-2);
+        min-width: 0;
+      }
+      .row .left {
+        min-width: 0;
+      }
+      .row strong {
+        display: block;
+        min-width: 0;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .row small {
+        color: var(--muted);
+        display: block;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .row .right {
+        display: flex;
+        gap: 8px;
+        justify-content: flex-end;
+      }
+
+      .status {
+        justify-self: start;
+        font-size: 0.78rem;
+        font-weight: 650;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+        padding: 5px 10px;
+        border-radius: 999px;
+        border: 1px solid transparent;
+        white-space: nowrap;
+      }
+      .ok {
+        background: rgba(34, 197, 94, 0.12);
+        border-color: rgba(34, 197, 94, 0.25);
+        color: color-mix(in srgb, var(--text), #22c55e 35%);
+      }
+      .warn {
+        background: rgba(245, 158, 11, 0.12);
+        border-color: rgba(245, 158, 11, 0.25);
+        color: color-mix(in srgb, var(--text), #f59e0b 35%);
+      }
+      .bad {
+        background: rgba(239, 68, 68, 0.12);
+        border-color: rgba(239, 68, 68, 0.25);
+        color: color-mix(in srgb, var(--text), #ef4444 35%);
+      }
+
+      .mono {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+          "Liberation Mono", "Courier New", monospace;
+      }
+
+      .view {
+        display: none;
+      }
+      .view.active {
+        display: block;
+      }
+
+      @media (max-width: 1060px) {
+        .layout {
+          grid-template-columns: 1fr;
+        }
+        .sidebar {
+          position: static;
+          height: auto;
+        }
+        .row {
+          grid-template-columns: 1fr;
+          align-items: start;
+        }
+        .row .right {
+          justify-content: flex-start;
+          flex-wrap: wrap;
+        }
+        .grid {
+          grid-template-columns: 1fr;
+        }
+        .span-4,
+        .span-6,
+        .span-8,
+        .span-12 {
+          grid-column: span 1;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="layout">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="mark" aria-hidden="true"></div>
+          <div style="display:grid; line-height: 1.1;">
+            <strong>Contiwatch</strong>
+            <span>Dense dashboard</span>
+          </div>
+        </div>
+        <div class="search">
+          <input class="control" placeholder="Search server / container…" />
+        </div>
+        <nav class="nav" aria-label="Primary">
+          <button class="navbtn" data-view="status" aria-current="page" type="button">
+            <span class="t">Status</span><span class="count">2</span>
+          </button>
+          <button class="navbtn" data-view="settings" type="button">
+            <span class="t">Settings</span><span class="count">•</span>
+          </button>
+          <button class="navbtn" data-view="servers" type="button">
+            <span class="t">Servers</span><span class="count">3</span>
+          </button>
+          <button class="navbtn" data-view="logs" type="button">
+            <span class="t">Logs</span><span class="count">12</span>
+          </button>
+        </nav>
+        <div style="padding: 10px; display:grid; gap: 10px;">
+          <span class="chip">Release: vdev</span>
+          <span class="chip">Scheduler: off</span>
+          <button class="btn" id="theme-toggle" type="button"><span id="theme-label">Auto</span></button>
+        </div>
+      </aside>
+
+      <main class="content">
+        <div class="topbar">
+          <div class="title">
+            <h1>Overview</h1>
+            <p>Compact cards + stronger truncation for long values (hover for tooltip).</p>
+          </div>
+          <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap; justify-content:flex-end;">
+            <button class="btn" type="button">Refresh</button>
+            <button class="btn primary" type="button">Run scan</button>
+          </div>
+        </div>
+
+        <div class="page">
+          <section class="view active" id="view-status">
+            <div class="grid">
+              <div class="card span-4">
+                <div class="kpi">
+                  <div class="k">Servers online</div>
+                  <div class="v">1/2</div>
+                </div>
+              </div>
+              <div class="card span-4">
+                <div class="kpi">
+                  <div class="k">Updates found</div>
+                  <div class="v">3</div>
+                </div>
+              </div>
+              <div class="card span-4">
+                <div class="kpi">
+                  <div class="k">Last scan</div>
+                  <div class="v" style="font-size:1.05rem;">37s ago</div>
+                </div>
+              </div>
+
+              <div class="card span-12">
+                <h2>Servers</h2>
+                <div class="table">
+                  <div class="row">
+                    <div class="left">
+                      <strong title="local">local</strong>
+                      <small title="/var/run/docker.sock" class="mono">/var/run/docker.sock</small>
+                    </div>
+                    <div class="status ok">online</div>
+                    <div class="right">
+                      <button class="btn" type="button">Details</button>
+                      <button class="btn" type="button">Scan</button>
+                    </div>
+                  </div>
+                  <div class="row">
+                    <div class="left">
+                      <strong title="prod-01-europe-west-very-long-name">prod-01-europe-west-very-long-name</strong>
+                      <small
+                        title="https://10.0.0.10:8080 (token: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx)"
+                        class="mono"
+                      >
+                        https://10.0.0.10:8080 (token: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx)
+                      </small>
+                    </div>
+                    <div class="status bad">offline</div>
+                    <div class="right">
+                      <button class="btn" type="button">Edit</button>
+                      <button class="btn" type="button">Remove</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="view" id="view-settings">
+            <div class="grid">
+              <div class="card span-8">
+                <h2>Settings</h2>
+                <div class="grid" style="gap:10px;">
+                  <div class="span-6">
+                    <div style="display:grid; gap:6px;">
+                      <div style="color: var(--muted); font-size:0.82rem;">Scan interval</div>
+                      <input class="control" type="number" value="5" />
+                    </div>
+                  </div>
+                  <div class="span-6">
+                    <div style="display:grid; gap:6px;">
+                      <div style="color: var(--muted); font-size:0.82rem;">Global policy</div>
+                      <select class="control">
+                        <option>update</option>
+                        <option>notify_only</option>
+                        <option>skip</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div class="span-12">
+                    <div style="display:grid; gap:6px;">
+                      <div style="color: var(--muted); font-size:0.82rem;">Discord webhook URL</div>
+                      <input
+                        class="control"
+                        value="https://discord.com/api/webhooks/1234567890/very-long-token-should-not-break-anything"
+                      />
+                    </div>
+                  </div>
+                  <div class="span-12" style="display:flex; gap:10px; flex-wrap:wrap;">
+                    <button class="btn" type="button">Scheduler enabled</button>
+                    <button class="btn" type="button">Discord enabled</button>
+                    <button class="btn" type="button">Update stopped containers</button>
+                    <button class="btn" type="button">Prune dangling images</button>
+                    <button class="btn primary" type="button" style="margin-left:auto;">Save</button>
+                  </div>
+                </div>
+              </div>
+              <div class="card span-4">
+                <h2>Notes</h2>
+                <div style="color: var(--muted); line-height: 1.5; font-size: 0.92rem;">
+                  Wariant “dense” celowo ogranicza puste przestrzenie i mocno używa
+                  ellipsis + tooltipów, żeby długie wartości nie rozjeżdżały layoutu.
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="view" id="view-servers">
+            <div class="grid">
+              <div class="card span-12">
+                <h2>Servers list</h2>
+                <div class="table">
+                  <div class="row">
+                    <div class="left">
+                      <strong>local</strong>
+                      <small class="mono">/var/run/docker.sock</small>
+                    </div>
+                    <div class="status ok">ok</div>
+                    <div class="right">
+                      <button class="btn" type="button">Edit</button>
+                      <button class="btn" type="button">Remove</button>
+                    </div>
+                  </div>
+                  <div class="row">
+                    <div class="left">
+                      <strong title="prod-01-europe-west-very-long-name">prod-01-europe-west-very-long-name</strong>
+                      <small class="mono" title="https://10.0.0.10:8080">https://10.0.0.10:8080</small>
+                    </div>
+                    <div class="status warn">pending</div>
+                    <div class="right">
+                      <button class="btn" type="button">Generate token</button>
+                      <button class="btn primary" type="button">Save</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="view" id="view-logs">
+            <div class="grid">
+              <div class="card span-12">
+                <h2>Logs</h2>
+                <div class="mono" style="background: var(--panel-2); border: 1px dashed var(--border); border-radius: 12px; padding: 12px; line-height: 1.55;">
+                  INFO  09:22:11 scan started<br />
+                  INFO  09:22:12 local: 3 updates found<br />
+                  ERROR 09:22:13 prod-01: connect i/o timeout
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </main>
+    </div>
+
+    <script>
+      // View switching
+      const buttons = Array.from(document.querySelectorAll("[data-view]"));
+      const views = new Map(
+        Array.from(document.querySelectorAll(".view")).map((el) => [
+          el.id.replace("view-", ""),
+          el,
+        ])
+      );
+      function setView(name) {
+        for (const b of buttons) b.setAttribute("aria-current", b.dataset.view === name ? "page" : "false");
+        for (const [key, el] of views.entries()) el.classList.toggle("active", key === name);
+        const title = document.querySelector(".title h1");
+        if (title) title.textContent = name[0].toUpperCase() + name.slice(1);
+      }
+      for (const b of buttons) b.addEventListener("click", () => setView(b.dataset.view));
+
+      // Theme toggle: auto -> light -> dark
+      const themeLabel = document.getElementById("theme-label");
+      const themeBtn = document.getElementById("theme-toggle");
+      const themeKey = "contiwatch_mock_theme";
+      const order = ["auto", "light", "dark"];
+      function applyTheme(value) {
+        document.documentElement.dataset.theme = value;
+        localStorage.setItem(themeKey, value);
+        if (themeLabel) themeLabel.textContent = value[0].toUpperCase() + value.slice(1);
+      }
+      const saved = localStorage.getItem(themeKey);
+      if (saved && order.includes(saved)) applyTheme(saved);
+      else applyTheme("auto");
+      themeBtn.addEventListener("click", () => {
+        const current = document.documentElement.dataset.theme || "auto";
+        const idx = order.indexOf(current);
+        applyTheme(order[(idx + 1) % order.length]);
+      });
+    </script>
+  </body>
+</html>
+

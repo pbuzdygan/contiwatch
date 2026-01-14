@@ -4,24 +4,37 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Contiwatch</title>
+    <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/icons/favicon-16x16.png">
+    <link rel="icon" href="/icons/favicon.ico">
+    <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png">
     <link rel="stylesheet" href="/style.css">
   </head>
   <body>
-    <header>
-      <button id="menu-btn" class="menu-btn" aria-label="Open menu">☰</button>
-      <h1>Contiwatch</h1>
-      <p>Minimal Docker image watcher</p>
+    <header class="topbar">
+      <div class="topbar-left">
+      <div class="brand">
+        <h1>Contiwatch</h1>
+        <p>Minimal Docker image watcher</p>
+      </div>
+      </div>
+      <div class="topbar-right">
+        <button id="theme-toggle" class="secondary" type="button">
+          Theme: <span id="theme-label">Auto</span>
+        </button>
+      </div>
     </header>
 
-    <div id="overlay" class="overlay hidden"></div>
-    <aside id="sidebar" class="sidebar" aria-hidden="true">
+    <aside id="sidebar" class="sidebar" aria-hidden="false">
       <div class="sidebar-header">
-        <h2>Menu</h2>
-        <button id="sidebar-close" class="icon-btn" aria-label="Close menu">✕</button>
+        <img
+          class="sidebar-banner"
+          src="/icons/contiwatch_banner_small.png"
+          alt="Contiwatch"
+        >
       </div>
-      <label class="pin-row">
-        <input type="checkbox" id="sidebar-pin">
-        Pin sidebar
+      <label class="sidebar-search">
+        <input type="search" id="sidebar-search" placeholder="Servers / containers">
       </label>
       <nav class="sidebar-nav">
         <button type="button" class="sidebar-link" data-view="status">Status</button>
@@ -38,17 +51,13 @@
       <section id="view-status">
         <h2>Status</h2>
         <div class="actions">
-          <button id="scan-btn">Run scan</button>
-          <button id="stop-btn" class="secondary hidden" type="button">Stop</button>
+          <button id="scan-btn" class="scan-btn">Run scan</button>
           <label class="scan-scope">
-            <span>Target</span>
             <select id="scan-scope">
               <option value="all">All servers</option>
             </select>
           </label>
-          <span id="last-scan">No scan yet</span>
-          <span id="scan-state" class="tag hidden">Scanning…</span>
-          <span id="scheduler-state" class="tag">Scheduler: off</span>
+          <span id="scheduler-state" class="scheduler-text">Scheduler: off</span>
         </div>
         <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
         <div id="status-hint" class="hint hidden"></div>
@@ -58,49 +67,70 @@
       <section id="view-settings" class="hidden">
         <div class="view-header">
           <h2>Settings</h2>
-          <button id="back-from-settings" class="secondary" type="button">Back to status</button>
         </div>
         <form id="config-form">
-          <label>
-            <input type="checkbox" id="scheduler-enabled">
-            Scheduler enabled
-          </label>
-          <label>
-            Scan interval (minutes)
-            <input type="number" id="scan-interval" min="1" step="1">
-          </label>
-          <label>
-            Global policy
-            <select id="global-policy">
-              <option value="update">update</option>
-              <option value="notify_only">notify_only</option>
-              <option value="skip">skip</option>
-            </select>
-          </label>
-          <label>
-            Discord webhook URL
-            <input type="text" id="discord-url" placeholder="https://discord.com/api/webhooks/...">
-          </label>
-          <label>
-            <input type="checkbox" id="discord-enabled">
-            Discord notifications enabled
-          </label>
-          <label>
-            <input type="checkbox" id="update-stopped">
-            Update stopped containers (keep them stopped)
-          </label>
-          <label>
-            <input type="checkbox" id="prune-dangling">
-            Prune dangling images after update
-          </label>
-          <button type="submit">Save</button>
+          <div class="settings-grid">
+            <div class="settings-card">
+              <h3>General</h3>
+              <label class="toggle-row">
+                <input type="checkbox" id="scheduler-enabled">
+                <span class="toggle-track" aria-hidden="true"><span class="toggle-thumb"></span></span>
+                <span>Scheduler enabled</span>
+              </label>
+              <label class="interval-field">
+                Scan interval (minutes)
+                <div class="interval-actions">
+                  <input type="number" id="scan-interval" min="1" step="1">
+                  <button id="save-interval" type="submit">Save</button>
+                </div>
+              </label>
+              <label>
+                Global policy
+                <select id="global-policy">
+                  <option value="update">update</option>
+                  <option value="notify_only">notify_only</option>
+                  <option value="skip">skip</option>
+                </select>
+              </label>
+              <label class="toggle-row">
+                <input type="checkbox" id="update-stopped">
+                <span class="toggle-track" aria-hidden="true"><span class="toggle-thumb"></span></span>
+                <span>Update stopped containers (keep them stopped)</span>
+              </label>
+              <label class="toggle-row">
+                <input type="checkbox" id="prune-dangling">
+                <span class="toggle-track" aria-hidden="true"><span class="toggle-thumb"></span></span>
+                <span>Prune dangling images after update</span>
+              </label>
+            </div>
+            <div class="settings-card">
+              <h3>Notifications</h3>
+              <label>
+                Discord webhook URL
+                <input type="text" id="discord-url" placeholder="https://discord.com/api/webhooks/...">
+              </label>
+              <label class="toggle-row">
+                <input type="checkbox" id="discord-enabled">
+                <span class="toggle-track" aria-hidden="true"><span class="toggle-thumb"></span></span>
+                <span>Discord notifications enabled</span>
+              </label>
+              <label class="toggle-row">
+                <input type="checkbox" id="discord-startup-notify">
+                <span class="toggle-track" aria-hidden="true"><span class="toggle-thumb"></span></span>
+                <span>Notify on startup</span>
+              </label>
+              <div class="settings-actions">
+                <button id="test-webhook" class="secondary" type="button">Test webhook</button>
+              </div>
+              <p class="settings-hint">Test must succeed to save webhook.</p>
+            </div>
+          </div>
         </form>
       </section>
 
       <section id="view-servers" class="hidden">
         <div class="view-header">
           <h2>Servers</h2>
-          <button id="back-from-servers" class="secondary" type="button">Back to status</button>
         </div>
 
         <div class="servers-grid">
@@ -148,20 +178,26 @@
       <section id="view-logs" class="hidden">
         <div class="view-header">
           <h2>Logs</h2>
-          <button id="back-from-logs" class="secondary" type="button">Back to status</button>
         </div>
         <div class="logs-toolbar">
-          <label class="inline-field">
-            Level
+          <div class="logs-field">
             <select id="logs-level">
               <option value="all">All</option>
               <option value="info">Info</option>
+              <option value="warn">Warn</option>
               <option value="error">Error</option>
             </select>
-          </label>
+          </div>
           <button id="refresh-logs" class="secondary" type="button">Refresh</button>
           <button id="clear-logs" class="secondary" type="button">Clear</button>
-          <span id="logs-status" class="tag">Idle</span>
+          <div class="logs-field">
+            <label class="toggle-row toggle-inline">
+              <input type="checkbox" id="logs-auto" checked>
+              <span class="toggle-track" aria-hidden="true">
+                <span class="toggle-thumb"></span>
+              </span>
+            </label>
+          </div>
         </div>
         <div id="logs-list" class="logs-list"></div>
       </section>
