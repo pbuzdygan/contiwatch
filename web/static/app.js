@@ -132,8 +132,8 @@ function renderStatus(results) {
       (scanAllInProgress || scanStateRunning || currentScanController)
     );
     const isRestarting = Boolean(restartingServers[result.server_name] && restartingServers[result.server_name] > Date.now());
-    const statusLabel = isOffline ? "offline" : "online";
-    const scanLabel = isRestarting ? "restarting" : (isScanningActive ? "scanning" : (isPending ? "pending" : ""));
+    const statusLabel = isRestarting ? "restarting" : (isOffline ? "offline" : "online");
+    const scanLabel = isRestarting ? "" : (isScanningActive ? "scanning" : (isPending ? "pending" : ""));
 
     const header = document.createElement("div");
     header.className = "server-header";
@@ -814,6 +814,10 @@ function setView(nextView) {
     startScanStateWatcher();
   } else {
     stopScanStateWatcher();
+  }
+
+  if (nextView === "servers") {
+    refreshServers().catch(() => {});
   }
 }
 

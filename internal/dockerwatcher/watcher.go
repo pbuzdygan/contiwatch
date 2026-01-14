@@ -363,7 +363,8 @@ func (w *Watcher) UpdateContainer(ctx context.Context, containerID string, cfg c
 		if err != nil {
 			message = fmt.Sprintf("updated; prune failed: %v", err)
 		} else {
-			message = fmt.Sprintf("updated and pruned dangling images (deleted=%d reclaimed=%d bytes)", deleted, reclaimed)
+			reclaimedMB := float64(reclaimed) / (1024.0 * 1024.0)
+			message = fmt.Sprintf("updated and pruned dangling images (deleted=%d reclaimed=%.1f MB)", deleted, reclaimedMB)
 		}
 	}
 
