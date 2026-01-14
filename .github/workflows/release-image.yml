@@ -37,7 +37,11 @@ jobs:
           image="ghcr.io/${{ github.repository }}"
           if [ "$target" = "dev" ]; then
             echo "tags=${image}:dev_latest,${image}:dev_${tag}" >> "$GITHUB_OUTPUT"
-            echo "version=dev${tag}" >> "$GITHUB_OUTPUT"
+            if [[ "$tag" == dev* ]]; then
+              echo "version=${tag}" >> "$GITHUB_OUTPUT"
+            else
+              echo "version=dev${tag}" >> "$GITHUB_OUTPUT"
+            fi
           elif [ "$target" = "main" ]; then
             echo "tags=${image}:latest,${image}:${tag}" >> "$GITHUB_OUTPUT"
             echo "version=${tag}" >> "$GITHUB_OUTPUT"

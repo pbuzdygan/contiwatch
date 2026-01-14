@@ -327,7 +327,11 @@ func (s *Server) handleScan(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, err)
 			return
 		}
-		go s.triggerRemoteScans(r.Context(), cfg.RemoteServers)
+		remoteCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		go func() {
+			defer cancel()
+			s.triggerRemoteScans(remoteCtx, cfg.RemoteServers)
+		}()
 		s.addLog("info", fmt.Sprintf("manual scan finished (local batch): servers=%d", len(cfg.LocalServers)))
 		writeJSON(w, http.StatusOK, result)
 		return
@@ -712,6 +716,9 @@ func (s *Server) triggerRemoteScans(ctx context.Context, remotes []config.Remote
 	successCount := 0
 	failCount := 0
 	for _, remote := range remotes {
+		if ctx.Err() != nil {
+			break
+		}
 		s.addLog("info", fmt.Sprintf("remote scan started: %s", remote.Name))
 		result, err := s.scanRemoteServer(ctx, remote)
 		if err != nil {
@@ -726,6 +733,9 @@ func (s *Server) triggerRemoteScans(ctx context.Context, remotes []config.Remote
 	}
 	if len(remotes) > 0 {
 		s.addLog("info", fmt.Sprintf("remote scans completed: ok=%d failed=%d", successCount, failCount))
+		if ctx.Err() != nil {
+			s.addLog("warn", fmt.Sprintf("remote scans aborted: %v", ctx.Err()))
+		}
 	}
 }
 

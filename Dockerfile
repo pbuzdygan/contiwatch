@@ -1,7 +1,6 @@
 FROM golang:1.24-alpine AS builder
 ARG VERSION=dev
 WORKDIR /src
-RUN apk add --no-cache git
 
 ARG TARGETOS
 ARG TARGETARCH
@@ -11,7 +10,9 @@ COPY go.* ./
 RUN --mount=type=cache,target=/go/pkg/mod go mod download
 
 COPY . .
-RUN CGO_ENABLED=0 \
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 \
     GOOS="${TARGETOS:-linux}" \
     GOARCH="${TARGETARCH:-amd64}" \
     GOARM="${TARGETVARIANT#v}" \
