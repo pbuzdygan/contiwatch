@@ -318,6 +318,12 @@ h2 {
   border-color: #ffd7a3;
 }
 
+.status-scanning {
+  background: #e6f4ff;
+  color: #0b5cab;
+  border-color: #b3dbff;
+}
+
 .status-offline {
   background: #fdecea;
   color: #b3261e;
@@ -331,6 +337,24 @@ h2 {
 
 .server-body {
   margin-top: 12px;
+}
+
+.toggle-btn {
+  border: none;
+  background: none;
+  color: var(--text);
+  padding: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.toggle-btn:hover {
+  color: var(--accent);
+}
+
+.column-body {
+  margin-top: 8px;
 }
 
 .sidebar-footer {

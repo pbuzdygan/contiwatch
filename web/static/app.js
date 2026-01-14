@@ -47,10 +47,15 @@ let currentScanController = null;
 let currentView = "status";
 let updateInProgress = false;
 let logsRefreshTimer = null;
+let statusRefreshTimer = null;
 let currentConfig = null;
 let cachedLocals = [];
 let cachedRemotes = [];
 let scanFollowUpTimer = null;
+let scanAllInProgress = false;
+let scanAllTotal = 0;
+let scanAllDone = 0;
+let scanAllInProgress = false;
 
 async function fetchJSON(url, options = {}) {
   const res = await fetch(url, options);
@@ -103,7 +108,9 @@ function renderStatus(results) {
     const checkedAt = result.checked_at ? new Date(result.checked_at) : null;
     const hasCheckedAt = checkedAt && !Number.isNaN(checkedAt.getTime()) && checkedAt.getTime() > 0;
     const isOffline = Boolean(result.error);
-    const statusLabel = isOffline ? "offline" : (hasCheckedAt ? "online" : "pending");
+    const isPending = !hasCheckedAt && !isOffline;
+    const isScanningRemote = scanAllInProgress && isPending;
+    const statusLabel = isOffline ? "offline" : (hasCheckedAt ? "online" : (isScanningRemote ? "scanning" : "pending"));
 
     const header = document.createElement("div");
     header.className = "server-header";
@@ -164,7 +171,7 @@ function renderStatus(results) {
 
     if (!hasCheckedAt) {
       const empty = document.createElement("p");
-      empty.textContent = "Scan has not been run yet.";
+      empty.textContent = isScanningRemote ? "Scanning in progress..." : "Scan has not been run yet.";
       body.appendChild(empty);
     } else if (!result.containers || result.containers.length === 0) {
       const empty = document.createElement("p");
@@ -186,7 +193,11 @@ function renderStatus(results) {
       const rightCol = document.createElement("div");
       rightCol.className = "results-col";
       const rightTitle = document.createElement("h4");
-      rightTitle.textContent = "Up to date";
+      const rightToggle = document.createElement("button");
+      rightToggle.type = "button";
+      rightToggle.className = "toggle-btn";
+      rightToggle.textContent = "Up to date";
+      rightTitle.appendChild(rightToggle);
       rightCol.appendChild(rightTitle);
 
       const renderContainerRow = (container) => {
@@ -323,13 +334,20 @@ function renderStatus(results) {
         updateRequired.forEach((container) => leftCol.appendChild(renderContainerRow(container)));
       }
 
+      const rightBody = document.createElement("div");
+      rightBody.className = "column-body hidden";
       if (upToDate.length === 0) {
         const empty = document.createElement("p");
         empty.textContent = "No containers.";
-        rightCol.appendChild(empty);
+        rightBody.appendChild(empty);
       } else {
-        upToDate.forEach((container) => rightCol.appendChild(renderContainerRow(container)));
+        upToDate.forEach((container) => rightBody.appendChild(renderContainerRow(container)));
       }
+      rightCol.appendChild(rightBody);
+
+      rightToggle.addEventListener("click", () => {
+        rightBody.classList.toggle("hidden");
+      });
 
       grid.appendChild(leftCol);
       grid.appendChild(rightCol);
@@ -565,19 +583,48 @@ function stopLogsAutoRefresh() {
   }
 }
 
+function startStatusAutoRefresh() {
+  stopStatusAutoRefresh();
+  refreshStatus();
+  statusRefreshTimer = window.setInterval(refreshStatus, 5000);
+}
+
+function stopStatusAutoRefresh() {
+  if (statusRefreshTimer) {
+    window.clearInterval(statusRefreshTimer);
+    statusRefreshTimer = null;
+  }
+}
+
 function setScanningUI(isScanning) {
   scanBtn.disabled = isScanning || updateInProgress;
   if (scanScopeSelect) {
     scanScopeSelect.disabled = isScanning || updateInProgress;
   }
-  scanStateEl.classList.toggle("hidden", !isScanning);
+  const showScanState = isScanning || scanAllInProgress;
+  scanStateEl.classList.toggle("hidden", !showScanState);
   stopBtn.classList.toggle("hidden", !isScanning);
+  if (showScanState) {
+    if (scanAllInProgress && !isScanning) {
+      const total = scanAllTotal || 0;
+      const done = scanAllDone || 0;
+      scanStateEl.textContent = total > 0
+        ? `Scanning remote servers... (${done}/${total})`
+        : "Scanning remote servers...";
+    } else {
+      scanStateEl.textContent = "Scanning…";
+    }
+  }
 }
 
 function startScanFollowUp(startedAt) {
   if (scanFollowUpTimer) {
     window.clearInterval(scanFollowUpTimer);
   }
+  scanAllInProgress = true;
+  scanAllTotal = cachedRemotes.length;
+  scanAllDone = 0;
+  setScanningUI(false);
   const startedAtMs = startedAt instanceof Date ? startedAt.getTime() : Date.now();
   let attempts = 0;
   scanFollowUpTimer = window.setInterval(async () => {
@@ -593,9 +640,21 @@ function startScanFollowUp(startedAt) {
       }
       return checkedAt >= startedAtMs;
     });
+    scanAllDone = remotes.reduce((count, remote) => {
+      const checkedAt = remote.checked_at ? new Date(remote.checked_at).getTime() : 0;
+      if (!checkedAt || Number.isNaN(checkedAt)) {
+        return count;
+      }
+      return checkedAt >= startedAtMs ? count + 1 : count;
+    }, 0);
+    setScanningUI(false);
     if (allDone || attempts >= 30) {
       window.clearInterval(scanFollowUpTimer);
       scanFollowUpTimer = null;
+      scanAllInProgress = false;
+      scanAllTotal = 0;
+      scanAllDone = 0;
+      setScanningUI(false);
     }
   }, 2000);
 }
@@ -624,6 +683,12 @@ function setView(nextView) {
     startLogsAutoRefresh();
   } else {
     stopLogsAutoRefresh();
+  }
+
+  if (nextView === "status") {
+    startStatusAutoRefresh();
+  } else {
+    stopStatusAutoRefresh();
   }
 }
 
@@ -661,6 +726,9 @@ scanBtn.addEventListener("click", async () => {
   if (currentScanController) return;
   currentScanController = new AbortController();
   const scanStart = new Date();
+  scanAllInProgress = false;
+  scanAllTotal = 0;
+  scanAllDone = 0;
   setScanningUI(true);
   try {
     const scope = scanScopeSelect ? scanScopeSelect.value : "all";
@@ -722,6 +790,7 @@ configForm.addEventListener("submit", async (event) => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
+    await refreshConfig();
     alert("Saved");
   } catch (err) {
     alert(err.message);

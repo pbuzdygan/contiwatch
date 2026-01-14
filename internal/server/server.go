@@ -791,10 +791,6 @@ func (s *Server) sendScanNotification(cfg config.Config, result dockerwatcher.Sc
 		return
 	}
 	summary := s.buildScanSummary(result)
-	if summary.updates == 0 && summary.updated == 0 {
-		return
-	}
-
 	serverLabel := result.ServerName
 	if serverLabel == "" {
 		if result.Local {
@@ -907,6 +903,7 @@ func (s *Server) UpdateSchedulerLocked(cfg config.Config) {
 		}
 		s.schedulerEnabled = false
 		s.schedulerInterval = 0
+		s.addLog("info", "scheduler disabled")
 		return
 	}
 
@@ -925,6 +922,7 @@ func (s *Server) UpdateSchedulerLocked(cfg config.Config) {
 	s.schedulerCancel = cancel
 	s.schedulerEnabled = true
 	s.schedulerInterval = interval
+	s.addLog("info", fmt.Sprintf("scheduler enabled (interval=%s)", interval))
 
 	go func() {
 		ticker := time.NewTicker(interval)
@@ -934,7 +932,22 @@ func (s *Server) UpdateSchedulerLocked(cfg config.Config) {
 			case <-runCtx.Done():
 				return
 			case <-ticker.C:
-				_, _ = s.runScan(runCtx)
+				s.addLog("info", "scheduled scan started")
+				result, err := s.runScan(runCtx)
+				if err != nil && !errors.Is(err, errScanInProgress) {
+					s.addLog("error", fmt.Sprintf("scheduled scan failed: %v", err))
+				}
+				currentCfg := s.store.Get()
+				if len(currentCfg.RemoteServers) > 0 {
+					s.addLog("info", fmt.Sprintf("scheduled remote scans started: servers=%d", len(currentCfg.RemoteServers)))
+					remoteCtx, cancel := context.WithTimeout(runCtx, 2*time.Minute)
+					s.triggerRemoteScans(remoteCtx, currentCfg.RemoteServers)
+					cancel()
+					s.addLog("info", "scheduled remote scans finished")
+				}
+				if err == nil {
+					s.addLog("info", fmt.Sprintf("scheduled scan finished: containers=%d", len(result.Containers)))
+				}
 			}
 		}
 	}()

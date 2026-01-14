@@ -200,26 +200,41 @@ func buildStartupDiscordDescription(addr, configPath string, configExisted bool,
 		}
 	}
 
-	configLine := "Config: " + configPath
-	if configExisted {
-		configLine += " (loaded)"
-	} else {
-		configLine += " (created defaults)"
-	}
-
 	remoteLine := "Remote servers: none configured"
+	remoteNames := []string{}
 	if len(cfg.RemoteServers) > 0 {
 		remoteLine = "Remote servers: " + fmt.Sprintf("%d", len(cfg.RemoteServers))
+		for _, remote := range cfg.RemoteServers {
+			if remote.Name != "" {
+				remoteNames = append(remoteNames, remote.Name)
+			}
+		}
 	}
 
-	return strings.Join([]string{
-		"HTTP: " + addr,
-		configLine,
+	localLine := "Local servers: none configured"
+	localNames := []string{}
+	if len(cfg.LocalServers) > 0 {
+		localLine = "Local servers: " + fmt.Sprintf("%d", len(cfg.LocalServers))
+		for _, local := range cfg.LocalServers {
+			if local.Name != "" {
+				localNames = append(localNames, local.Name)
+			}
+		}
+	}
+
+	lines := []string{
 		schedulerLine,
 		"Global policy: " + cfg.GlobalPolicy,
 		"Update stopped containers: " + fmt.Sprintf("%t", cfg.UpdateStoppedContainers),
 		"Discord notifications: " + fmt.Sprintf("%t", discordNotificationsEnabled(cfg)),
 		remoteLine,
-		"Manual scan: POST /api/scan (one-off)",
-	}, "\n")
+	}
+	if len(remoteNames) > 0 {
+		lines = append(lines, "- "+strings.Join(remoteNames, "\n- "))
+	}
+	lines = append(lines, localLine)
+	if len(localNames) > 0 {
+		lines = append(lines, "- "+strings.Join(localNames, "\n- "))
+	}
+	return strings.Join(lines, "\n")
 }
