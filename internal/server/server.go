@@ -31,6 +31,7 @@ type Server struct {
 	lastScans     []dockerwatcher.ScanResult
 	scanMutex     sync.Mutex
 	scanRunning   bool
+	updateRunning bool
 
 	schedulerMu       sync.Mutex
 	schedulerCancel   context.CancelFunc
@@ -400,9 +401,9 @@ func (s *Server) handleScan(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.scanMutex.Lock()
-		if s.scanRunning {
+		if s.scanRunning || s.updateRunning {
 			s.scanMutex.Unlock()
-			writeError(w, http.StatusConflict, errors.New("scan already in progress"))
+			writeError(w, http.StatusConflict, errors.New("another operation is in progress"))
 			return
 		}
 		s.scanRunning = true
@@ -464,16 +465,16 @@ func (s *Server) handleUpdateContainer(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.scanMutex.Lock()
-	if s.scanRunning {
+	if s.scanRunning || s.updateRunning {
 		s.scanMutex.Unlock()
 		writeError(w, http.StatusConflict, errors.New("another operation is in progress"))
 		return
 	}
-	s.scanRunning = true
+	s.updateRunning = true
 	s.scanMutex.Unlock()
 	defer func() {
 		s.scanMutex.Lock()
-		s.scanRunning = false
+		s.updateRunning = false
 		s.scanMutex.Unlock()
 	}()
 
@@ -585,7 +586,7 @@ func (s *Server) handleUpdateContainer(w http.ResponseWriter, r *http.Request) {
 			if strings.Contains(result.Message, "prune failed") {
 				s.addLog("error", fmt.Sprintf("prune dangling images failed after update: %s on %s (%s)", result.Name, serverLabel, serverScope))
 			} else {
-				s.addLog("info", fmt.Sprintf("pruned dangling images after update: %s on %s (%s)", result.Name, serverLabel, serverScope))
+				s.addLog("info", fmt.Sprintf("pruned dangling images after update: %s on %s (%s) %s", result.Name, serverLabel, serverScope, result.Message))
 			}
 		}
 	} else {
@@ -695,7 +696,7 @@ var errScanInProgress = errors.New("scan already in progress")
 
 func (s *Server) runScan(ctx context.Context) (dockerwatcher.ScanResult, error) {
 	s.scanMutex.Lock()
-	if s.scanRunning {
+	if s.scanRunning || s.updateRunning {
 		s.scanMutex.Unlock()
 		return dockerwatcher.ScanResult{}, errScanInProgress
 	}

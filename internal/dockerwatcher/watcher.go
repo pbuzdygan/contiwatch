@@ -359,10 +359,11 @@ func (w *Watcher) UpdateContainer(ctx context.Context, containerID string, cfg c
 
 	message := "updated and restored state"
 	if cfg.PruneDanglingImages {
-		if err := w.pruneDanglingImages(ctx); err != nil {
+		deleted, reclaimed, err := w.pruneDanglingImages(ctx)
+		if err != nil {
 			message = fmt.Sprintf("updated; prune failed: %v", err)
 		} else {
-			message = "updated and pruned dangling images"
+			message = fmt.Sprintf("updated and pruned dangling images (deleted=%d reclaimed=%d bytes)", deleted, reclaimed)
 		}
 	}
 
@@ -377,11 +378,18 @@ func (w *Watcher) UpdateContainer(ctx context.Context, containerID string, cfg c
 	}, nil
 }
 
-func (w *Watcher) pruneDanglingImages(ctx context.Context) error {
+func (w *Watcher) pruneDanglingImages(ctx context.Context) (int, uint64, error) {
 	args := filters.NewArgs()
 	args.Add("dangling", "true")
-	_, err := w.client.ImagesPrune(ctx, args)
-	return err
+	report, err := w.client.ImagesPrune(ctx, args)
+	if err != nil {
+		return 0, 0, err
+	}
+	deleted := 0
+	if report.ImagesDeleted != nil {
+		deleted = len(report.ImagesDeleted)
+	}
+	return deleted, report.SpaceReclaimed, nil
 }
 
 func IsSelfContainer(containerID string) bool {
@@ -427,9 +435,10 @@ func (w *Watcher) TriggerSelfUpdate(ctx context.Context, containerID string) err
 	}
 
 	helperConfig := &container.Config{
-		Image: imageRef,
-		Cmd:   []string{"/app/contiwatch", "--self-update", containerID},
-		Env:   env,
+		Image:      imageRef,
+		Entrypoint: []string{"/app/contiwatch"},
+		Cmd:        []string{"--self-update", containerID},
+		Env:        env,
 	}
 	helperHost := &container.HostConfig{
 		AutoRemove: true,
