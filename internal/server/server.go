@@ -138,6 +138,8 @@ func (s *Server) agentAllowed(path string) bool {
 	switch {
 	case path == "/api/health":
 		return true
+	case path == "/api/version":
+		return true
 	case path == "/api/status":
 		return true
 	case path == "/api/scan":
