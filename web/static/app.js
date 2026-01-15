@@ -82,6 +82,13 @@ function displayImage(imageRef) {
   return imageRef.split("@")[0];
 }
 
+function serverScopeKey(result) {
+  if (!result) return "unknown:unknown";
+  const scope = result.local ? "local" : "remote";
+  const name = result.server_name || "unknown";
+  return `${scope}:${name}`;
+}
+
 function generateToken(length = 32) {
   const bytes = new Uint8Array(length / 2);
   crypto.getRandomValues(bytes);
@@ -176,7 +183,7 @@ function buildContainerCard(container, result, canUpdateStopped, variant) {
 
   updateBtn.addEventListener("click", async () => {
     if (updateInProgress || currentScanController || updateBtn.disabled) return;
-    const serverKey = result.server_name || (result.local ? "local" : "remote");
+    const serverKey = serverScopeKey(result);
     updateInProgress = true;
     scanBtn.disabled = true;
     if (scanScopeSelect) {
@@ -251,7 +258,8 @@ function buildDetailsContent(result, canUpdateStopped) {
   const checkedAt = result.checked_at ? new Date(result.checked_at) : null;
   const hasCheckedAt = checkedAt && !Number.isNaN(checkedAt.getTime()) && checkedAt.getTime() > 0;
   const isOffline = Boolean(result.error);
-  const isRestarting = Boolean(restartingServers[result.server_name] && restartingServers[result.server_name] > Date.now());
+  const restartKey = serverScopeKey(result);
+  const isRestarting = Boolean(restartingServers[restartKey] && restartingServers[restartKey] > Date.now());
   const scanState = String(result.scan_state || "").toLowerCase();
   const cancelError = result.error && /cancelled|canceled|context canceled/i.test(result.error);
   const isScanningActive = scanState === "scanning";
@@ -347,7 +355,7 @@ function buildDetailsContent(result, canUpdateStopped) {
 
 function openDetailsModal(result, canUpdateStopped) {
   if (!detailsModal || !detailsBody) return;
-  currentDetailsServerKey = `${result.local ? "local" : "remote"}:${result.server_name || "server"}`;
+  currentDetailsServerKey = serverScopeKey(result);
   detailsBody.innerHTML = "";
   detailsBody.appendChild(buildDetailsContent(result, canUpdateStopped));
   if (detailsTitle) {
@@ -404,7 +412,7 @@ function renderStatus(results) {
     const checkedAt = result.checked_at ? new Date(result.checked_at) : null;
     const hasCheckedAt = checkedAt && !Number.isNaN(checkedAt.getTime()) && checkedAt.getTime() > 0;
     const isOffline = Boolean(result.error);
-    const key = `${result.local ? "local" : "remote"}:${result.server_name || "unknown"}`;
+    const key = serverScopeKey(result);
     const backendState = String(result.scan_state || "").toLowerCase();
     const overrideState = scanStateOverrides[key];
     let scanState = backendState && backendState !== "idle"
@@ -425,7 +433,8 @@ function renderStatus(results) {
     const isScanningActive = scanState === "scanning";
     const isCancelled = scanState === "cancelled" || cancelError;
     const hasScanErrorState = scanState === "error";
-    const isRestarting = Boolean(restartingServers[result.server_name] && restartingServers[result.server_name] > Date.now());
+    const restartKey = serverScopeKey(result);
+    const isRestarting = Boolean(restartingServers[restartKey] && restartingServers[restartKey] > Date.now());
     const isOfflineForStatus = isOffline && !isCancelled;
     const statusLabel = isRestarting ? "restarting" : (isOfflineForStatus ? "offline" : "online");
     let scanLabelText = "";
@@ -1000,7 +1009,7 @@ async function refreshStatus() {
   lastStatusResults = Array.isArray(results) ? results : [];
   if (detailsModal && !detailsModal.classList.contains("hidden") && currentDetailsServerKey) {
     const target = lastStatusResults.find((entry) => {
-      const key = `${entry.local ? "local" : "remote"}:${entry.server_name || "server"}`;
+      const key = serverScopeKey(entry);
       return key === currentDetailsServerKey;
     });
     if (target) {
@@ -1010,7 +1019,7 @@ async function refreshStatus() {
   if (lastStatusResults.length > 0) {
     const nextOverrides = { ...scanStateOverrides };
     lastStatusResults.forEach((result) => {
-      const key = `${result.local ? "local" : "remote"}:${result.server_name || "unknown"}`;
+      const key = serverScopeKey(result);
       const state = String(result.scan_state || "").toLowerCase();
       if (state && state !== "idle") {
         delete nextOverrides[key];
@@ -1184,7 +1193,7 @@ function applyOptimisticScanState(scope) {
     nextOverrides[key] = "scanning";
   } else if (items.length > 0) {
     items.forEach((item, index) => {
-      const key = `${item.local ? "local" : "remote"}:${item.server_name || "unknown"}`;
+      const key = serverScopeKey(item);
       nextOverrides[key] = index === 0 ? "scanning" : "pending";
     });
   }

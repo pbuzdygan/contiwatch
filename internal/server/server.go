@@ -403,6 +403,11 @@ func (s *Server) handleServers(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, errors.New("name and url required"))
 			return
 		}
+		cfg := s.store.Get()
+		if localNameExists(cfg.LocalServers, payload.Name) {
+			writeError(w, http.StatusBadRequest, errors.New("name already used by local server"))
+			return
+		}
 		updated, err := s.store.Update(func(cfg *config.Config) {
 			cfg.RemoteServers = upsertServer(cfg.RemoteServers, payload)
 		})
@@ -429,6 +434,11 @@ func (s *Server) handleLocals(w http.ResponseWriter, r *http.Request) {
 		}
 		if payload.Name == "" || payload.Socket == "" {
 			writeError(w, http.StatusBadRequest, errors.New("name and socket required"))
+			return
+		}
+		cfg := s.store.Get()
+		if remoteNameExists(cfg.RemoteServers, payload.Name) {
+			writeError(w, http.StatusBadRequest, errors.New("name already used by remote server"))
 			return
 		}
 		updated, err := s.store.Update(func(cfg *config.Config) {
@@ -1631,6 +1641,15 @@ func findRemoteServer(servers []config.RemoteServer, name string) (config.Remote
 	return config.RemoteServer{}, false
 }
 
+func remoteNameExists(servers []config.RemoteServer, name string) bool {
+	for _, srv := range servers {
+		if strings.EqualFold(srv.Name, name) {
+			return true
+		}
+	}
+	return false
+}
+
 func isRemoteUpdateDisconnect(err error) bool {
 	if err == nil {
 		return false
@@ -1689,6 +1708,15 @@ func findLocalServer(servers []config.LocalServer, name string) (config.LocalSer
 		}
 	}
 	return config.LocalServer{}, false
+}
+
+func localNameExists(servers []config.LocalServer, name string) bool {
+	for _, srv := range servers {
+		if strings.EqualFold(srv.Name, name) {
+			return true
+		}
+	}
+	return false
 }
 
 func dockerHostFromSocket(socket string) string {

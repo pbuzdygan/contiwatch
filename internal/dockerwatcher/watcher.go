@@ -144,7 +144,7 @@ func (w *Watcher) scanContainer(ctx context.Context, item types.Container, cfg c
 	}
 
 	if status.Policy == config.PolicySkip {
-		status.Error = ErrSkipContainer.Error()
+		status.Error = "skipped: policy"
 		return status
 	}
 
