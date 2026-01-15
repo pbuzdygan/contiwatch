@@ -50,12 +50,15 @@ type UpdateResult struct {
 
 // ScanResult describes a full scan for a single server.
 type ScanResult struct {
-	ServerName string            `json:"server_name"`
-	ServerURL  string            `json:"server_url"`
-	Local      bool              `json:"local"`
-	CheckedAt  time.Time         `json:"checked_at"`
-	Containers []ContainerStatus `json:"containers"`
-	Error      string            `json:"error,omitempty"`
+	ServerName     string            `json:"server_name"`
+	ServerURL      string            `json:"server_url"`
+	Local          bool              `json:"local"`
+	CheckedAt      time.Time         `json:"checked_at"`
+	Containers     []ContainerStatus `json:"containers"`
+	Error          string            `json:"error,omitempty"`
+	ScanState      string            `json:"scan_state,omitempty"`
+	ScanStartedAt  *time.Time        `json:"scan_started_at,omitempty"`
+	ScanFinishedAt *time.Time        `json:"scan_finished_at,omitempty"`
 }
 
 // Watcher performs scans against a local Docker daemon.

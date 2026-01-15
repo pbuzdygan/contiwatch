@@ -26,6 +26,8 @@ type Config struct {
 	DiscordWebhookURL           string `json:"discord_webhook_url"`
 	DiscordNotificationsEnabled *bool  `json:"discord_notifications_enabled"`
 	DiscordNotifyOnStart       *bool  `json:"discord_notify_on_start"`
+	DiscordNotifyOnUpdateDetected *bool `json:"discord_notify_on_update_detected"`
+	DiscordNotifyOnContainerUpdated *bool `json:"discord_notify_on_container_updated"`
 	UpdateStoppedContainers  bool           `json:"update_stopped_containers"`
 	PruneDanglingImages      bool           `json:"prune_dangling_images"`
 	LocalServers             []LocalServer  `json:"local_servers"`
@@ -46,6 +48,8 @@ func DefaultConfig() Config {
 		DiscordWebhookURL:       "",
 		DiscordNotificationsEnabled: boolPtr(false),
 		DiscordNotifyOnStart:       boolPtr(false),
+		DiscordNotifyOnUpdateDetected: boolPtr(false),
+		DiscordNotifyOnContainerUpdated: boolPtr(false),
 		UpdateStoppedContainers: false,
 		PruneDanglingImages:     false,
 		LocalServers:           []LocalServer{},
@@ -108,6 +112,12 @@ func (s *Store) load() error {
 	}
 	if cfg.DiscordNotifyOnStart == nil {
 		cfg.DiscordNotifyOnStart = boolPtr(false)
+	}
+	if cfg.DiscordNotifyOnUpdateDetected == nil {
+		cfg.DiscordNotifyOnUpdateDetected = boolPtr(false)
+	}
+	if cfg.DiscordNotifyOnContainerUpdated == nil {
+		cfg.DiscordNotifyOnContainerUpdated = boolPtr(false)
 	}
 	s.config = cfg
 	return nil

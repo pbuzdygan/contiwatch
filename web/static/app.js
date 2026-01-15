@@ -11,6 +11,8 @@ const globalPolicySelect = document.getElementById("global-policy");
 const discordInput = document.getElementById("discord-url");
 const discordEnabledInput = document.getElementById("discord-enabled");
 const discordStartupNotifyInput = document.getElementById("discord-startup-notify");
+const discordUpdateDetectedInput = document.getElementById("discord-update-detected");
+const discordContainerUpdatedInput = document.getElementById("discord-container-updated");
 const updateStoppedInput = document.getElementById("update-stopped");
 const pruneDanglingInput = document.getElementById("prune-dangling");
 const localForm = document.getElementById("local-form");
@@ -38,21 +40,23 @@ const logsListEl = document.getElementById("logs-list");
 const appVersionEl = document.getElementById("app-version");
 const testWebhookBtn = document.getElementById("test-webhook");
 const saveIntervalBtn = document.getElementById("save-interval");
+const detailsModal = document.getElementById("details-modal");
+const detailsTitle = document.getElementById("details-title");
+const detailsBody = document.getElementById("details-body");
+const detailsCloseBtn = document.getElementById("details-close");
 
 let currentScanController = null;
 let currentView = "status";
 let updateInProgress = false;
 let logsRefreshTimer = null;
-let scanStateTimer = null;
 let currentConfig = null;
 let cachedLocals = [];
 let cachedRemotes = [];
-let scanFollowUpTimer = null;
-let scanAllTotal = 0;
-let scanAllDone = 0;
-let scanAllInProgress = false;
 let cachedServerInfo = {};
-let scanStateRunning = false;
+let scanPollingTimer = null;
+let scanActive = false;
+let lastStatusResults = [];
+let scanStateOverrides = {};
 let selectedScanScope = "all";
 let restartingServers = {};
 
@@ -84,6 +88,256 @@ function maskToken(token) {
   return `${token.slice(0, 4)}…${token.slice(-4)}`;
 }
 
+function closeDetailsModal() {
+  if (!detailsModal) return;
+  detailsModal.classList.add("hidden");
+  detailsModal.setAttribute("aria-hidden", "true");
+  if (detailsBody) {
+    detailsBody.innerHTML = "";
+  }
+}
+
+function buildContainerRow(container, result, canUpdateStopped) {
+  const row = document.createElement("div");
+  row.className = "container-row";
+  const status = container.update_available
+    ? container.updated
+      ? "updated"
+      : "update available"
+    : "up to date";
+  const image = displayImage(container.image);
+  row.innerHTML = `
+    <strong>${container.name}</strong>
+  `;
+  if (image) {
+    const imageSpan = document.createElement("span");
+    imageSpan.textContent = image;
+    row.appendChild(imageSpan);
+  }
+  const statusSpan = document.createElement("span");
+  statusSpan.className = "tag";
+  statusSpan.textContent = status;
+  row.appendChild(statusSpan);
+  const policySpan = document.createElement("span");
+  policySpan.className = "tag";
+  policySpan.textContent = `policy: ${container.policy}`;
+  row.appendChild(policySpan);
+
+  const isSelfContainer = result.local && container.name === "contiwatch";
+  const canUpdate =
+    container.update_available &&
+    !container.updated &&
+    !container.paused &&
+    !currentScanController &&
+    !updateInProgress &&
+    (container.running || canUpdateStopped) &&
+    !isSelfContainer;
+
+  if (container.updated) {
+    const actions = document.createElement("div");
+    actions.className = "row-actions";
+    const updatedBtn = document.createElement("button");
+    updatedBtn.type = "button";
+    updatedBtn.className = "btn-small btn-success";
+    updatedBtn.textContent = "Updated";
+    updatedBtn.disabled = true;
+    actions.appendChild(updatedBtn);
+    row.appendChild(actions);
+  } else if (container.update_available) {
+    const actions = document.createElement("div");
+    actions.className = "row-actions";
+
+    const updateBtn = document.createElement("button");
+    updateBtn.type = "button";
+    updateBtn.className = "btn-small";
+    updateBtn.textContent = "Update";
+    updateBtn.disabled = !canUpdate;
+
+    const infoBtn = document.createElement("button");
+    infoBtn.type = "button";
+    infoBtn.className = "btn-small secondary";
+    infoBtn.textContent = "Info";
+
+    if (isSelfContainer) {
+      updateBtn.textContent = "Self-update disabled";
+      updateBtn.disabled = true;
+    }
+
+    const updateState = document.createElement("span");
+    updateState.className = "tag hidden";
+
+    const infoPanel = document.createElement("div");
+    infoPanel.className = "info-panel hidden";
+    const currentImageID = container.image_id || "unknown";
+    const newImageID = container.new_image_id || "unknown";
+    infoPanel.textContent = `Current image: ${currentImageID}\nNew image: ${newImageID}`;
+
+    updateBtn.addEventListener("click", async () => {
+      if (updateInProgress || currentScanController) return;
+      const serverKey = result.server_name || (result.local ? "local" : "remote");
+      updateInProgress = true;
+      scanBtn.disabled = true;
+      if (scanScopeSelect) {
+        scanScopeSelect.disabled = true;
+      }
+      updateBtn.disabled = true;
+      updateState.classList.remove("hidden");
+      updateState.textContent = "Updating…";
+      let updateResult = null;
+      let restartHint = false;
+      try {
+        const scope = result.local
+          ? `local:${result.server_name || "local"}`
+          : `remote:${result.server_name || "remote"}`;
+        const serverParam = encodeURIComponent(scope);
+        updateResult = await fetchJSON(`/api/update/${encodeURIComponent(container.id)}?server=${serverParam}`, { method: "POST" });
+        if (updateResult.updated) {
+          updateState.textContent = `Updated (${updateResult.previous_state} → ${updateResult.current_state})`;
+        } else {
+          if (updateResult.message && /agent restarting|self update scheduled/i.test(updateResult.message)) {
+            restartHint = true;
+            updateState.textContent = "Agent restarting — recheck in 30s";
+          } else {
+            updateState.textContent = updateResult.message || "Not updated";
+          }
+        }
+      } catch (err) {
+        updateState.textContent = `Error: ${err.message}`;
+      } finally {
+        updateInProgress = false;
+        if (restartHint) {
+          restartingServers[serverKey] = Date.now() + 30000;
+          window.setTimeout(async () => {
+            delete restartingServers[serverKey];
+            await refreshStatus();
+          }, 30000);
+        }
+        scanBtn.disabled = Boolean(currentScanController);
+        if (scanScopeSelect) {
+          scanScopeSelect.disabled = Boolean(currentScanController);
+        }
+        updateBtn.disabled = false;
+        setTimeout(() => updateState.classList.add("hidden"), 8000);
+        await refreshStatus();
+        await refreshLogs();
+        if (updateResult) {
+          if (updateResult.updated) {
+            showToast(`Updated ${updateResult.name} (${updateResult.previous_state} → ${updateResult.current_state})`);
+          } else if (restartHint) {
+            showToast("Agent restarting — recheck in 30s.");
+          } else {
+            showToast(`${updateResult.name}: ${updateResult.message || "Not updated"}`);
+          }
+        }
+      }
+    });
+
+    infoBtn.addEventListener("click", () => {
+      infoPanel.classList.toggle("hidden");
+    });
+
+    actions.appendChild(updateBtn);
+    actions.appendChild(infoBtn);
+    actions.appendChild(updateState);
+    row.appendChild(actions);
+    row.appendChild(infoPanel);
+  }
+
+  return row;
+}
+
+function buildDetailsContent(result, canUpdateStopped) {
+  const wrapper = document.createElement("div");
+  const checkedAt = result.checked_at ? new Date(result.checked_at) : null;
+  const hasCheckedAt = checkedAt && !Number.isNaN(checkedAt.getTime()) && checkedAt.getTime() > 0;
+  const isOffline = Boolean(result.error);
+  const isRestarting = Boolean(restartingServers[result.server_name] && restartingServers[result.server_name] > Date.now());
+  const scanState = String(result.scan_state || "").toLowerCase();
+  const cancelError = result.error && /cancelled|canceled|context canceled/i.test(result.error);
+  const isScanningActive = scanState === "scanning";
+  const isCancelled = scanState === "cancelled" || cancelError;
+
+  if (result.error) {
+    const errorTag = document.createElement("p");
+    errorTag.className = "hint";
+    errorTag.textContent = `Error: ${result.error}`;
+    wrapper.appendChild(errorTag);
+  }
+
+  if (!hasCheckedAt) {
+    const empty = document.createElement("p");
+    if (isRestarting) {
+      empty.textContent = "Agent restarting...";
+    } else if (isCancelled) {
+      empty.textContent = "Scan cancelled.";
+    } else {
+      empty.textContent = isScanningActive ? "Scanning in progress..." : "Scan has not been run yet.";
+    }
+    wrapper.appendChild(empty);
+    return wrapper;
+  }
+
+  if (!result.containers || result.containers.length === 0) {
+    const empty = document.createElement("p");
+    empty.textContent = "No containers found.";
+    wrapper.appendChild(empty);
+    return wrapper;
+  }
+
+  const updateRequired = result.containers.filter((container) => container.update_available);
+  const upToDate = result.containers.filter((container) => !container.update_available);
+
+  const grid = document.createElement("div");
+  grid.className = "results-grid";
+
+  const leftCol = document.createElement("div");
+  leftCol.className = "results-col";
+  const leftTitle = document.createElement("h4");
+  leftTitle.textContent = "Updates available";
+  leftCol.appendChild(leftTitle);
+
+  const rightCol = document.createElement("div");
+  rightCol.className = "results-col";
+  const rightTitle = document.createElement("h4");
+  rightTitle.textContent = "Scanned containers";
+  rightCol.appendChild(rightTitle);
+
+  if (updateRequired.length === 0) {
+    const empty = document.createElement("p");
+    empty.textContent = "No updates required.";
+    leftCol.appendChild(empty);
+  } else {
+    updateRequired.forEach((container) => leftCol.appendChild(buildContainerRow(container, result, canUpdateStopped)));
+  }
+
+  if (upToDate.length === 0) {
+    const empty = document.createElement("p");
+    empty.textContent = "No containers.";
+    rightCol.appendChild(empty);
+  } else {
+    upToDate.forEach((container) => rightCol.appendChild(buildContainerRow(container, result, canUpdateStopped)));
+  }
+
+  grid.appendChild(leftCol);
+  grid.appendChild(rightCol);
+  wrapper.appendChild(grid);
+  return wrapper;
+}
+
+function openDetailsModal(result, canUpdateStopped) {
+  if (!detailsModal || !detailsBody) return;
+  detailsBody.innerHTML = "";
+  detailsBody.appendChild(buildDetailsContent(result, canUpdateStopped));
+  if (detailsTitle) {
+    detailsTitle.textContent = `Server details: ${result.server_name || "server"}`;
+  }
+  detailsModal.classList.remove("hidden");
+  detailsModal.setAttribute("aria-hidden", "false");
+  if (detailsCloseBtn) {
+    detailsCloseBtn.focus();
+  }
+}
+
 function renderStatus(results) {
   statusEl.innerHTML = "";
   if (!results || results.length === 0) {
@@ -109,296 +363,144 @@ function renderStatus(results) {
   visibleResults.forEach((result) => {
     const card = document.createElement("div");
     card.className = "server-card";
+    const searchTokens = [
+      result.server_name,
+      result.server_url,
+      ...(result.containers || []).map((container) => `${container.name} ${container.image}`),
+    ].filter(Boolean);
+    card.dataset.search = searchTokens.join(" ");
 
     const checkedAt = result.checked_at ? new Date(result.checked_at) : null;
     const hasCheckedAt = checkedAt && !Number.isNaN(checkedAt.getTime()) && checkedAt.getTime() > 0;
     const isOffline = Boolean(result.error);
-    const isPending = !hasCheckedAt && !isOffline;
-    const shouldShowScanning = selectedScanScope && selectedScanScope !== "all"
-      ? `${result.local ? "local:" : "remote:"}${result.server_name}` === selectedScanScope
-      : true;
-    const isScanningActive = Boolean(
-      shouldShowScanning &&
-      (scanAllInProgress || scanStateRunning || currentScanController)
-    );
+    const key = `${result.local ? "local" : "remote"}:${result.server_name || "unknown"}`;
+    const backendState = String(result.scan_state || "").toLowerCase();
+    const overrideState = scanStateOverrides[key];
+    const scanState = backendState && backendState !== "idle"
+      ? backendState
+      : (overrideState || backendState);
+    const cancelError = result.error && /cancelled|canceled|context canceled/i.test(result.error);
+    const isPending = scanState === "pending";
+    const isScanningActive = scanState === "scanning";
+    const isCancelled = scanState === "cancelled" || cancelError;
+    const hasScanErrorState = scanState === "error";
     const isRestarting = Boolean(restartingServers[result.server_name] && restartingServers[result.server_name] > Date.now());
-    const statusLabel = isRestarting ? "restarting" : (isOffline ? "offline" : "online");
-    const scanLabel = isRestarting ? "" : (isScanningActive ? "scanning" : (isPending ? "pending" : ""));
-
-    const header = document.createElement("div");
-    header.className = "server-header";
-
-    const headerLeft = document.createElement("div");
-    headerLeft.className = "server-header-left";
-
-    const titleBtn = document.createElement("button");
-    titleBtn.type = "button";
-    titleBtn.className = "server-title";
-    titleBtn.textContent = `${result.server_name} (${result.local ? "local" : "remote"})`;
-    headerLeft.appendChild(titleBtn);
-
-    const statusBadge = document.createElement("span");
-    statusBadge.className = `status-badge status-${statusLabel}`;
-    statusBadge.textContent = statusLabel;
-    headerLeft.appendChild(statusBadge);
-    if (scanLabel) {
-      const scanBadge = document.createElement("span");
-      scanBadge.className = `status-badge status-${scanLabel}`;
-      scanBadge.textContent = scanLabel;
-      headerLeft.appendChild(scanBadge);
+    const isOfflineForStatus = isOffline && !isCancelled;
+    const statusLabel = isRestarting ? "restarting" : (isOfflineForStatus ? "offline" : "online");
+    let scanLabelText = "";
+    let scanLabelClass = "";
+    if (!isRestarting) {
+      if (isScanningActive) {
+        scanLabelText = "scanning";
+        scanLabelClass = "scanning";
+      } else if (isPending) {
+        scanLabelText = "pending scan";
+        scanLabelClass = "pending";
+      } else if (isCancelled) {
+        scanLabelText = "cancelled";
+        scanLabelClass = "cancelled";
+      } else if (hasScanErrorState || (isOffline && !isCancelled)) {
+        scanLabelText = "scan error";
+        scanLabelClass = "error";
+      }
     }
 
-    const summary = document.createElement("span");
+    const head = document.createElement("div");
+    head.className = "status-card-head";
+
+    const headLeft = document.createElement("div");
+    headLeft.className = "status-card-name";
+
+    const nameWrap = document.createElement("div");
+    nameWrap.className = "status-card-title";
+    const nameIcon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    nameIcon.setAttribute("class", `status-card-icon status-icon status-icon-${statusLabel} icon icon-tabler icons-tabler-outline icon-tabler-server-bolt`);
+    nameIcon.setAttribute("width", "24");
+    nameIcon.setAttribute("height", "24");
+    nameIcon.setAttribute("viewBox", "0 0 24 24");
+    nameIcon.setAttribute("fill", "none");
+    nameIcon.setAttribute("stroke", "currentColor");
+    nameIcon.setAttribute("stroke-width", "2");
+    nameIcon.setAttribute("stroke-linecap", "round");
+    nameIcon.setAttribute("stroke-linejoin", "round");
+    nameIcon.setAttribute("aria-hidden", "true");
+    nameIcon.setAttribute("title", `Status: ${statusLabel}`);
+    nameIcon.innerHTML = '<path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M3 7a3 3 0 0 1 3 -3h12a3 3 0 0 1 3 3v2a3 3 0 0 1 -3 3h-12a3 3 0 0 1 -3 -3" /><path d="M15 20h-9a3 3 0 0 1 -3 -3v-2a3 3 0 0 1 3 -3h12" /><path d="M7 8v.01" /><path d="M7 16v.01" /><path d="M20 15l-2 3h3l-2 3" />';
+    const name = document.createElement("strong");
+    name.textContent = result.server_name || "unknown";
+    nameWrap.appendChild(nameIcon);
+    nameWrap.appendChild(name);
+    headLeft.appendChild(nameWrap);
+
+    const typeTag = document.createElement("span");
+    typeTag.className = "tag";
+    typeTag.textContent = result.local ? "LOCAL" : "REMOTE";
+    headLeft.appendChild(typeTag);
+
+    // Status indicator moved to the server icon.
+    if (scanLabelText) {
+      const scanBadge = document.createElement("span");
+      scanBadge.className = `status-badge status-${scanLabelClass}`;
+      scanBadge.textContent = scanLabelText;
+      headLeft.appendChild(scanBadge);
+    }
+
+    const summary = document.createElement("div");
     summary.className = "server-summary";
-    if (!hasCheckedAt) {
-      summary.textContent = "Scan not run yet.";
+    if (isCancelled) {
+      summary.textContent = "Updates: cancelled.";
+    } else if (!hasCheckedAt) {
+      summary.textContent = "Updates: pending.";
     } else if (!result.containers || result.containers.length === 0) {
-      summary.textContent = "No containers found.";
+      summary.textContent = "Updates: none.";
     } else {
       const total = result.containers.length;
       const updates = result.containers.filter((container) => container.update_available).length;
       summary.textContent = updates === 0
-        ? "All up to date."
+        ? "Updates: none."
         : `Updates: ${updates} / ${total} scanned.`;
     }
-    headerLeft.appendChild(summary);
 
-    const headerRight = document.createElement("div");
-    headerRight.className = "server-header-right";
-    const scanInfo = document.createElement("span");
-    scanInfo.className = "tag";
-    scanInfo.textContent = hasCheckedAt ? checkedAt.toLocaleString() : "Last scan: not run yet";
-    headerRight.appendChild(scanInfo);
+    const meta = document.createElement("div");
+    meta.className = "status-card-meta";
+    if (isCancelled) {
+      meta.textContent = "Last scan: cancelled.";
+    } else {
+      meta.textContent = hasCheckedAt ? `Last scan: ${checkedAt.toLocaleString()}` : "Last scan: not run yet.";
+    }
 
-    header.appendChild(headerLeft);
-    header.appendChild(headerRight);
-    card.appendChild(header);
+    headLeft.appendChild(summary);
+    headLeft.appendChild(meta);
 
-    const body = document.createElement("div");
-    body.className = "server-body hidden";
-
-    titleBtn.addEventListener("click", () => {
-      body.classList.toggle("hidden");
+    const headRight = document.createElement("div");
+    headRight.className = "status-card-actions";
+    const detailsBtn = document.createElement("button");
+    detailsBtn.type = "button";
+    detailsBtn.className = "secondary btn-small";
+    detailsBtn.textContent = "Details";
+    detailsBtn.addEventListener("click", () => {
+      openDetailsModal(result, canUpdateStopped);
     });
+    headRight.appendChild(detailsBtn);
 
-    if (isOffline && result.error) {
+    head.appendChild(headLeft);
+    head.appendChild(headRight);
+    card.appendChild(head);
+
+    if (result.error && !isCancelled) {
       const errorTag = document.createElement("p");
       errorTag.className = "hint";
       errorTag.textContent = `Error: ${result.error}`;
-      body.appendChild(errorTag);
+      card.appendChild(errorTag);
     }
 
-    if (!hasCheckedAt) {
-      const empty = document.createElement("p");
-      if (isRestarting) {
-        empty.textContent = "Agent restarting...";
-      } else {
-        empty.textContent = isScanningActive ? "Scanning in progress..." : "Scan has not been run yet.";
-      }
-      body.appendChild(empty);
-    } else if (!result.containers || result.containers.length === 0) {
-      const empty = document.createElement("p");
-      empty.textContent = "No containers found.";
-      body.appendChild(empty);
-    } else {
-      const updateRequired = result.containers.filter((container) => container.update_available);
-      const upToDate = result.containers.filter((container) => !container.update_available);
-
-      const grid = document.createElement("div");
-      grid.className = "results-grid";
-
-      const leftCol = document.createElement("div");
-      leftCol.className = "results-col";
-      const leftTitle = document.createElement("h4");
-      leftTitle.textContent = "Update required";
-      leftCol.appendChild(leftTitle);
-
-      const rightCol = document.createElement("div");
-      rightCol.className = "results-col";
-      const rightTitle = document.createElement("h4");
-      const rightToggle = document.createElement("button");
-      rightToggle.type = "button";
-      rightToggle.className = "toggle-btn";
-      rightToggle.textContent = "Up to date";
-      rightTitle.appendChild(rightToggle);
-      rightCol.appendChild(rightTitle);
-
-      const renderContainerRow = (container) => {
-        const row = document.createElement("div");
-        row.className = "container-row";
-        const status = container.update_available
-          ? container.updated
-            ? "updated"
-            : "update available"
-          : "up to date";
-        const image = displayImage(container.image);
-        row.innerHTML = `
-          <strong>${container.name}</strong>
-        `;
-        if (image) {
-          const imageSpan = document.createElement("span");
-          imageSpan.textContent = image;
-          row.appendChild(imageSpan);
-        }
-        const statusSpan = document.createElement("span");
-        statusSpan.className = "tag";
-        statusSpan.textContent = status;
-        row.appendChild(statusSpan);
-        const policySpan = document.createElement("span");
-        policySpan.className = "tag";
-        policySpan.textContent = `policy: ${container.policy}`;
-        row.appendChild(policySpan);
-
-        const isSelfContainer = result.local && container.name === "contiwatch";
-        const canUpdate =
-          container.update_available &&
-          !container.updated &&
-          !container.paused &&
-          !currentScanController &&
-          !updateInProgress &&
-          (container.running || canUpdateStopped) &&
-          !isSelfContainer;
-
-        if (container.updated) {
-          const actions = document.createElement("div");
-          actions.className = "row-actions";
-          const updatedBtn = document.createElement("button");
-          updatedBtn.type = "button";
-          updatedBtn.className = "btn-small btn-success";
-          updatedBtn.textContent = "Updated";
-          updatedBtn.disabled = true;
-          actions.appendChild(updatedBtn);
-          row.appendChild(actions);
-        } else if (container.update_available) {
-          const actions = document.createElement("div");
-          actions.className = "row-actions";
-
-          const updateBtn = document.createElement("button");
-          updateBtn.type = "button";
-          updateBtn.className = "btn-small";
-          updateBtn.textContent = "Update";
-          updateBtn.disabled = !canUpdate;
-
-          const infoBtn = document.createElement("button");
-          infoBtn.type = "button";
-          infoBtn.className = "btn-small secondary";
-          infoBtn.textContent = "Info";
-
-          if (isSelfContainer) {
-            updateBtn.textContent = "Self-update disabled";
-            updateBtn.disabled = true;
-          }
-
-          const updateState = document.createElement("span");
-          updateState.className = "tag hidden";
-
-          const infoPanel = document.createElement("div");
-          infoPanel.className = "info-panel hidden";
-          const currentImageID = container.image_id || "unknown";
-          const newImageID = container.new_image_id || "unknown";
-          infoPanel.textContent = `Current image: ${currentImageID}\nNew image: ${newImageID}`;
-
-          updateBtn.addEventListener("click", async () => {
-            if (updateInProgress || currentScanController) return;
-            updateInProgress = true;
-            scanBtn.disabled = true;
-            if (scanScopeSelect) {
-              scanScopeSelect.disabled = true;
-            }
-            updateBtn.disabled = true;
-            updateState.classList.remove("hidden");
-            updateState.textContent = "Updating…";
-            let updateResult = null;
-            let restartHint = false;
-            try {
-              const scope = result.local
-                ? `local:${result.server_name || "local"}`
-                : `remote:${result.server_name || "remote"}`;
-              const serverParam = encodeURIComponent(scope);
-              updateResult = await fetchJSON(`/api/update/${encodeURIComponent(container.id)}?server=${serverParam}`, { method: "POST" });
-              if (updateResult.updated) {
-                updateState.textContent = `Updated (${updateResult.previous_state} → ${updateResult.current_state})`;
-              } else {
-                if (updateResult.message && /agent restarting|self update scheduled/i.test(updateResult.message)) {
-                  restartHint = true;
-                  updateState.textContent = "Agent restarting — recheck in 30s";
-                } else {
-                  updateState.textContent = updateResult.message || "Not updated";
-                }
-              }
-            } catch (err) {
-              updateState.textContent = `Error: ${err.message}`;
-            } finally {
-              updateInProgress = false;
-              scanBtn.disabled = Boolean(currentScanController);
-              if (scanScopeSelect) {
-                scanScopeSelect.disabled = Boolean(currentScanController);
-              }
-              updateBtn.disabled = false;
-              setTimeout(() => updateState.classList.add("hidden"), 8000);
-              await refreshStatus();
-              await refreshLogs();
-              if (updateResult) {
-                if (updateResult.updated) {
-                  showToast(`Updated ${updateResult.name} (${updateResult.previous_state} → ${updateResult.current_state})`);
-                } else if (restartHint) {
-                  const serverKey = result.server_name || "remote";
-                  restartingServers[serverKey] = Date.now() + 30000;
-                  showToast("Agent restarting — recheck in 30s.");
-                  window.setTimeout(async () => {
-                    delete restartingServers[serverKey];
-                    await refreshStatus();
-                  }, 30000);
-                } else {
-                  showToast(`${updateResult.name}: ${updateResult.message || "Not updated"}`);
-                }
-              }
-            }
-          });
-
-          infoBtn.addEventListener("click", () => {
-            infoPanel.classList.toggle("hidden");
-          });
-
-          actions.appendChild(updateBtn);
-          actions.appendChild(infoBtn);
-          actions.appendChild(updateState);
-          row.appendChild(actions);
-          row.appendChild(infoPanel);
-        }
-
-        return row;
-      };
-
-      if (updateRequired.length === 0) {
-        const empty = document.createElement("p");
-        empty.textContent = "No updates required.";
-        leftCol.appendChild(empty);
-      } else {
-        updateRequired.forEach((container) => leftCol.appendChild(renderContainerRow(container)));
-      }
-
-      const rightBody = document.createElement("div");
-      rightBody.className = "column-body hidden";
-      if (upToDate.length === 0) {
-        const empty = document.createElement("p");
-        empty.textContent = "No containers.";
-        rightBody.appendChild(empty);
-      } else {
-        upToDate.forEach((container) => rightBody.appendChild(renderContainerRow(container)));
-      }
-      rightCol.appendChild(rightBody);
-
-      rightToggle.addEventListener("click", () => {
-        rightBody.classList.toggle("hidden");
-      });
-
-      grid.appendChild(leftCol);
-      grid.appendChild(rightCol);
-      body.appendChild(grid);
+    if (!hasCheckedAt && !isOffline && isRestarting) {
+      const stateLine = document.createElement("div");
+      stateLine.className = "status-card-meta";
+      stateLine.textContent = "Agent restarting...";
+      card.appendChild(stateLine);
     }
 
-    card.appendChild(body);
     statusEl.appendChild(card);
   });
 
@@ -505,23 +607,27 @@ function applySidebarFilter(queryOverride) {
   const listItems = Array.from(serversListEl ? serversListEl.querySelectorAll(".server-item") : []);
   const targets = cards.concat(listItems);
   targets.forEach((el) => {
-    const haystack = normalizeQuery(el.textContent);
+    const source = el.dataset && el.dataset.search ? el.dataset.search : el.textContent;
+    const haystack = normalizeQuery(source);
     const match = !query || haystack.includes(query);
     el.classList.toggle("filtered-out", !match);
   });
 }
 
-const themeModes = ["auto", "light", "dark"];
+const themeModes = ["light", "dark"];
 const themeStorageKey = "contiwatch_theme";
 
 function applyTheme(mode) {
   if (!themeModes.includes(mode)) return;
-  if (mode === "auto") {
-    document.documentElement.removeAttribute("data-theme");
-  } else {
-    document.documentElement.setAttribute("data-theme", mode);
-  }
+  document.documentElement.setAttribute("data-theme", mode);
   localStorage.setItem(themeStorageKey, mode);
+  if (themeToggleBtn) {
+    const nextMode = mode === "dark" ? "light" : "dark";
+    const label = nextMode[0].toUpperCase() + nextMode.slice(1);
+    themeToggleBtn.dataset.mode = mode;
+    themeToggleBtn.setAttribute("aria-label", `Switch to ${label} theme`);
+    themeToggleBtn.setAttribute("title", `Switch to ${label} theme`);
+  }
   if (themeLabel) {
     themeLabel.textContent = mode[0].toUpperCase() + mode.slice(1);
   }
@@ -529,12 +635,11 @@ function applyTheme(mode) {
 
 function initThemeToggle() {
   const saved = localStorage.getItem(themeStorageKey);
-  applyTheme(saved && themeModes.includes(saved) ? saved : "auto");
+  applyTheme(saved && themeModes.includes(saved) ? saved : "light");
   if (!themeToggleBtn) return;
   themeToggleBtn.addEventListener("click", () => {
-    const current = localStorage.getItem(themeStorageKey) || "auto";
-    const idx = themeModes.indexOf(current);
-    const next = themeModes[(idx + 1) % themeModes.length];
+    const current = localStorage.getItem(themeStorageKey) || "light";
+    const next = current === "dark" ? "light" : "dark";
     applyTheme(next);
   });
 }
@@ -547,11 +652,11 @@ function updateScanScopeOptions() {
   ];
 
   cachedLocals.forEach((local) => {
-    options.push({ value: `local:${local.name}`, label: `Local: ${local.name}` });
+    options.push({ value: `local:${local.name}`, label: local.name });
   });
 
   cachedRemotes.forEach((remote) => {
-    options.push({ value: `remote:${remote.name}`, label: `Remote: ${remote.name}` });
+    options.push({ value: `remote:${remote.name}`, label: remote.name });
   });
 
   scanScopeSelect.innerHTML = "";
@@ -586,17 +691,20 @@ async function refreshConfig() {
   if (discordStartupNotifyInput) {
     discordStartupNotifyInput.checked = cfg.discord_notify_on_start !== false;
   }
+  if (discordUpdateDetectedInput) {
+    discordUpdateDetectedInput.checked = cfg.discord_notify_on_update_detected !== false;
+  }
+  if (discordContainerUpdatedInput) {
+    discordContainerUpdatedInput.checked = cfg.discord_notify_on_container_updated !== false;
+  }
   updateStoppedInput.checked = Boolean(cfg.update_stopped_containers);
   pruneDanglingInput.checked = Boolean(cfg.prune_dangling_images);
   const enabled = Boolean(cfg.scheduler_enabled);
-  const interval = Number(cfg.scan_interval_sec);
-  const intervalMinutes = Math.max(1, Math.round(interval / 60));
-  if (enabled) {
-    schedulerStateEl.textContent = Number.isFinite(interval) && interval > 0
-      ? `Scheduler: on (${intervalMinutes}m)`
-      : "Scheduler: on";
-  } else {
-    schedulerStateEl.textContent = "Scheduler: off";
+  if (schedulerStateEl) {
+    schedulerStateEl.dataset.enabled = enabled ? "true" : "false";
+    const tooltip = enabled ? "Auto Scheduler is ON" : "Auto Scheduler is OFF";
+    schedulerStateEl.setAttribute("aria-label", tooltip);
+    schedulerStateEl.setAttribute("title", tooltip);
   }
 }
 
@@ -617,6 +725,8 @@ function buildConfigPayload(options = {}) {
     discord_webhook_url: webhookValue,
     discord_notifications_enabled: discordEnabledInput.checked,
     discord_notify_on_start: discordStartupNotifyInput ? discordStartupNotifyInput.checked : true,
+    discord_notify_on_update_detected: discordUpdateDetectedInput ? discordUpdateDetectedInput.checked : true,
+    discord_notify_on_container_updated: discordContainerUpdatedInput ? discordContainerUpdatedInput.checked : true,
     update_stopped_containers: updateStoppedInput.checked,
     prune_dangling_images: pruneDanglingInput.checked,
   };
@@ -662,7 +772,20 @@ async function refreshStatus() {
       return a.local ? -1 : 1;
     });
   }
+  lastStatusResults = Array.isArray(results) ? results : [];
+  if (lastStatusResults.length > 0) {
+    const nextOverrides = { ...scanStateOverrides };
+    lastStatusResults.forEach((result) => {
+      const key = `${result.local ? "local" : "remote"}:${result.server_name || "unknown"}`;
+      const state = String(result.scan_state || "").toLowerCase();
+      if (state && state !== "idle") {
+        delete nextOverrides[key];
+      }
+    });
+    scanStateOverrides = nextOverrides;
+  }
   renderStatus(results);
+  updateScanPolling(results);
   return results;
 }
 
@@ -721,10 +844,24 @@ async function refreshLogs() {
   }
 }
 
+function isLogsAutoEnabled() {
+  if (!logsAutoToggle) return false;
+  return logsAutoToggle.dataset.enabled === "true";
+}
+
+function setLogsAutoEnabled(enabled) {
+  if (!logsAutoToggle) return;
+  const state = enabled ? "Disable" : "Enable";
+  logsAutoToggle.dataset.enabled = enabled ? "true" : "false";
+  logsAutoToggle.setAttribute("aria-pressed", enabled ? "true" : "false");
+  logsAutoToggle.setAttribute("aria-label", `${state} logs auto refresh`);
+  logsAutoToggle.setAttribute("title", `${state} logs auto refresh`);
+}
+
 function startLogsAutoRefresh() {
   stopLogsAutoRefresh();
   refreshLogs();
-  if (logsAutoToggle && !logsAutoToggle.checked) {
+  if (logsAutoToggle && !isLogsAutoEnabled()) {
     return;
   }
   logsRefreshTimer = window.setInterval(refreshLogs, 5000);
@@ -767,7 +904,7 @@ function flashButton(btn, text, className, durationMs = 2000) {
 
 
 function setScanningUI(isScanning) {
-  const isActive = isScanning || scanAllInProgress || scanStateRunning;
+  const isActive = isScanning || scanActive;
   scanBtn.disabled = updateInProgress;
   if (scanScopeSelect) {
     scanScopeSelect.disabled = isActive || updateInProgress;
@@ -777,79 +914,56 @@ function setScanningUI(isScanning) {
   scanBtn.textContent = isActive ? "Stop scan" : "Run scan";
 }
 
-function startScanFollowUp(startedAt) {
-  if (scanFollowUpTimer) {
-    window.clearInterval(scanFollowUpTimer);
-  }
-  scanAllInProgress = true;
-  scanAllTotal = cachedRemotes.length;
-  scanAllDone = 0;
+function updateScanPolling(results) {
+  const active = Array.isArray(results)
+    ? results.some((result) => ["pending", "scanning"].includes(String(result.scan_state || "")))
+    : false;
+  scanActive = active;
   setScanningUI(false);
-  const startedAtMs = startedAt instanceof Date ? startedAt.getTime() : Date.now();
-  let attempts = 0;
-  scanFollowUpTimer = window.setInterval(async () => {
-    attempts += 1;
-    const results = await refreshStatus();
-    const remotes = Array.isArray(results)
-      ? results.filter((result) => !result.local)
-      : [];
-    const allDone = remotes.every((remote) => {
-      const checkedAt = remote.checked_at ? new Date(remote.checked_at).getTime() : 0;
-      if (!checkedAt || Number.isNaN(checkedAt)) {
-        return false;
-      }
-      return checkedAt >= startedAtMs;
-    });
-    scanAllDone = remotes.reduce((count, remote) => {
-      const checkedAt = remote.checked_at ? new Date(remote.checked_at).getTime() : 0;
-      if (!checkedAt || Number.isNaN(checkedAt)) {
-        return count;
-      }
-      return checkedAt >= startedAtMs ? count + 1 : count;
-    }, 0);
-    setScanningUI(false);
-    if (allDone || attempts >= 30) {
-      window.clearInterval(scanFollowUpTimer);
-      scanFollowUpTimer = null;
-      scanAllInProgress = false;
-      scanAllTotal = 0;
-      scanAllDone = 0;
-      await updateScanState();
-    }
-  }, 2000);
-}
-
-function startScanStateWatcher() {
-  stopScanStateWatcher();
-  scanStateRunning = false;
-  scanStateTimer = window.setInterval(async () => {
-    await updateScanState();
-  }, 4000);
-}
-
-function stopScanStateWatcher() {
-  if (scanStateTimer) {
-    window.clearInterval(scanStateTimer);
-    scanStateTimer = null;
+  if (active && !scanPollingTimer) {
+    scanPollingTimer = window.setInterval(async () => {
+      await refreshStatus();
+    }, 2000);
+  } else if (!active && scanPollingTimer) {
+    window.clearInterval(scanPollingTimer);
+    scanPollingTimer = null;
   }
 }
 
-async function updateScanState() {
-  try {
-    const wasRunning = scanStateRunning;
-    const state = await fetchJSON("/api/scan/state");
-    scanStateRunning = Boolean(state && state.running);
-    if (scanStateRunning || wasRunning) {
+function applyOptimisticScanState(scope) {
+  const nextOverrides = {};
+  const base = Array.isArray(lastStatusResults) && lastStatusResults.length > 0
+    ? lastStatusResults
+    : cachedLocals.map((server) => ({
+      server_name: server.name,
+      local: true,
+    })).concat(cachedRemotes.map((server) => ({
+      server_name: server.name,
+      local: false,
+    })));
+  const items = Array.isArray(base) ? base : [];
+  if (scope && scope !== "all") {
+    const key = scope;
+    nextOverrides[key] = "scanning";
+  } else if (items.length > 0) {
+    items.forEach((item, index) => {
+      const key = `${item.local ? "local" : "remote"}:${item.server_name || "unknown"}`;
+      nextOverrides[key] = index === 0 ? "scanning" : "pending";
+    });
+  }
+  scanStateOverrides = nextOverrides;
+  if (lastStatusResults.length > 0) {
+    renderStatus(lastStatusResults);
+  }
+}
+
+function startScanPolling() {
+  scanActive = true;
+  setScanningUI(false);
+  if (!scanPollingTimer) {
+    scanPollingTimer = window.setInterval(async () => {
       await refreshStatus();
-    }
-    setScanningUI(false);
-  } catch {
-    const wasRunning = scanStateRunning;
-    scanStateRunning = false;
-    if (wasRunning) {
-      await refreshStatus();
-    }
-    setScanningUI(false);
+    }, 2000);
   }
 }
 
@@ -860,6 +974,21 @@ function showToast(message, timeoutMs = 8000) {
   toastEl.classList.remove("hidden");
   window.clearTimeout(showToast._t);
   showToast._t = window.setTimeout(() => toastEl.classList.add("hidden"), timeoutMs);
+}
+
+function refreshViewData(view) {
+  const tasks = [];
+  tasks.push(refreshConfig().catch(() => {}));
+  if (view === "status") {
+    tasks.push(refreshStatus().catch(() => {}));
+  }
+  if (view === "servers") {
+    tasks.push(refreshServers().catch(() => {}));
+  }
+  if (view === "logs") {
+    tasks.push(refreshLogs().catch(() => {}));
+  }
+  void Promise.all(tasks);
 }
 
 function setView(nextView) {
@@ -879,15 +1008,7 @@ function setView(nextView) {
     stopLogsAutoRefresh();
   }
 
-  if (nextView === "status") {
-    startScanStateWatcher();
-  } else {
-    stopScanStateWatcher();
-  }
-
-  if (nextView === "servers") {
-    refreshServers().catch(() => {});
-  }
+  refreshViewData(nextView);
 }
 
 function goToStatus() {
@@ -895,22 +1016,26 @@ function goToStatus() {
 }
 
 scanBtn.addEventListener("click", async () => {
-  if (currentScanController) {
+  if (currentScanController || scanActive) {
     try {
       await fetchJSON("/api/scan/stop", { method: "POST" });
     } catch (err) {
       showToast(err.message || "Failed to stop scan.");
     }
-    currentScanController.abort();
+    if (currentScanController) {
+      currentScanController.abort();
+      currentScanController = null;
+    }
+    scanStateOverrides = {};
+    await refreshStatus();
     return;
   }
   currentScanController = new AbortController();
-  const scanStart = new Date();
-  scanAllInProgress = false;
-  scanAllTotal = 0;
-  scanAllDone = 0;
   selectedScanScope = scanScopeSelect ? scanScopeSelect.value : "all";
   setScanningUI(true);
+  startScanPolling();
+  applyOptimisticScanState(selectedScanScope);
+  refreshStatus().catch(() => {});
   try {
     const scope = scanScopeSelect ? scanScopeSelect.value : "all";
     const url = scope && scope !== "all"
@@ -927,11 +1052,6 @@ scanBtn.addEventListener("click", async () => {
     currentScanController = null;
     setScanningUI(false);
     await refreshStatus();
-    if (scanScopeSelect && scanScopeSelect.value === "all") {
-      startScanFollowUp(scanStart);
-    } else {
-      await updateScanState();
-    }
     await refreshLogs();
   }
 });
@@ -947,9 +1067,11 @@ clearLogsBtn.addEventListener("click", async () => {
 });
 logsLevelSelect.addEventListener("change", refreshLogs);
 if (logsAutoToggle) {
-  logsAutoToggle.addEventListener("change", async () => {
+  logsAutoToggle.addEventListener("click", async () => {
+    const nextEnabled = !isLogsAutoEnabled();
+    setLogsAutoEnabled(nextEnabled);
     if (viewLogsEl.classList.contains("hidden")) return;
-    if (logsAutoToggle.checked) {
+    if (nextEnabled) {
       startLogsAutoRefresh();
       await logClientEvent("info", "logs auto refresh enabled");
     } else {
@@ -977,6 +1099,8 @@ attachImmediateSave(updateStoppedInput);
 attachImmediateSave(pruneDanglingInput);
 attachImmediateSave(discordEnabledInput);
 attachImmediateSave(discordStartupNotifyInput);
+attachImmediateSave(discordUpdateDetectedInput);
+attachImmediateSave(discordContainerUpdatedInput);
 globalPolicySelect.addEventListener("change", async () => {
   try {
     await saveConfig({ useWebhookInput: false });
@@ -1085,13 +1209,28 @@ async function init() {
     });
   });
 
+  if (detailsCloseBtn) {
+    detailsCloseBtn.addEventListener("click", closeDetailsModal);
+  }
+  if (detailsModal) {
+    detailsModal.addEventListener("click", (event) => {
+      if (event.target && event.target.dataset && event.target.dataset.close) {
+        closeDetailsModal();
+      }
+    });
+  }
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && detailsModal && !detailsModal.classList.contains("hidden")) {
+      closeDetailsModal();
+    }
+  });
+
   initThemeToggle();
   setView("status");
   setScanningUI(false);
   await refreshConfig();
   await refreshServers();
   await refreshStatus();
-  startScanStateWatcher();
   await refreshVersion();
   if (localSocketInput && !localSocketInput.value) {
     localSocketInput.value = "/var/run/docker.sock";
