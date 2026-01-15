@@ -1,6 +1,7 @@
 package dockerwatcher
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
@@ -16,6 +17,7 @@ import (
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
+	"github.com/docker/docker/pkg/stdcopy"
 )
 
 const policyLabel = "contiwatch.policy"
@@ -267,6 +269,14 @@ func firstOrEmpty(items []string) string {
 }
 
 func (w *Watcher) UpdateContainer(ctx context.Context, containerID string, cfg config.Config) (UpdateResult, error) {
+	return w.updateContainer(ctx, containerID, cfg, false)
+}
+
+func (w *Watcher) UpdateContainerForceStart(ctx context.Context, containerID string, cfg config.Config) (UpdateResult, error) {
+	return w.updateContainer(ctx, containerID, cfg, true)
+}
+
+func (w *Watcher) updateContainer(ctx context.Context, containerID string, cfg config.Config, forceStart bool) (UpdateResult, error) {
 	containerID = strings.TrimSpace(containerID)
 	if containerID == "" {
 		return UpdateResult{}, errors.New("container id is required")
@@ -336,7 +346,8 @@ func (w *Watcher) UpdateContainer(ctx context.Context, containerID string, cfg c
 	}
 
 	wasRunning := inspect.State != nil && inspect.State.Running
-	if !wasRunning && !cfg.UpdateStoppedContainers {
+	startAfter := wasRunning || forceStart
+	if !wasRunning && !forceStart && !cfg.UpdateStoppedContainers {
 		return UpdateResult{
 			ID:            containerID,
 			Name:          name,
@@ -348,13 +359,13 @@ func (w *Watcher) UpdateContainer(ctx context.Context, containerID string, cfg c
 		}, nil
 	}
 
-	newContainerID, err := w.recreateContainer(ctx, inspect, imageRef, wasRunning)
+	newContainerID, err := w.recreateContainer(ctx, inspect, imageRef, startAfter)
 	if err != nil {
 		return UpdateResult{}, err
 	}
 
 	currentState := "stopped"
-	if wasRunning {
+	if startAfter {
 		currentState = "online"
 	}
 
@@ -413,6 +424,14 @@ func IsSelfContainer(containerID string) bool {
 }
 
 func (w *Watcher) TriggerSelfUpdate(ctx context.Context, containerID string) error {
+	return w.triggerSelfUpdate(ctx, containerID, nil)
+}
+
+func (w *Watcher) TriggerSelfUpdateWithLogs(ctx context.Context, containerID string, logFn func(level, message string)) error {
+	return w.triggerSelfUpdate(ctx, containerID, logFn)
+}
+
+func (w *Watcher) triggerSelfUpdate(ctx context.Context, containerID string, logFn func(level, message string)) error {
 	inspect, err := w.client.ContainerInspect(ctx, containerID)
 	if err != nil {
 		return err
@@ -461,5 +480,62 @@ func (w *Watcher) TriggerSelfUpdate(ctx context.Context, containerID string) err
 	if err != nil {
 		return err
 	}
-	return w.client.ContainerStart(ctx, created.ID, types.ContainerStartOptions{})
+	if err := w.client.ContainerStart(ctx, created.ID, types.ContainerStartOptions{}); err != nil {
+		return err
+	}
+	if logFn != nil {
+		logFn("info", fmt.Sprintf("self-update helper started: %s", helperName))
+		go w.streamContainerLogs(created.ID, logFn)
+	}
+	return nil
+}
+
+type logLineWriter struct {
+	level string
+	logFn func(level, message string)
+	buf   string
+}
+
+func (w *logLineWriter) Write(p []byte) (int, error) {
+	w.buf += string(p)
+	for {
+		idx := strings.IndexByte(w.buf, '\n')
+		if idx < 0 {
+			break
+		}
+		line := strings.TrimRight(w.buf[:idx], "\r")
+		w.buf = w.buf[idx+1:]
+		if strings.TrimSpace(line) != "" {
+			w.logFn(w.level, line)
+		}
+	}
+	return len(p), nil
+}
+
+func (w *logLineWriter) Flush() {
+	line := strings.TrimSpace(w.buf)
+	if line != "" {
+		w.logFn(w.level, line)
+	}
+	w.buf = ""
+}
+
+func (w *Watcher) streamContainerLogs(containerID string, logFn func(level, message string)) {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	reader, err := w.client.ContainerLogs(ctx, containerID, types.ContainerLogsOptions{
+		ShowStdout: true,
+		ShowStderr: true,
+		Follow:     true,
+	})
+	if err != nil {
+		logFn("warn", fmt.Sprintf("self-update helper logs unavailable: %v", err))
+		return
+	}
+	defer reader.Close()
+	stdoutWriter := &logLineWriter{level: "info", logFn: logFn}
+	stderrWriter := &logLineWriter{level: "warn", logFn: logFn}
+	_, _ = stdcopy.StdCopy(stdoutWriter, stderrWriter, bufio.NewReader(reader))
+	stdoutWriter.Flush()
+	stderrWriter.Flush()
 }

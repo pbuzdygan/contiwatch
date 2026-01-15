@@ -7,10 +7,10 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"strings"
 	"syscall"
 	"time"
-	"runtime/debug"
 
 	"contiwatch/internal/config"
 	"contiwatch/internal/dockerwatcher"
@@ -74,7 +74,7 @@ func main() {
 			}
 			defer watcher.Close()
 			cfg := store.Get()
-			if _, err := watcher.UpdateContainer(context.Background(), containerID, cfg); err != nil {
+			if _, err := watcher.UpdateContainerForceStart(context.Background(), containerID, cfg); err != nil {
 				log.Fatalf("self-update failed: %v", err)
 			}
 			log.Printf("self-update completed: %s", containerID)

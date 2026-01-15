@@ -845,7 +845,9 @@ func (s *Server) handleUpdateContainer(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, errors.New("self update is only supported in agent mode"))
 			return
 		}
-		if err := s.watcher.TriggerSelfUpdate(updateCtx, containerID); err != nil {
+		if err := s.watcher.TriggerSelfUpdateWithLogs(updateCtx, containerID, func(level, message string) {
+			s.addLog(level, fmt.Sprintf("self-update helper: %s", message))
+		}); err != nil {
 			s.addLog("error", fmt.Sprintf("self update failed: %s: %v", containerID, err))
 			writeError(w, http.StatusInternalServerError, err)
 			return
