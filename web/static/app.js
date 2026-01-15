@@ -112,12 +112,26 @@ function closeDetailsModal() {
 }
 
 function buildDetailsTitle(name) {
-  return `
-    <span class="details-title-icon">
-      <svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icons-tabler-outline icon-tabler-server-bolt" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M3 7a3 3 0 0 1 3 -3h12a3 3 0 0 1 3 3v2a3 3 0 0 1 -3 3h-12a3 3 0 0 1 -3 -3" /><path d="M15 20h-9a3 3 0 0 1 -3 -3v-2a3 3 0 0 1 3 -3h12" /><path d="M7 8v.01" /><path d="M7 16v.01" /><path d="M20 15l-2 3h3l-2 3" /></svg>
-    </span>
-    <span>${name}</span>
-  `;
+  const frag = document.createDocumentFragment();
+  const iconWrap = document.createElement("span");
+  iconWrap.className = "details-title-icon";
+  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  svg.setAttribute("class", "icon icon-tabler icons-tabler-outline icon-tabler-server-bolt");
+  svg.setAttribute("width", "24");
+  svg.setAttribute("height", "24");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("fill", "none");
+  svg.setAttribute("stroke", "currentColor");
+  svg.setAttribute("stroke-width", "2");
+  svg.setAttribute("stroke-linecap", "round");
+  svg.setAttribute("stroke-linejoin", "round");
+  svg.setAttribute("aria-hidden", "true");
+  svg.innerHTML = '<path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M3 7a3 3 0 0 1 3 -3h12a3 3 0 0 1 3 3v2a3 3 0 0 1 -3 3h-12a3 3 0 0 1 -3 -3" /><path d="M15 20h-9a3 3 0 0 1 -3 -3v-2a3 3 0 0 1 3 -3h12" /><path d="M7 8v.01" /><path d="M7 16v.01" /><path d="M20 15l-2 3h3l-2 3" />';
+  iconWrap.appendChild(svg);
+  const label = document.createElement("span");
+  label.textContent = name;
+  frag.append(iconWrap, label);
+  return frag;
 }
 
 function buildContainerCard(container, result, canUpdateStopped, variant) {
@@ -126,10 +140,21 @@ function buildContainerCard(container, result, canUpdateStopped, variant) {
 
   const name = document.createElement("strong");
   name.className = "details-card-title";
-  name.innerHTML = `
-    <svg xmlns="http://www.w3.org/2000/svg" class="details-card-title-icon icon icon-tabler icons-tabler-outline icon-tabler-brand-docker" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M22 12.54c-1.804 -.345 -2.701 -1.08 -3.523 -2.94c-.487 .696 -1.102 1.568 -.92 2.4c.028 .238 -.32 1 -.557 1h-14c0 5.208 3.164 7 6.196 7c4.124 .022 7.828 -1.376 9.854 -5c1.146 -.101 2.296 -1.505 2.95 -2.46" /><path d="M5 10h3v3h-3l0 -3" /><path d="M8 10h3v3h-3l0 -3" /><path d="M11 10h3v3h-3l0 -3" /><path d="M8 7h3v3h-3l0 -3" /><path d="M11 7h3v3h-3l0 -3" /><path d="M11 4h3v3h-3l0 -3" /><path d="M4.571 18c1.5 0 2.047 -.074 2.958 -.78" /><path d="M10 16l0 .01" /></svg>
-    <span>${container.name}</span>
-  `;
+  const titleIcon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  titleIcon.setAttribute("class", "details-card-title-icon icon icon-tabler icons-tabler-outline icon-tabler-brand-docker");
+  titleIcon.setAttribute("width", "24");
+  titleIcon.setAttribute("height", "24");
+  titleIcon.setAttribute("viewBox", "0 0 24 24");
+  titleIcon.setAttribute("fill", "none");
+  titleIcon.setAttribute("stroke", "currentColor");
+  titleIcon.setAttribute("stroke-width", "2");
+  titleIcon.setAttribute("stroke-linecap", "round");
+  titleIcon.setAttribute("stroke-linejoin", "round");
+  titleIcon.setAttribute("aria-hidden", "true");
+  titleIcon.innerHTML = '<path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M22 12.54c-1.804 -.345 -2.701 -1.08 -3.523 -2.94c-.487 .696 -1.102 1.568 -.92 2.4c.028 .238 -.32 1 -.557 1h-14c0 5.208 3.164 7 6.196 7c4.124 .022 7.828 -1.376 9.854 -5c1.146 -.101 2.296 -1.505 2.95 -2.46" /><path d="M5 10h3v3h-3l0 -3" /><path d="M8 10h3v3h-3l0 -3" /><path d="M11 10h3v3h-3l0 -3" /><path d="M8 7h3v3h-3l0 -3" /><path d="M11 7h3v3h-3l0 -3" /><path d="M11 4h3v3h-3l0 -3" /><path d="M4.571 18c1.5 0 2.047 -.074 2.958 -.78" /><path d="M10 16l0 .01" />';
+  const titleText = document.createElement("span");
+  titleText.textContent = container.name;
+  name.append(titleIcon, titleText);
   card.appendChild(name);
 
   const statusLine = document.createElement("div");
@@ -359,7 +384,8 @@ function openDetailsModal(result, canUpdateStopped) {
   detailsBody.innerHTML = "";
   detailsBody.appendChild(buildDetailsContent(result, canUpdateStopped));
   if (detailsTitle) {
-    detailsTitle.innerHTML = buildDetailsTitle(result.server_name || "server");
+    detailsTitle.textContent = "";
+    detailsTitle.appendChild(buildDetailsTitle(result.server_name || "server"));
   }
   detailsModal.classList.remove("hidden");
   detailsModal.setAttribute("aria-hidden", "false");
@@ -373,7 +399,8 @@ function updateDetailsModal(result, canUpdateStopped) {
   detailsBody.innerHTML = "";
   detailsBody.appendChild(buildDetailsContent(result, canUpdateStopped));
   if (detailsTitle) {
-    detailsTitle.innerHTML = buildDetailsTitle(result.server_name || "server");
+    detailsTitle.textContent = "";
+    detailsTitle.appendChild(buildDetailsTitle(result.server_name || "server"));
   }
 }
 
@@ -1072,12 +1099,17 @@ async function refreshLogs() {
       const ts = new Date(entry.timestamp).toLocaleString();
       const level = String(entry.level || "info").toLowerCase();
       const levelClass = `log-level log-level-${level}`;
-      row.innerHTML = `
-        <span class="log-ts">${ts}</span>
-        <span class="${levelClass}">${level}</span>
-        <span class="log-msg">${entry.message}</span>
-      `;
-    logsListEl.appendChild(row);
+      const tsEl = document.createElement("span");
+      tsEl.className = "log-ts";
+      tsEl.textContent = ts;
+      const levelEl = document.createElement("span");
+      levelEl.className = levelClass;
+      levelEl.textContent = level;
+      const msgEl = document.createElement("span");
+      msgEl.className = "log-msg";
+      msgEl.textContent = entry.message;
+      row.append(tsEl, levelEl, msgEl);
+      logsListEl.appendChild(row);
     });
   } catch (err) {
     logsListEl.innerHTML = "";

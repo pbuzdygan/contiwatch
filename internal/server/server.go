@@ -510,12 +510,13 @@ func (s *Server) handleServersInfo(w http.ResponseWriter, r *http.Request) {
 	cfg := s.store.Get()
 	items := []serverInfo{}
 	for _, local := range cfg.LocalServers {
+		status := localSocketStatus(local.Socket)
 		items = append(items, serverInfo{
 			Type:    "local",
 			Name:    local.Name,
 			Address: local.Socket,
 			Version: s.version,
-			Status:  "online",
+			Status:  status,
 		})
 	}
 
@@ -1209,7 +1210,7 @@ func (s *Server) saveScanState() {
 	localScans := make([]dockerwatcher.ScanResult, 0, len(scans))
 	for _, scan := range scans {
 		if scan.Local {
-			localScans = append(localScans, scan)
+			localScans = append(localScans, slimScanResult(scan))
 		}
 	}
 	if len(localScans) == 0 {
@@ -1243,6 +1244,26 @@ func latestScan(scans []dockerwatcher.ScanResult) dockerwatcher.ScanResult {
 		}
 	}
 	return latest
+}
+
+func slimScanResult(scan dockerwatcher.ScanResult) dockerwatcher.ScanResult {
+	scan.Containers = nil
+	return scan
+}
+
+func localSocketStatus(socket string) string {
+	socket = strings.TrimSpace(socket)
+	if socket == "" {
+		return "offline"
+	}
+	info, err := os.Stat(socket)
+	if err != nil {
+		return "offline"
+	}
+	if info.Mode()&os.ModeSocket == 0 {
+		return "offline"
+	}
+	return "online"
 }
 
 func (s *Server) scanRemoteServer(ctx context.Context, remote config.RemoteServer) (dockerwatcher.ScanResult, error) {
