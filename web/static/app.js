@@ -2,6 +2,10 @@ const statusEl = document.getElementById("status");
 const scanBtn = document.getElementById("scan-btn");
 const scanScopeSelect = document.getElementById("scan-scope");
 const schedulerStateEl = document.getElementById("scheduler-state");
+const schedulerNextRunEl = document.getElementById("scheduler-next-run");
+const tooltipEl = document.createElement("div");
+tooltipEl.id = "app-tooltip";
+document.body.appendChild(tooltipEl);
 const toastEl = document.getElementById("toast");
 const statusHintEl = document.getElementById("status-hint");
 const configForm = document.getElementById("config-form");
@@ -57,8 +61,10 @@ let scanPollingTimer = null;
 let scanActive = false;
 let lastStatusResults = [];
 let scanStateOverrides = {};
+let currentScanStartedAtMs = null;
 let selectedScanScope = "all";
 let restartingServers = {};
+let currentDetailsServerKey = null;
 
 async function fetchJSON(url, options = {}) {
   const res = await fetch(url, options);
@@ -92,36 +98,43 @@ function closeDetailsModal() {
   if (!detailsModal) return;
   detailsModal.classList.add("hidden");
   detailsModal.setAttribute("aria-hidden", "true");
+  currentDetailsServerKey = null;
   if (detailsBody) {
     detailsBody.innerHTML = "";
   }
 }
 
-function buildContainerRow(container, result, canUpdateStopped) {
-  const row = document.createElement("div");
-  row.className = "container-row";
-  const status = container.update_available
-    ? container.updated
-      ? "updated"
-      : "update available"
-    : "up to date";
-  const image = displayImage(container.image);
-  row.innerHTML = `
-    <strong>${container.name}</strong>
+function buildDetailsTitle(name) {
+  return `
+    <span class="details-title-icon">
+      <svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icons-tabler-outline icon-tabler-server-bolt" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M3 7a3 3 0 0 1 3 -3h12a3 3 0 0 1 3 3v2a3 3 0 0 1 -3 3h-12a3 3 0 0 1 -3 -3" /><path d="M15 20h-9a3 3 0 0 1 -3 -3v-2a3 3 0 0 1 3 -3h12" /><path d="M7 8v.01" /><path d="M7 16v.01" /><path d="M20 15l-2 3h3l-2 3" /></svg>
+    </span>
+    <span>${name}</span>
   `;
-  if (image) {
-    const imageSpan = document.createElement("span");
-    imageSpan.textContent = image;
-    row.appendChild(imageSpan);
-  }
-  const statusSpan = document.createElement("span");
-  statusSpan.className = "tag";
-  statusSpan.textContent = status;
-  row.appendChild(statusSpan);
-  const policySpan = document.createElement("span");
-  policySpan.className = "tag";
-  policySpan.textContent = `policy: ${container.policy}`;
-  row.appendChild(policySpan);
+}
+
+function buildContainerCard(container, result, canUpdateStopped, variant) {
+  const card = document.createElement("div");
+  card.className = "details-card";
+
+  const name = document.createElement("strong");
+  name.className = "details-card-title";
+  name.innerHTML = `
+    <svg xmlns="http://www.w3.org/2000/svg" class="details-card-title-icon icon icon-tabler icons-tabler-outline icon-tabler-brand-docker" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M22 12.54c-1.804 -.345 -2.701 -1.08 -3.523 -2.94c-.487 .696 -1.102 1.568 -.92 2.4c.028 .238 -.32 1 -.557 1h-14c0 5.208 3.164 7 6.196 7c4.124 .022 7.828 -1.376 9.854 -5c1.146 -.101 2.296 -1.505 2.95 -2.46" /><path d="M5 10h3v3h-3l0 -3" /><path d="M8 10h3v3h-3l0 -3" /><path d="M11 10h3v3h-3l0 -3" /><path d="M8 7h3v3h-3l0 -3" /><path d="M11 7h3v3h-3l0 -3" /><path d="M11 4h3v3h-3l0 -3" /><path d="M4.571 18c1.5 0 2.047 -.074 2.958 -.78" /><path d="M10 16l0 .01" /></svg>
+    <span>${container.name}</span>
+  `;
+  card.appendChild(name);
+
+  const statusLine = document.createElement("div");
+  const statusLabel = variant === "updates" ? "Update available" : "Up to date";
+  const statusClass = variant === "updates" ? "details-card-status warning" : "details-card-status success";
+  statusLine.className = statusClass;
+  statusLine.innerHTML =
+    (variant === "updates"
+      ? '<svg xmlns="http://www.w3.org/2000/svg" class="details-card-status-icon icon icon-tabler icons-tabler-outline icon-tabler-progress-down" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M10 20.777a8.942 8.942 0 0 1 -2.48 -.969" /><path d="M14 3.223a9.003 9.003 0 0 1 0 17.554" /><path d="M4.579 17.093a8.961 8.961 0 0 1 -1.227 -2.592" /><path d="M3.124 10.5c.16 -.95 .468 -1.85 .9 -2.675l.169 -.305" /><path d="M6.907 4.579a8.954 8.954 0 0 1 3.093 -1.356" /><path d="M12 9v6" /><path d="M15 12l-3 3l-3 -3" /></svg>'
+      : '<svg xmlns="http://www.w3.org/2000/svg" class="details-card-status-icon icon icon-tabler icons-tabler-outline icon-tabler-progress-check" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M10 20.777a8.942 8.942 0 0 1 -2.48 -.969" /><path d="M14 3.223a9.003 9.003 0 0 1 0 17.554" /><path d="M4.579 17.093a8.961 8.961 0 0 1 -1.227 -2.592" /><path d="M3.124 10.5c.16 -.95 .468 -1.85 .9 -2.675l.169 -.305" /><path d="M6.907 4.579a8.954 8.954 0 0 1 3.093 -1.356" /><path d="M9 12l2 2l4 -4" /></svg>') +
+    `<span>${statusLabel}</span>`;
+  card.appendChild(statusLine);
 
   const isSelfContainer = result.local && container.name === "contiwatch";
   const canUpdate =
@@ -133,117 +146,104 @@ function buildContainerRow(container, result, canUpdateStopped) {
     (container.running || canUpdateStopped) &&
     !isSelfContainer;
 
-  if (container.updated) {
-    const actions = document.createElement("div");
-    actions.className = "row-actions";
-    const updatedBtn = document.createElement("button");
-    updatedBtn.type = "button";
-    updatedBtn.className = "btn-small btn-success";
-    updatedBtn.textContent = "Updated";
-    updatedBtn.disabled = true;
-    actions.appendChild(updatedBtn);
-    row.appendChild(actions);
-  } else if (container.update_available) {
-    const actions = document.createElement("div");
-    actions.className = "row-actions";
+  const actions = document.createElement("div");
+  actions.className = "details-card-actions";
 
-    const updateBtn = document.createElement("button");
-    updateBtn.type = "button";
-    updateBtn.className = "btn-small";
-    updateBtn.textContent = "Update";
-    updateBtn.disabled = !canUpdate;
+  const updateBtn = document.createElement("button");
+  updateBtn.type = "button";
+  updateBtn.className = "btn-small";
+  updateBtn.textContent = container.updated ? "Updated" : "Update";
+  updateBtn.disabled = container.updated || !canUpdate;
 
-    const infoBtn = document.createElement("button");
-    infoBtn.type = "button";
-    infoBtn.className = "btn-small secondary";
-    infoBtn.textContent = "Info";
+  const infoBtn = document.createElement("button");
+  infoBtn.type = "button";
+  infoBtn.className = "btn-small secondary";
+  infoBtn.textContent = "Info";
 
-    if (isSelfContainer) {
-      updateBtn.textContent = "Self-update disabled";
-      updateBtn.disabled = true;
-    }
-
-    const updateState = document.createElement("span");
-    updateState.className = "tag hidden";
-
-    const infoPanel = document.createElement("div");
-    infoPanel.className = "info-panel hidden";
-    const currentImageID = container.image_id || "unknown";
-    const newImageID = container.new_image_id || "unknown";
-    infoPanel.textContent = `Current image: ${currentImageID}\nNew image: ${newImageID}`;
-
-    updateBtn.addEventListener("click", async () => {
-      if (updateInProgress || currentScanController) return;
-      const serverKey = result.server_name || (result.local ? "local" : "remote");
-      updateInProgress = true;
-      scanBtn.disabled = true;
-      if (scanScopeSelect) {
-        scanScopeSelect.disabled = true;
-      }
-      updateBtn.disabled = true;
-      updateState.classList.remove("hidden");
-      updateState.textContent = "Updating…";
-      let updateResult = null;
-      let restartHint = false;
-      try {
-        const scope = result.local
-          ? `local:${result.server_name || "local"}`
-          : `remote:${result.server_name || "remote"}`;
-        const serverParam = encodeURIComponent(scope);
-        updateResult = await fetchJSON(`/api/update/${encodeURIComponent(container.id)}?server=${serverParam}`, { method: "POST" });
-        if (updateResult.updated) {
-          updateState.textContent = `Updated (${updateResult.previous_state} → ${updateResult.current_state})`;
-        } else {
-          if (updateResult.message && /agent restarting|self update scheduled/i.test(updateResult.message)) {
-            restartHint = true;
-            updateState.textContent = "Agent restarting — recheck in 30s";
-          } else {
-            updateState.textContent = updateResult.message || "Not updated";
-          }
-        }
-      } catch (err) {
-        updateState.textContent = `Error: ${err.message}`;
-      } finally {
-        updateInProgress = false;
-        if (restartHint) {
-          restartingServers[serverKey] = Date.now() + 30000;
-          window.setTimeout(async () => {
-            delete restartingServers[serverKey];
-            await refreshStatus();
-          }, 30000);
-        }
-        scanBtn.disabled = Boolean(currentScanController);
-        if (scanScopeSelect) {
-          scanScopeSelect.disabled = Boolean(currentScanController);
-        }
-        updateBtn.disabled = false;
-        setTimeout(() => updateState.classList.add("hidden"), 8000);
-        await refreshStatus();
-        await refreshLogs();
-        if (updateResult) {
-          if (updateResult.updated) {
-            showToast(`Updated ${updateResult.name} (${updateResult.previous_state} → ${updateResult.current_state})`);
-          } else if (restartHint) {
-            showToast("Agent restarting — recheck in 30s.");
-          } else {
-            showToast(`${updateResult.name}: ${updateResult.message || "Not updated"}`);
-          }
-        }
-      }
-    });
-
-    infoBtn.addEventListener("click", () => {
-      infoPanel.classList.toggle("hidden");
-    });
-
-    actions.appendChild(updateBtn);
-    actions.appendChild(infoBtn);
-    actions.appendChild(updateState);
-    row.appendChild(actions);
-    row.appendChild(infoPanel);
+  if (isSelfContainer) {
+    updateBtn.textContent = "Self-update disabled";
+    updateBtn.disabled = true;
   }
 
-  return row;
+  const updateState = document.createElement("span");
+  updateState.className = "details-card-state hidden";
+
+  const infoPanel = document.createElement("div");
+  infoPanel.className = "info-panel hidden";
+  const currentImageID = container.image_id || "unknown";
+  const newImageID = container.new_image_id || "unknown";
+  infoPanel.textContent = `Current image: ${currentImageID}\nNew image: ${newImageID}`;
+
+  updateBtn.addEventListener("click", async () => {
+    if (updateInProgress || currentScanController || updateBtn.disabled) return;
+    const serverKey = result.server_name || (result.local ? "local" : "remote");
+    updateInProgress = true;
+    scanBtn.disabled = true;
+    if (scanScopeSelect) {
+      scanScopeSelect.disabled = true;
+    }
+    updateBtn.disabled = true;
+    updateState.classList.remove("hidden");
+    updateState.textContent = "Updating…";
+    let updateResult = null;
+    let restartHint = false;
+    try {
+      const scope = result.local
+        ? `local:${result.server_name || "local"}`
+        : `remote:${result.server_name || "remote"}`;
+      const serverParam = encodeURIComponent(scope);
+      updateResult = await fetchJSON(`/api/update/${encodeURIComponent(container.id)}?server=${serverParam}`, { method: "POST" });
+      if (updateResult.updated) {
+        updateState.textContent = `Updated (${updateResult.previous_state} → ${updateResult.current_state})`;
+      } else {
+        if (updateResult.message && /agent restarting|self update scheduled/i.test(updateResult.message)) {
+          restartHint = true;
+          updateState.textContent = "Agent restarting — recheck in 30s";
+        } else {
+          updateState.textContent = updateResult.message || "Not updated";
+        }
+      }
+    } catch (err) {
+      updateState.textContent = `Error: ${err.message}`;
+    } finally {
+      updateInProgress = false;
+      if (restartHint) {
+        restartingServers[serverKey] = Date.now() + 30000;
+        window.setTimeout(async () => {
+          delete restartingServers[serverKey];
+          await refreshStatus();
+        }, 30000);
+      }
+      scanBtn.disabled = Boolean(currentScanController);
+      if (scanScopeSelect) {
+        scanScopeSelect.disabled = Boolean(currentScanController);
+      }
+      setTimeout(() => updateState.classList.add("hidden"), 8000);
+      await refreshStatus();
+      await refreshLogs();
+      if (updateResult) {
+        if (updateResult.updated) {
+          showToast(`Updated ${updateResult.name} (${updateResult.previous_state} → ${updateResult.current_state})`);
+        } else if (restartHint) {
+          showToast("Agent restarting — recheck in 30s.");
+        } else {
+          showToast(`${updateResult.name}: ${updateResult.message || "Not updated"}`);
+        }
+      }
+    }
+  });
+
+  infoBtn.addEventListener("click", () => {
+    infoPanel.classList.toggle("hidden");
+  });
+
+  actions.appendChild(updateBtn);
+  actions.appendChild(infoBtn);
+  actions.appendChild(updateState);
+  card.appendChild(actions);
+  card.appendChild(infoPanel);
+
+  return card;
 }
 
 function buildDetailsContent(result, canUpdateStopped) {
@@ -284,57 +284,88 @@ function buildDetailsContent(result, canUpdateStopped) {
     return wrapper;
   }
 
-  const updateRequired = result.containers.filter((container) => container.update_available);
-  const upToDate = result.containers.filter((container) => !container.update_available);
+  const updateRequired = result.containers
+    .filter((container) => container.update_available)
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const upToDate = result.containers
+    .filter((container) => !container.update_available)
+    .sort((a, b) => a.name.localeCompare(b.name));
 
-  const grid = document.createElement("div");
-  grid.className = "results-grid";
-
-  const leftCol = document.createElement("div");
-  leftCol.className = "results-col";
-  const leftTitle = document.createElement("h4");
-  leftTitle.textContent = "Updates available";
-  leftCol.appendChild(leftTitle);
-
-  const rightCol = document.createElement("div");
-  rightCol.className = "results-col";
-  const rightTitle = document.createElement("h4");
-  rightTitle.textContent = "Scanned containers";
-  rightCol.appendChild(rightTitle);
-
+  const updatesGroup = document.createElement("details");
+  updatesGroup.className = "details-group";
+  updatesGroup.open = true;
+  const updatesSummary = document.createElement("summary");
+  updatesSummary.className = "details-group-header";
+  updatesSummary.innerHTML = `
+    <span class="details-group-label">
+      <svg xmlns="http://www.w3.org/2000/svg" class="details-group-icon icon icon-tabler icons-tabler-outline icon-tabler-progress-down" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M10 20.777a8.942 8.942 0 0 1 -2.48 -.969" /><path d="M14 3.223a9.003 9.003 0 0 1 0 17.554" /><path d="M4.579 17.093a8.961 8.961 0 0 1 -1.227 -2.592" /><path d="M3.124 10.5c.16 -.95 .468 -1.85 .9 -2.675l.169 -.305" /><path d="M6.907 4.579a8.954 8.954 0 0 1 3.093 -1.356" /><path d="M12 9v6" /><path d="M15 12l-3 3l-3 -3" /></svg>
+      <span>Updates available</span>
+      <span class="details-count">${updateRequired.length}</span>
+    </span>
+  `;
+  updatesGroup.appendChild(updatesSummary);
+  const updatesGrid = document.createElement("div");
+  updatesGrid.className = "details-card-grid";
   if (updateRequired.length === 0) {
     const empty = document.createElement("p");
+    empty.className = "details-empty";
     empty.textContent = "No updates required.";
-    leftCol.appendChild(empty);
+    updatesGrid.appendChild(empty);
   } else {
-    updateRequired.forEach((container) => leftCol.appendChild(buildContainerRow(container, result, canUpdateStopped)));
+    updateRequired.forEach((container) => updatesGrid.appendChild(buildContainerCard(container, result, canUpdateStopped, "updates")));
   }
+  updatesGroup.appendChild(updatesGrid);
+  wrapper.appendChild(updatesGroup);
 
+  const scannedGroup = document.createElement("details");
+  scannedGroup.className = "details-group";
+  scannedGroup.open = false;
+  const scannedSummary = document.createElement("summary");
+  scannedSummary.className = "details-group-header";
+  scannedSummary.innerHTML = `
+    <span class="details-group-label">
+      <svg xmlns="http://www.w3.org/2000/svg" class="details-group-icon icon icon-tabler icons-tabler-outline icon-tabler-circle-dot" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M11 12a1 1 0 1 0 2 0a1 1 0 1 0 -2 0" /><path d="M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0" /></svg>
+      <span>Scanned containers</span>
+      <span class="details-count">${upToDate.length}</span>
+    </span>
+  `;
+  scannedGroup.appendChild(scannedSummary);
+  const scannedGrid = document.createElement("div");
+  scannedGrid.className = "details-card-grid";
   if (upToDate.length === 0) {
     const empty = document.createElement("p");
+    empty.className = "details-empty";
     empty.textContent = "No containers.";
-    rightCol.appendChild(empty);
+    scannedGrid.appendChild(empty);
   } else {
-    upToDate.forEach((container) => rightCol.appendChild(buildContainerRow(container, result, canUpdateStopped)));
+    upToDate.forEach((container) => scannedGrid.appendChild(buildContainerCard(container, result, canUpdateStopped, "scanned")));
   }
-
-  grid.appendChild(leftCol);
-  grid.appendChild(rightCol);
-  wrapper.appendChild(grid);
+  scannedGroup.appendChild(scannedGrid);
+  wrapper.appendChild(scannedGroup);
   return wrapper;
 }
 
 function openDetailsModal(result, canUpdateStopped) {
   if (!detailsModal || !detailsBody) return;
+  currentDetailsServerKey = `${result.local ? "local" : "remote"}:${result.server_name || "server"}`;
   detailsBody.innerHTML = "";
   detailsBody.appendChild(buildDetailsContent(result, canUpdateStopped));
   if (detailsTitle) {
-    detailsTitle.textContent = `Server details: ${result.server_name || "server"}`;
+    detailsTitle.innerHTML = buildDetailsTitle(result.server_name || "server");
   }
   detailsModal.classList.remove("hidden");
   detailsModal.setAttribute("aria-hidden", "false");
   if (detailsCloseBtn) {
     detailsCloseBtn.focus();
+  }
+}
+
+function updateDetailsModal(result, canUpdateStopped) {
+  if (!detailsModal || !detailsBody) return;
+  detailsBody.innerHTML = "";
+  detailsBody.appendChild(buildDetailsContent(result, canUpdateStopped));
+  if (detailsTitle) {
+    detailsTitle.innerHTML = buildDetailsTitle(result.server_name || "server");
   }
 }
 
@@ -376,9 +407,19 @@ function renderStatus(results) {
     const key = `${result.local ? "local" : "remote"}:${result.server_name || "unknown"}`;
     const backendState = String(result.scan_state || "").toLowerCase();
     const overrideState = scanStateOverrides[key];
-    const scanState = backendState && backendState !== "idle"
+    let scanState = backendState && backendState !== "idle"
       ? backendState
       : (overrideState || backendState);
+    if (
+      (!scanState || scanState === "idle") &&
+      scanActive &&
+      selectedScanScope === "all"
+    ) {
+      const checkedAtMs = hasCheckedAt ? checkedAt.getTime() : 0;
+      if (!currentScanStartedAtMs || !checkedAtMs || checkedAtMs < currentScanStartedAtMs) {
+        scanState = "pending";
+      }
+    }
     const cancelError = result.error && /cancelled|canceled|context canceled/i.test(result.error);
     const isPending = scanState === "pending";
     const isScanningActive = scanState === "scanning";
@@ -424,18 +465,71 @@ function renderStatus(results) {
     nameIcon.setAttribute("stroke-linecap", "round");
     nameIcon.setAttribute("stroke-linejoin", "round");
     nameIcon.setAttribute("aria-hidden", "true");
-    nameIcon.setAttribute("title", `Status: ${statusLabel}`);
     nameIcon.innerHTML = '<path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M3 7a3 3 0 0 1 3 -3h12a3 3 0 0 1 3 3v2a3 3 0 0 1 -3 3h-12a3 3 0 0 1 -3 -3" /><path d="M15 20h-9a3 3 0 0 1 -3 -3v-2a3 3 0 0 1 3 -3h12" /><path d="M7 8v.01" /><path d="M7 16v.01" /><path d="M20 15l-2 3h3l-2 3" />';
+    const nameIconWrap = document.createElement("span");
+    nameIconWrap.className = "status-card-icon-wrap has-tooltip";
+    nameIconWrap.setAttribute("data-tooltip", `Status: ${statusLabel}`);
+    nameIconWrap.setAttribute("aria-label", `Status: ${statusLabel}`);
+    nameIconWrap.appendChild(nameIcon);
     const name = document.createElement("strong");
     name.textContent = result.server_name || "unknown";
-    nameWrap.appendChild(nameIcon);
+    nameWrap.appendChild(nameIconWrap);
     nameWrap.appendChild(name);
     headLeft.appendChild(nameWrap);
 
-    const typeTag = document.createElement("span");
-    typeTag.className = "tag";
-    typeTag.textContent = result.local ? "LOCAL" : "REMOTE";
-    headLeft.appendChild(typeTag);
+    const typeIcon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    typeIcon.setAttribute(
+      "class",
+      `status-card-type-icon icon icon-tabler icons-tabler-outline icon-tabler-${result.local ? "plug-connected" : "network"}`
+    );
+    typeIcon.setAttribute("width", "24");
+    typeIcon.setAttribute("height", "24");
+    typeIcon.setAttribute("viewBox", "0 0 24 24");
+    typeIcon.setAttribute("fill", "none");
+    typeIcon.setAttribute("stroke", "currentColor");
+    typeIcon.setAttribute("stroke-width", "2");
+    typeIcon.setAttribute("stroke-linecap", "round");
+    typeIcon.setAttribute("stroke-linejoin", "round");
+    typeIcon.setAttribute("aria-hidden", "true");
+    const typeWrap = document.createElement("span");
+    typeWrap.className = "status-card-type has-tooltip";
+    if (result.local) {
+      typeWrap.setAttribute("data-tooltip", "Local socket");
+      typeWrap.setAttribute("aria-label", "Local socket");
+      typeIcon.innerHTML = '<path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M7 12l5 5l-1.5 1.5a3.536 3.536 0 1 1 -5 -5l1.5 -1.5" /><path d="M17 12l-5 -5l1.5 -1.5a3.536 3.536 0 1 1 5 5l-1.5 1.5" /><path d="M3 21l2.5 -2.5" /><path d="M18.5 5.5l2.5 -2.5" /><path d="M10 11l-2 2" /><path d="M13 14l-2 2" />';
+    } else {
+      typeWrap.setAttribute("data-tooltip", "Remote agent");
+      typeWrap.setAttribute("aria-label", "Remote agent");
+      typeIcon.innerHTML = '<path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M6 9a6 6 0 1 0 12 0a6 6 0 0 0 -12 0" /><path d="M12 3c1.333 .333 2 2.333 2 6s-.667 5.667 -2 6" /><path d="M12 3c-1.333 .333 -2 2.333 -2 6s.667 5.667 2 6" /><path d="M6 9h12" /><path d="M3 20h7" /><path d="M14 20h7" /><path d="M10 20a2 2 0 1 0 4 0a2 2 0 0 0 -4 0" /><path d="M12 15v3" />';
+    }
+    typeWrap.appendChild(typeIcon);
+    headLeft.appendChild(typeWrap);
+
+    if (currentConfig && currentConfig.scheduler_enabled) {
+      const schedulerWrap = document.createElement("span");
+      schedulerWrap.className = "status-card-scheduler-wrap has-tooltip";
+      const tooltip = formatSchedulerNextRun(currentConfig);
+      schedulerWrap.setAttribute("data-tooltip", tooltip);
+      schedulerWrap.setAttribute("aria-label", tooltip);
+
+      const schedulerIcon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      schedulerIcon.setAttribute(
+        "class",
+        "status-card-scheduler icon icon-tabler icons-tabler-outline icon-tabler-calendar-check"
+      );
+      schedulerIcon.setAttribute("width", "24");
+      schedulerIcon.setAttribute("height", "24");
+      schedulerIcon.setAttribute("viewBox", "0 0 24 24");
+      schedulerIcon.setAttribute("fill", "none");
+      schedulerIcon.setAttribute("stroke", "currentColor");
+      schedulerIcon.setAttribute("stroke-width", "2");
+      schedulerIcon.setAttribute("stroke-linecap", "round");
+      schedulerIcon.setAttribute("stroke-linejoin", "round");
+      schedulerIcon.setAttribute("aria-hidden", "true");
+      schedulerIcon.innerHTML = '<path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M11 19h-6a2 2 0 0 1 -2 -2v-11a2 2 0 0 1 2 -2h11a2 2 0 0 1 2 2v5" /><path d="M16 3v4" /><path d="M8 3v4" /><path d="M4 11h12" /><path d="M15 19l2 2l4 -4" />';
+      schedulerWrap.appendChild(schedulerIcon);
+      headLeft.appendChild(schedulerWrap);
+    }
 
     // Status indicator moved to the server icon.
     if (scanLabelText) {
@@ -446,27 +540,49 @@ function renderStatus(results) {
     }
 
     const summary = document.createElement("div");
-    summary.className = "server-summary";
-    if (isCancelled) {
-      summary.textContent = "Updates: cancelled.";
-    } else if (!hasCheckedAt) {
-      summary.textContent = "Updates: pending.";
-    } else if (!result.containers || result.containers.length === 0) {
-      summary.textContent = "Updates: none.";
-    } else {
-      const total = result.containers.length;
-      const updates = result.containers.filter((container) => container.update_available).length;
-      summary.textContent = updates === 0
-        ? "Updates: none."
-        : `Updates: ${updates} / ${total} scanned.`;
-    }
+    summary.className = "server-summary server-summary-metrics";
+    const totalScanned = hasCheckedAt && Array.isArray(result.containers) ? result.containers.length : 0;
+    const updates = hasCheckedAt && Array.isArray(result.containers)
+      ? result.containers.filter((container) => container.update_available).length
+      : 0;
+    const upToDate = totalScanned > 0 ? Math.max(0, totalScanned - updates) : 0;
+
+    const upToDateEl = document.createElement("span");
+    upToDateEl.className = `summary-metric${hasCheckedAt && upToDate > 0 ? " metric-success" : ""}`;
+    upToDateEl.innerHTML =
+      '<svg xmlns="http://www.w3.org/2000/svg" class="summary-icon icon icon-tabler icons-tabler-outline icon-tabler-progress-check" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M10 20.777a8.942 8.942 0 0 1 -2.48 -.969" /><path d="M14 3.223a9.003 9.003 0 0 1 0 17.554" /><path d="M4.579 17.093a8.961 8.961 0 0 1 -1.227 -2.592" /><path d="M3.124 10.5c.16 -.95 .468 -1.85 .9 -2.675l.169 -.305" /><path d="M6.907 4.579a8.954 8.954 0 0 1 3.093 -1.356" /><path d="M9 12l2 2l4 -4" /></svg>' +
+      `<span>${upToDate}</span><span class="summary-label">Latest</span>`;
+
+    const updatesEl = document.createElement("span");
+    updatesEl.className = `summary-metric${hasCheckedAt && updates > 0 ? " metric-warning" : ""}`;
+    updatesEl.innerHTML =
+      '<svg xmlns="http://www.w3.org/2000/svg" class="summary-icon icon icon-tabler icons-tabler-outline icon-tabler-progress-down" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M10 20.777a8.942 8.942 0 0 1 -2.48 -.969" /><path d="M14 3.223a9.003 9.003 0 0 1 0 17.554" /><path d="M4.579 17.093a8.961 8.961 0 0 1 -1.227 -2.592" /><path d="M3.124 10.5c.16 -.95 .468 -1.85 .9 -2.675l.169 -.305" /><path d="M6.907 4.579a8.954 8.954 0 0 1 3.093 -1.356" /><path d="M12 9v6" /><path d="M15 12l-3 3l-3 -3" /></svg>' +
+      `<span>${updates}</span><span class="summary-label">Outdated</span>`;
+
+    const scannedEl = document.createElement("span");
+    scannedEl.className = "summary-metric";
+    scannedEl.innerHTML =
+      '<svg xmlns="http://www.w3.org/2000/svg" class="summary-icon icon icon-tabler icons-tabler-outline icon-tabler-circle-dot" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M11 12a1 1 0 1 0 2 0a1 1 0 1 0 -2 0" /><path d="M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0" /></svg>' +
+      `<span>${totalScanned}</span><span class="summary-label">Scanned</span>`;
+
+    summary.appendChild(upToDateEl);
+    summary.appendChild(updatesEl);
+    summary.appendChild(scannedEl);
 
     const meta = document.createElement("div");
     meta.className = "status-card-meta";
     if (isCancelled) {
       meta.textContent = "Last scan: cancelled.";
     } else {
-      meta.textContent = hasCheckedAt ? `Last scan: ${checkedAt.toLocaleString()}` : "Last scan: not run yet.";
+      meta.textContent = hasCheckedAt
+        ? `Last scan: ${checkedAt.toLocaleString([], {
+          year: "numeric",
+          month: "short",
+          day: "2-digit",
+          hour: "2-digit",
+          minute: "2-digit",
+        })}`
+        : "Last scan: not run yet.";
     }
 
     headLeft.appendChild(summary);
@@ -532,12 +648,65 @@ function renderServers(localServers, remoteServers) {
 
     const nameRow = document.createElement("div");
     nameRow.className = "server-item-title";
-    nameRow.textContent = item.server.name;
+    const status = String(info.status || "").toLowerCase();
+    const statusLabel = status === "online" ? "online" : (status === "offline" ? "offline" : "restarting");
+    const statusIconWrap = document.createElement("span");
+    statusIconWrap.className = "server-item-status-icon has-tooltip";
+    statusIconWrap.setAttribute("data-tooltip", `Status: ${statusLabel}`);
+    statusIconWrap.setAttribute("aria-label", `Status: ${statusLabel}`);
+    const statusIcon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    statusIcon.setAttribute(
+      "class",
+      `server-item-status-svg status-icon status-icon-${statusLabel} icon icon-tabler icons-tabler-outline icon-tabler-server-bolt`
+    );
+    statusIcon.setAttribute("width", "24");
+    statusIcon.setAttribute("height", "24");
+    statusIcon.setAttribute("viewBox", "0 0 24 24");
+    statusIcon.setAttribute("fill", "none");
+    statusIcon.setAttribute("stroke", "currentColor");
+    statusIcon.setAttribute("stroke-width", "2");
+    statusIcon.setAttribute("stroke-linecap", "round");
+    statusIcon.setAttribute("stroke-linejoin", "round");
+    statusIcon.setAttribute("aria-hidden", "true");
+    statusIcon.innerHTML = '<path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M3 7a3 3 0 0 1 3 -3h12a3 3 0 0 1 3 3v2a3 3 0 0 1 -3 3h-12a3 3 0 0 1 -3 -3" /><path d="M15 20h-9a3 3 0 0 1 -3 -3v-2a3 3 0 0 1 3 -3h12" /><path d="M7 8v.01" /><path d="M7 16v.01" /><path d="M20 15l-2 3h3l-2 3" />';
 
-    const typeTag = document.createElement("span");
-    typeTag.className = "tag";
-    typeTag.textContent = item.type.toUpperCase();
-    nameRow.appendChild(typeTag);
+    const nameEl = document.createElement("strong");
+    nameEl.textContent = item.server.name;
+
+    const typeIconWrap = document.createElement("span");
+    typeIconWrap.className = "server-item-type-icon has-tooltip";
+    if (item.type === "local") {
+      typeIconWrap.setAttribute("data-tooltip", "Local socket");
+      typeIconWrap.setAttribute("aria-label", "Local socket");
+    } else {
+      typeIconWrap.setAttribute("data-tooltip", "Remote agent");
+      typeIconWrap.setAttribute("aria-label", "Remote agent");
+    }
+    const typeIcon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    typeIcon.setAttribute(
+      "class",
+      `server-item-type-svg icon icon-tabler icons-tabler-outline icon-tabler-${item.type === "local" ? "plug-connected" : "network"}`
+    );
+    typeIcon.setAttribute("width", "24");
+    typeIcon.setAttribute("height", "24");
+    typeIcon.setAttribute("viewBox", "0 0 24 24");
+    typeIcon.setAttribute("fill", "none");
+    typeIcon.setAttribute("stroke", "currentColor");
+    typeIcon.setAttribute("stroke-width", "2");
+    typeIcon.setAttribute("stroke-linecap", "round");
+    typeIcon.setAttribute("stroke-linejoin", "round");
+    typeIcon.setAttribute("aria-hidden", "true");
+    if (item.type === "local") {
+      typeIcon.innerHTML = '<path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M7 12l5 5l-1.5 1.5a3.536 3.536 0 1 1 -5 -5l1.5 -1.5" /><path d="M17 12l-5 -5l1.5 -1.5a3.536 3.536 0 1 1 5 5l-1.5 1.5" /><path d="M3 21l2.5 -2.5" /><path d="M18.5 5.5l2.5 -2.5" /><path d="M10 11l-2 2" /><path d="M13 14l-2 2" />';
+    } else {
+      typeIcon.innerHTML = '<path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M6 9a6 6 0 1 0 12 0a6 6 0 0 0 -12 0" /><path d="M12 3c1.333 .333 2 2.333 2 6s-.667 5.667 -2 6" /><path d="M12 3c-1.333 .333 -2 2.333 -2 6s.667 5.667 2 6" /><path d="M6 9h12" /><path d="M3 20h7" /><path d="M14 20h7" /><path d="M10 20a2 2 0 1 0 4 0a2 2 0 0 0 -4 0" /><path d="M12 15v3" />';
+    }
+
+    statusIconWrap.appendChild(statusIcon);
+    nameRow.appendChild(statusIconWrap);
+    nameRow.appendChild(nameEl);
+    typeIconWrap.appendChild(typeIcon);
+    nameRow.appendChild(typeIconWrap);
     infoBlock.appendChild(nameRow);
 
     const addressRow = document.createElement("div");
@@ -549,15 +718,20 @@ function renderServers(localServers, remoteServers) {
     const versionRow = document.createElement("div");
     versionRow.className = "server-item-meta";
     const versionValue = info.version ? formatVersion(info.version) : "unknown";
-    versionRow.textContent = `Release: ${versionValue}`;
+    versionRow.textContent = versionValue;
     infoBlock.appendChild(versionRow);
 
     li.appendChild(infoBlock);
 
+    let isConfirming = false;
     const editBtn = document.createElement("button");
     editBtn.textContent = "Edit";
     editBtn.className = "secondary";
     editBtn.addEventListener("click", () => {
+      if (isConfirming) {
+        setConfirming(false);
+        return;
+      }
       if (item.type === "local") {
         localNameInput.value = item.server.name;
         localSocketInput.value = item.server.socket;
@@ -571,7 +745,30 @@ function renderServers(localServers, remoteServers) {
 
     const removeBtn = document.createElement("button");
     removeBtn.textContent = "Remove";
-    removeBtn.addEventListener("click", async () => {
+
+    const confirmBtn = document.createElement("button");
+    confirmBtn.textContent = "Confirm";
+    confirmBtn.className = "btn-danger";
+    confirmBtn.classList.add("hidden");
+
+    function setConfirming(next) {
+      isConfirming = next;
+      if (next) {
+        removeBtn.classList.add("hidden");
+        confirmBtn.classList.remove("hidden");
+        editBtn.textContent = "Cancel";
+      } else {
+        removeBtn.classList.remove("hidden");
+        confirmBtn.classList.add("hidden");
+        editBtn.textContent = "Edit";
+      }
+    }
+
+    removeBtn.addEventListener("click", () => {
+      setConfirming(true);
+    });
+
+    confirmBtn.addEventListener("click", async () => {
       const path = item.type === "local" ? "/api/locals/" : "/api/servers/";
       await fetchJSON(`${path}${encodeURIComponent(item.server.name)}`, { method: "DELETE" });
       await refreshServers();
@@ -582,6 +779,7 @@ function renderServers(localServers, remoteServers) {
     actions.className = "server-item-actions";
     actions.appendChild(editBtn);
     actions.appendChild(removeBtn);
+    actions.appendChild(confirmBtn);
     li.appendChild(actions);
     serversListEl.appendChild(li);
   });
@@ -626,7 +824,7 @@ function applyTheme(mode) {
     const label = nextMode[0].toUpperCase() + nextMode.slice(1);
     themeToggleBtn.dataset.mode = mode;
     themeToggleBtn.setAttribute("aria-label", `Switch to ${label} theme`);
-    themeToggleBtn.setAttribute("title", `Switch to ${label} theme`);
+    themeToggleBtn.setAttribute("data-tooltip", `Switch to ${label} theme`);
   }
   if (themeLabel) {
     themeLabel.textContent = mode[0].toUpperCase() + mode.slice(1);
@@ -699,13 +897,39 @@ async function refreshConfig() {
   }
   updateStoppedInput.checked = Boolean(cfg.update_stopped_containers);
   pruneDanglingInput.checked = Boolean(cfg.prune_dangling_images);
+  updateSchedulerNextRun(cfg);
   const enabled = Boolean(cfg.scheduler_enabled);
   if (schedulerStateEl) {
     schedulerStateEl.dataset.enabled = enabled ? "true" : "false";
-    const tooltip = enabled ? "Auto Scheduler is ON" : "Auto Scheduler is OFF";
+    const tooltip = enabled ? formatSchedulerNextRun(cfg) : "Scheduler disabled";
+    schedulerStateEl.setAttribute("data-tooltip", tooltip);
     schedulerStateEl.setAttribute("aria-label", tooltip);
-    schedulerStateEl.setAttribute("title", tooltip);
   }
+}
+
+function formatSchedulerNextRun(cfg) {
+  const enabled = Boolean(cfg && cfg.scheduler_enabled);
+  if (!enabled) {
+    return "Next run: enable scheduler to check.";
+  }
+  const interval = Number(cfg.scan_interval_sec);
+  if (!Number.isFinite(interval) || interval <= 0) {
+    return "Next run: unavailable.";
+  }
+  const nextRun = new Date(Date.now() + interval * 1000);
+  const timeLabel = nextRun.toLocaleString([], {
+    year: "numeric",
+    month: "short",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  return `Next run: ${timeLabel}`;
+}
+
+function updateSchedulerNextRun(cfg) {
+  if (!schedulerNextRunEl) return;
+  schedulerNextRunEl.textContent = formatSchedulerNextRun(cfg);
 }
 
 function buildConfigPayload(options = {}) {
@@ -740,6 +964,7 @@ async function saveConfig(options = {}) {
     body: JSON.stringify(payload),
   });
   currentConfig = updated;
+  updateSchedulerNextRun(updated);
   return updated;
 }
 
@@ -773,6 +998,15 @@ async function refreshStatus() {
     });
   }
   lastStatusResults = Array.isArray(results) ? results : [];
+  if (detailsModal && !detailsModal.classList.contains("hidden") && currentDetailsServerKey) {
+    const target = lastStatusResults.find((entry) => {
+      const key = `${entry.local ? "local" : "remote"}:${entry.server_name || "server"}`;
+      return key === currentDetailsServerKey;
+    });
+    if (target) {
+      updateDetailsModal(target, Boolean(currentConfig && currentConfig.update_stopped_containers));
+    }
+  }
   if (lastStatusResults.length > 0) {
     const nextOverrides = { ...scanStateOverrides };
     lastStatusResults.forEach((result) => {
@@ -796,9 +1030,9 @@ async function refreshVersion() {
     const raw = (payload && payload.version) ? String(payload.version) : "dev";
     const normalized = raw.startsWith("v") ? raw : `v${raw}`;
     const display = raw.startsWith("dev") ? `v${raw}` : normalized;
-    appVersionEl.textContent = `Release: ${display}`;
+    appVersionEl.textContent = display;
   } catch (err) {
-    appVersionEl.textContent = "Release: vdev";
+    appVersionEl.textContent = "vdev";
   }
 }
 
@@ -855,7 +1089,7 @@ function setLogsAutoEnabled(enabled) {
   logsAutoToggle.dataset.enabled = enabled ? "true" : "false";
   logsAutoToggle.setAttribute("aria-pressed", enabled ? "true" : "false");
   logsAutoToggle.setAttribute("aria-label", `${state} logs auto refresh`);
-  logsAutoToggle.setAttribute("title", `${state} logs auto refresh`);
+  logsAutoToggle.setAttribute("data-tooltip", `${state} logs auto refresh`);
 }
 
 function startLogsAutoRefresh() {
@@ -927,11 +1161,14 @@ function updateScanPolling(results) {
   } else if (!active && scanPollingTimer) {
     window.clearInterval(scanPollingTimer);
     scanPollingTimer = null;
+    scanStateOverrides = {};
+    currentScanStartedAtMs = null;
   }
 }
 
 function applyOptimisticScanState(scope) {
   const nextOverrides = {};
+  currentScanStartedAtMs = Date.now();
   const base = Array.isArray(lastStatusResults) && lastStatusResults.length > 0
     ? lastStatusResults
     : cachedLocals.map((server) => ({
@@ -975,6 +1212,69 @@ function showToast(message, timeoutMs = 8000) {
   window.clearTimeout(showToast._t);
   showToast._t = window.setTimeout(() => toastEl.classList.add("hidden"), timeoutMs);
 }
+
+let tooltipTarget = null;
+
+function showTooltip(target) {
+  const text = target?.dataset?.tooltip || target?.getAttribute("aria-label") || "";
+  if (!text) return;
+  tooltipEl.textContent = text;
+  tooltipEl.classList.add("visible");
+
+  const rect = target.getBoundingClientRect();
+  const margin = 8;
+  tooltipEl.style.left = "0px";
+  tooltipEl.style.top = "0px";
+  const tooltipRect = tooltipEl.getBoundingClientRect();
+
+  let left = rect.left + rect.width / 2 - tooltipRect.width / 2;
+  left = Math.max(margin, Math.min(left, window.innerWidth - tooltipRect.width - margin));
+
+  let top = rect.top - tooltipRect.height - 10;
+  let placement = "top";
+  if (top < margin) {
+    top = rect.bottom + 10;
+    placement = "bottom";
+  }
+  if (top + tooltipRect.height > window.innerHeight - margin) {
+    top = Math.max(margin, window.innerHeight - tooltipRect.height - margin);
+  }
+
+  tooltipEl.style.left = `${left}px`;
+  tooltipEl.style.top = `${top}px`;
+  tooltipEl.setAttribute("data-placement", placement);
+}
+
+function hideTooltip() {
+  tooltipEl.classList.remove("visible");
+  tooltipTarget = null;
+}
+
+document.addEventListener("mouseover", (event) => {
+  const target = event.target.closest?.(".has-tooltip");
+  if (!target) return;
+  if (tooltipTarget === target) return;
+  tooltipTarget = target;
+  showTooltip(target);
+});
+
+document.addEventListener("mouseout", (event) => {
+  if (!tooltipTarget) return;
+  if (event.relatedTarget && tooltipTarget.contains(event.relatedTarget)) return;
+  hideTooltip();
+});
+
+window.addEventListener("scroll", () => {
+  if (tooltipTarget) {
+    showTooltip(tooltipTarget);
+  }
+}, { passive: true });
+
+window.addEventListener("resize", () => {
+  if (tooltipTarget) {
+    showTooltip(tooltipTarget);
+  }
+});
 
 function refreshViewData(view) {
   const tasks = [];
@@ -1027,6 +1327,7 @@ scanBtn.addEventListener("click", async () => {
       currentScanController = null;
     }
     scanStateOverrides = {};
+    currentScanStartedAtMs = null;
     await refreshStatus();
     return;
   }

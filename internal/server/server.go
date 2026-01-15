@@ -26,6 +26,7 @@ type Server struct {
 	watcher       *dockerwatcher.Watcher
 	discord       *notify.DiscordClient
 	mux           *http.ServeMux
+	statePath     string
 	lastScan      dockerwatcher.ScanResult
 	lastScanMutex sync.RWMutex
 	lastScans     []dockerwatcher.ScanResult
@@ -68,6 +69,13 @@ const (
 )
 
 func New(store *config.Store, watcher *dockerwatcher.Watcher, agentMode bool, agentToken string, version string) *Server {
+	statePath := ""
+	if store != nil {
+		configPath := strings.TrimSpace(store.Path())
+		if configPath != "" {
+			statePath = path.Join(path.Dir(configPath), "scan_state.json")
+		}
+	}
 	s := &Server{
 		store:      store,
 		watcher:    watcher,
@@ -76,8 +84,10 @@ func New(store *config.Store, watcher *dockerwatcher.Watcher, agentMode bool, ag
 		agentToken: agentToken,
 		version:    version,
 		scanStates: map[string]scanState{},
+		statePath:  statePath,
 	}
 	s.routes()
+	s.loadScanState()
 	return s
 }
 
@@ -1090,11 +1100,13 @@ func (s *Server) runScan(ctx context.Context) (dockerwatcher.ScanResult, error) 
 		s.lastScan = result
 		s.lastScans = results
 		s.lastScanMutex.Unlock()
+		go s.saveScanState()
 	} else {
 		s.lastScanMutex.Lock()
 		s.lastScan = dockerwatcher.ScanResult{}
 		s.lastScans = nil
 		s.lastScanMutex.Unlock()
+		go s.saveScanState()
 	}
 
 	if len(results) == 0 {
@@ -1120,6 +1132,7 @@ func (s *Server) updateLastScans(result dockerwatcher.ScanResult) {
 	if s.lastScan.ServerName == "" || s.lastScan.ServerName == result.ServerName {
 		s.lastScan = result
 	}
+	go s.saveScanState()
 }
 
 func (s *Server) scanLocalServer(ctx context.Context, cfg config.Config, local config.LocalServer) (dockerwatcher.ScanResult, error) {
@@ -1136,6 +1149,90 @@ func (s *Server) scanLocalServer(ctx context.Context, cfg config.Config, local c
 	result.ServerURL = local.Socket
 	result.Local = true
 	return result, nil
+}
+
+type scanStateFile struct {
+	LastScans []dockerwatcher.ScanResult `json:"last_scans"`
+}
+
+func (s *Server) loadScanState() {
+	if s.statePath == "" {
+		return
+	}
+	data, err := os.ReadFile(s.statePath)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			log.Printf("scan state load failed: %v", err)
+		}
+		return
+	}
+	var payload scanStateFile
+	if err := json.Unmarshal(data, &payload); err != nil {
+		log.Printf("scan state decode failed: %v", err)
+		return
+	}
+	if len(payload.LastScans) == 0 {
+		return
+	}
+	localScans := make([]dockerwatcher.ScanResult, 0, len(payload.LastScans))
+	for _, scan := range payload.LastScans {
+		if scan.Local {
+			localScans = append(localScans, scan)
+		}
+	}
+	if len(localScans) == 0 {
+		return
+	}
+	s.lastScanMutex.Lock()
+	s.lastScans = localScans
+	s.lastScan = latestScan(localScans)
+	s.lastScanMutex.Unlock()
+}
+
+func (s *Server) saveScanState() {
+	if s.statePath == "" {
+		return
+	}
+	s.lastScanMutex.RLock()
+	scans := append([]dockerwatcher.ScanResult(nil), s.lastScans...)
+	s.lastScanMutex.RUnlock()
+	localScans := make([]dockerwatcher.ScanResult, 0, len(scans))
+	for _, scan := range scans {
+		if scan.Local {
+			localScans = append(localScans, scan)
+		}
+	}
+	if len(localScans) == 0 {
+		_ = os.Remove(s.statePath)
+		return
+	}
+	payload := scanStateFile{LastScans: localScans}
+	data, err := json.MarshalIndent(payload, "", "  ")
+	if err != nil {
+		log.Printf("scan state encode failed: %v", err)
+		return
+	}
+	tmp := s.statePath + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		log.Printf("scan state write failed: %v", err)
+		return
+	}
+	if err := os.Rename(tmp, s.statePath); err != nil {
+		log.Printf("scan state rename failed: %v", err)
+	}
+}
+
+func latestScan(scans []dockerwatcher.ScanResult) dockerwatcher.ScanResult {
+	if len(scans) == 0 {
+		return dockerwatcher.ScanResult{}
+	}
+	latest := scans[0]
+	for _, scan := range scans[1:] {
+		if scan.CheckedAt.After(latest.CheckedAt) {
+			latest = scan
+		}
+	}
+	return latest
 }
 
 func (s *Server) scanRemoteServer(ctx context.Context, remote config.RemoteServer) (dockerwatcher.ScanResult, error) {

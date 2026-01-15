@@ -9,8 +9,8 @@ import (
 )
 
 type RemoteServer struct {
-	Name string `json:"name"`
-	URL  string `json:"url"`
+	Name  string `json:"name"`
+	URL   string `json:"url"`
 	Token string `json:"token"`
 }
 
@@ -20,18 +20,18 @@ type LocalServer struct {
 }
 
 type Config struct {
-	ScanIntervalSec          int            `json:"scan_interval_sec"`
-	SchedulerEnabled         bool           `json:"scheduler_enabled"`
-	GlobalPolicy             string         `json:"global_policy"`
-	DiscordWebhookURL           string `json:"discord_webhook_url"`
-	DiscordNotificationsEnabled *bool  `json:"discord_notifications_enabled"`
-	DiscordNotifyOnStart       *bool  `json:"discord_notify_on_start"`
-	DiscordNotifyOnUpdateDetected *bool `json:"discord_notify_on_update_detected"`
-	DiscordNotifyOnContainerUpdated *bool `json:"discord_notify_on_container_updated"`
-	UpdateStoppedContainers  bool           `json:"update_stopped_containers"`
-	PruneDanglingImages      bool           `json:"prune_dangling_images"`
-	LocalServers             []LocalServer  `json:"local_servers"`
-	RemoteServers            []RemoteServer `json:"remote_servers"`
+	ScanIntervalSec                 int            `json:"scan_interval_sec"`
+	SchedulerEnabled                bool           `json:"scheduler_enabled"`
+	GlobalPolicy                    string         `json:"global_policy"`
+	DiscordWebhookURL               string         `json:"discord_webhook_url"`
+	DiscordNotificationsEnabled     *bool          `json:"discord_notifications_enabled"`
+	DiscordNotifyOnStart            *bool          `json:"discord_notify_on_start"`
+	DiscordNotifyOnUpdateDetected   *bool          `json:"discord_notify_on_update_detected"`
+	DiscordNotifyOnContainerUpdated *bool          `json:"discord_notify_on_container_updated"`
+	UpdateStoppedContainers         bool           `json:"update_stopped_containers"`
+	PruneDanglingImages             bool           `json:"prune_dangling_images"`
+	LocalServers                    []LocalServer  `json:"local_servers"`
+	RemoteServers                   []RemoteServer `json:"remote_servers"`
 }
 
 const (
@@ -42,18 +42,18 @@ const (
 
 func DefaultConfig() Config {
 	return Config{
-		ScanIntervalSec:         60 * 1440,
-		SchedulerEnabled:        false,
-		GlobalPolicy:            PolicyNotifyOnly,
-		DiscordWebhookURL:       "",
-		DiscordNotificationsEnabled: boolPtr(false),
-		DiscordNotifyOnStart:       boolPtr(false),
-		DiscordNotifyOnUpdateDetected: boolPtr(false),
+		ScanIntervalSec:                 60 * 1440,
+		SchedulerEnabled:                false,
+		GlobalPolicy:                    PolicyNotifyOnly,
+		DiscordWebhookURL:               "",
+		DiscordNotificationsEnabled:     boolPtr(false),
+		DiscordNotifyOnStart:            boolPtr(false),
+		DiscordNotifyOnUpdateDetected:   boolPtr(false),
 		DiscordNotifyOnContainerUpdated: boolPtr(false),
-		UpdateStoppedContainers: false,
-		PruneDanglingImages:     false,
-		LocalServers:           []LocalServer{},
-		RemoteServers:           []RemoteServer{},
+		UpdateStoppedContainers:         false,
+		PruneDanglingImages:             false,
+		LocalServers:                    []LocalServer{},
+		RemoteServers:                   []RemoteServer{},
 	}
 }
 
@@ -61,6 +61,12 @@ type Store struct {
 	mu     sync.RWMutex
 	path   string
 	config Config
+}
+
+func (s *Store) Path() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.path
 }
 
 func NewStore(path string) (*Store, error) {
