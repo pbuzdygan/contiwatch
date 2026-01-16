@@ -960,16 +960,24 @@ func (s *Server) handleUpdateContainer(w http.ResponseWriter, r *http.Request) {
 	s.lastScanMutex.Lock()
 	for i := range s.lastScan.Containers {
 		if s.lastScan.Containers[i].ID == containerID {
-			s.lastScan.Containers[i].LastChecked = time.Now()
-			s.lastScan.Containers[i].Error = ""
-			s.lastScan.Containers[i].Updated = result.Updated
-			if result.Updated {
-				s.lastScan.Containers[i].UpdateAvailable = false
-			}
+			updateScanContainerStatus(&s.lastScan.Containers[i], result)
 			break
 		}
 	}
+	for i := range s.lastScans {
+		if s.lastScans[i].ServerName != serverName || s.lastScans[i].Local == isRemote {
+			continue
+		}
+		for j := range s.lastScans[i].Containers {
+			if s.lastScans[i].Containers[j].ID == containerID {
+				updateScanContainerStatus(&s.lastScans[i].Containers[j], result)
+				break
+			}
+		}
+		break
+	}
 	s.lastScanMutex.Unlock()
+	go s.saveScanState()
 
 	writeJSON(w, http.StatusOK, result)
 }
@@ -1743,6 +1751,18 @@ func updateScanResultContainer(result *dockerwatcher.ScanResult, containerID str
 			result.Containers[i].UpdateAvailable = false
 		}
 		return
+	}
+}
+
+func updateScanContainerStatus(container *dockerwatcher.ContainerStatus, updateResult dockerwatcher.UpdateResult) {
+	if container == nil {
+		return
+	}
+	container.LastChecked = time.Now()
+	container.Error = ""
+	container.Updated = updateResult.Updated
+	if updateResult.Updated {
+		container.UpdateAvailable = false
 	}
 }
 

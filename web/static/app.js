@@ -114,6 +114,7 @@ function closeDetailsModal() {
   if (detailsBody) {
     detailsBody.innerHTML = "";
   }
+  refreshStatus().catch(() => {});
 }
 
 function buildDetailsTitle(name) {
