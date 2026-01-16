@@ -654,6 +654,10 @@ h2 {
   gap: var(--s-3);
 }
 
+.server-summary-metrics + .server-summary-metrics {
+  margin-top: var(--s-2);
+}
+
 .summary-metric {
   display: inline-flex;
   align-items: center;
@@ -1113,6 +1117,24 @@ input::placeholder {
   gap: var(--s-2);
 }
 
+.server-select-toggle {
+  position: relative;
+}
+
+.server-select-checkbox {
+  position: absolute;
+  inset: 50% auto auto 50%;
+  transform: translate(-50%, -50%);
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  cursor: pointer;
+}
+
+.server-select-label {
+  visibility: hidden;
+}
+
 .details-group {
   border: 1px solid var(--color-border);
   border-radius: var(--r-card);
@@ -1276,6 +1298,16 @@ input::placeholder {
   color: #ffffff;
 }
 
+.btn-danger:hover {
+  background: color-mix(in srgb, var(--status-error), #000000 12%);
+  border-color: color-mix(in srgb, var(--status-error), #000000 12%);
+}
+
+.btn-danger:active {
+  background: color-mix(in srgb, var(--status-error), #000000 20%);
+  border-color: color-mix(in srgb, var(--status-error), #000000 20%);
+}
+
 .modal {
   position: fixed;
   inset: 0;
@@ -1345,6 +1377,18 @@ input::placeholder {
 .btn-warning {
   background: var(--status-warning);
   border-color: var(--status-warning);
+  color: #111827;
+}
+
+.btn-warning:hover {
+  background: color-mix(in srgb, var(--status-warning), #000000 10%);
+  border-color: color-mix(in srgb, var(--status-warning), #000000 10%);
+  color: #111827;
+}
+
+.btn-warning:active {
+  background: color-mix(in srgb, var(--status-warning), #000000 18%);
+  border-color: color-mix(in srgb, var(--status-warning), #000000 18%);
   color: #111827;
 }
 

@@ -384,6 +384,9 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 		if len(changes) > 0 {
 			s.addLog("info", fmt.Sprintf("settings updated: %s", strings.Join(changes, ", ")))
 		}
+		if s.agentMode && before.GlobalPolicy != updated.GlobalPolicy {
+			s.addLog("info", fmt.Sprintf("agent policy updated: %s→%s", before.GlobalPolicy, updated.GlobalPolicy))
+		}
 		s.UpdateDiscord(updated.DiscordWebhookURL)
 		s.UpdateScheduler(updated)
 		if before.GlobalPolicy != updated.GlobalPolicy && len(updated.RemoteServers) > 0 {
@@ -1235,18 +1238,9 @@ func (s *Server) loadScanState() {
 	if len(payload.LastScans) == 0 {
 		return
 	}
-	localScans := make([]dockerwatcher.ScanResult, 0, len(payload.LastScans))
-	for _, scan := range payload.LastScans {
-		if scan.Local {
-			localScans = append(localScans, scan)
-		}
-	}
-	if len(localScans) == 0 {
-		return
-	}
 	s.lastScanMutex.Lock()
-	s.lastScans = localScans
-	s.lastScan = latestScan(localScans)
+	s.lastScans = payload.LastScans
+	s.lastScan = latestScan(payload.LastScans)
 	s.lastScanMutex.Unlock()
 }
 
@@ -1260,7 +1254,7 @@ func (s *Server) saveScanState() {
 	localScans := make([]dockerwatcher.ScanResult, 0, len(scans))
 	for _, scan := range scans {
 		if scan.Local {
-			localScans = append(localScans, slimScanResult(scan))
+			localScans = append(localScans, scan)
 		}
 	}
 	if len(localScans) == 0 {
@@ -1297,7 +1291,6 @@ func latestScan(scans []dockerwatcher.ScanResult) dockerwatcher.ScanResult {
 }
 
 func slimScanResult(scan dockerwatcher.ScanResult) dockerwatcher.ScanResult {
-	scan.Containers = nil
 	return scan
 }
 
@@ -1633,6 +1626,8 @@ func (s *Server) syncRemotePolicies(cfg config.Config, remotes []config.RemoteSe
 		}
 		if changed {
 			s.addLog("info", fmt.Sprintf("remote policy synced: %s policy=%s", remote.Name, cfg.GlobalPolicy))
+		} else {
+			s.addLog("info", fmt.Sprintf("remote policy already up to date: %s policy=%s", remote.Name, cfg.GlobalPolicy))
 		}
 	}
 }
