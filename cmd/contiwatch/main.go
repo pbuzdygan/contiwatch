@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"strings"
 	"syscall"
 	"time"
@@ -17,6 +18,8 @@ import (
 	"contiwatch/internal/server"
 )
 
+var Version = "dev"
+
 func discordNotificationsEnabled(cfg config.Config) bool {
 	if cfg.DiscordNotificationsEnabled == nil {
 		return true
@@ -24,7 +27,60 @@ func discordNotificationsEnabled(cfg config.Config) bool {
 	return *cfg.DiscordNotificationsEnabled
 }
 
+func discordNotifyOnStartEnabled(cfg config.Config) bool {
+	if cfg.DiscordNotifyOnStart == nil {
+		return true
+	}
+	return *cfg.DiscordNotifyOnStart
+}
+
+func resolveVersion() string {
+	if Version != "" && Version != "dev" {
+		return strings.TrimPrefix(Version, "v")
+	}
+	version := strings.TrimSpace(os.Getenv("CONTIWATCH_VERSION"))
+	if version != "" {
+		return version
+	}
+	if info, ok := debug.ReadBuildInfo(); ok {
+		if info.Main.Version != "" && info.Main.Version != "(devel)" {
+			return strings.TrimPrefix(info.Main.Version, "v")
+		}
+	}
+	return "dev"
+}
+
 func main() {
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "-version", "--version":
+			fmt.Println(resolveVersion())
+			return
+		case "--self-update":
+			if len(os.Args) < 3 {
+				log.Fatalf("self-update requires container id")
+			}
+			containerID := strings.TrimSpace(os.Args[2])
+			if containerID == "" {
+				log.Fatalf("self-update requires container id")
+			}
+			store, err := config.NewStore(server.ResolveConfigPath())
+			if err != nil {
+				log.Fatalf("config: %v", err)
+			}
+			watcher, err := dockerwatcher.New()
+			if err != nil {
+				log.Fatalf("docker: %v", err)
+			}
+			defer watcher.Close()
+			cfg := store.Get()
+			if _, err := watcher.UpdateContainerForceStart(context.Background(), containerID, cfg); err != nil {
+				log.Fatalf("self-update failed: %v", err)
+			}
+			log.Printf("self-update completed: %s", containerID)
+			return
+		}
+	}
 	configPath := server.ResolveConfigPath()
 	_, configStatErr := os.Stat(configPath)
 	configExisted := configStatErr == nil
@@ -46,8 +102,24 @@ func main() {
 		log.Fatalf("agent mode requires CONTIWATCH_AGENT_TOKEN")
 	}
 
-	srv := server.New(store, watcher, agentMode, agentToken)
+	version := resolveVersion()
+	srv := server.New(store, watcher, agentMode, agentToken, version)
 	cfg := store.Get()
+	if agentMode && len(cfg.LocalServers) == 0 {
+		if _, err := os.Stat("/var/run/docker.sock"); err == nil {
+			updated, err := store.Update(func(c *config.Config) {
+				c.LocalServers = []config.LocalServer{{Name: "local", Socket: "/var/run/docker.sock"}}
+			})
+			if err == nil {
+				cfg = updated
+				log.Printf("startup: agent default local server configured (/var/run/docker.sock)")
+			} else {
+				log.Printf("startup: agent default local server not configured: %v", err)
+			}
+		} else {
+			log.Printf("startup: agent local docker socket not found: %v", err)
+		}
+	}
 	srv.UpdateDiscord(cfg.DiscordWebhookURL)
 
 	addr := resolveAddr()
@@ -67,6 +139,7 @@ func main() {
 	log.Printf("startup: global policy=%s", cfg.GlobalPolicy)
 	log.Printf("startup: update stopped containers=%t", cfg.UpdateStoppedContainers)
 	log.Printf("startup: discord notifications=%t", discordNotificationsEnabled(cfg))
+	log.Printf("startup: release=%s", version)
 	log.Printf("startup: agent mode=%t", agentMode)
 	if agentMode {
 		log.Printf("startup: agent api=enabled (token required)")
@@ -91,6 +164,7 @@ func main() {
 	} else {
 		log.Printf("startup: discord webhook=configured")
 	}
+	log.Printf("startup: discord notify on start=%t", discordNotifyOnStartEnabled(cfg))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -105,7 +179,7 @@ func main() {
 	}
 	srv.StartScheduler(ctx)
 
-	if cfg.DiscordWebhookURL != "" && discordNotificationsEnabled(cfg) {
+	if cfg.DiscordWebhookURL != "" && discordNotificationsEnabled(cfg) && discordNotifyOnStartEnabled(cfg) {
 		description := buildStartupDiscordDescription(addr, configPath, configExisted, cfg, schedulerInterval)
 		const discordBlue = 0x3498DB
 		discordClient := notify.NewDiscordClient(cfg.DiscordWebhookURL)
@@ -165,26 +239,41 @@ func buildStartupDiscordDescription(addr, configPath string, configExisted bool,
 		}
 	}
 
-	configLine := "Config: " + configPath
-	if configExisted {
-		configLine += " (loaded)"
-	} else {
-		configLine += " (created defaults)"
-	}
-
 	remoteLine := "Remote servers: none configured"
+	remoteNames := []string{}
 	if len(cfg.RemoteServers) > 0 {
 		remoteLine = "Remote servers: " + fmt.Sprintf("%d", len(cfg.RemoteServers))
+		for _, remote := range cfg.RemoteServers {
+			if remote.Name != "" {
+				remoteNames = append(remoteNames, remote.Name)
+			}
+		}
 	}
 
-	return strings.Join([]string{
-		"HTTP: " + addr,
-		configLine,
+	localLine := "Local servers: none configured"
+	localNames := []string{}
+	if len(cfg.LocalServers) > 0 {
+		localLine = "Local servers: " + fmt.Sprintf("%d", len(cfg.LocalServers))
+		for _, local := range cfg.LocalServers {
+			if local.Name != "" {
+				localNames = append(localNames, local.Name)
+			}
+		}
+	}
+
+	lines := []string{
 		schedulerLine,
 		"Global policy: " + cfg.GlobalPolicy,
 		"Update stopped containers: " + fmt.Sprintf("%t", cfg.UpdateStoppedContainers),
 		"Discord notifications: " + fmt.Sprintf("%t", discordNotificationsEnabled(cfg)),
 		remoteLine,
-		"Manual scan: POST /api/scan (one-off)",
-	}, "\n")
+	}
+	if len(remoteNames) > 0 {
+		lines = append(lines, "- "+strings.Join(remoteNames, "\n- "))
+	}
+	lines = append(lines, localLine)
+	if len(localNames) > 0 {
+		lines = append(lines, "- "+strings.Join(localNames, "\n- "))
+	}
+	return strings.Join(lines, "\n")
 }

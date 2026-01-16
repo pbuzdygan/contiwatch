@@ -1,13 +1,22 @@
-FROM golang:1.22-alpine AS builder
+FROM --platform=$BUILDPLATFORM golang:1.24-alpine AS builder
+ARG VERSION=dev
 WORKDIR /src
-RUN apk add --no-cache git
 
-COPY go.mod .
-RUN go mod download
+ARG TARGETOS
+ARG TARGETARCH
+ARG TARGETVARIANT
+
+COPY go.* ./
+RUN --mount=type=cache,target=/go/pkg/mod go mod download
 
 COPY . .
-RUN go mod download
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -mod=mod -o /out/contiwatch ./cmd/contiwatch
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 \
+    GOOS="${TARGETOS:-linux}" \
+    GOARCH="${TARGETARCH:-amd64}" \
+    GOARM="${TARGETVARIANT#v}" \
+    go build -mod=mod -ldflags="-X main.Version=${VERSION}" -o /out/contiwatch ./cmd/contiwatch
 
 FROM alpine:3.20
 WORKDIR /app

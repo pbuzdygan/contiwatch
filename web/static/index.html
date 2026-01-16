@@ -4,48 +4,81 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Contiwatch</title>
+    <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/icons/favicon-16x16.png">
+    <link rel="icon" href="/icons/favicon.ico">
+    <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png">
     <link rel="stylesheet" href="/style.css">
   </head>
   <body>
-    <header>
-      <button id="menu-btn" class="menu-btn" aria-label="Open menu">☰</button>
-      <h1>Contiwatch</h1>
-      <p>Minimal Docker image watcher</p>
+    <header class="topbar">
+      <div class="topbar-left">
+      <div class="brand">
+        <h1>Contiwatch</h1>
+        <p>Minimal Docker image watcher</p>
+      </div>
+      </div>
+      <div class="topbar-right">
+        <div id="toast" class="toast toast-top hidden" role="status" aria-live="polite"></div>
+        <button id="theme-toggle" class="secondary theme-toggle has-tooltip" type="button" aria-label="Switch to Dark theme" data-tooltip="Switch to Dark theme">
+          <svg xmlns="http://www.w3.org/2000/svg" class="theme-icon theme-icon-dark icon icon-tabler icons-tabler-outline icon-tabler-sun" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M8 12a4 4 0 1 0 8 0a4 4 0 1 0 -8 0" /><path d="M3 12h1m8 -9v1m8 8h1m-9 8v1m-6.4 -15.4l.7 .7m12.1 -.7l-.7 .7m0 11.4l.7 .7m-12.1 -.7l-.7 .7" /></svg>
+          <svg xmlns="http://www.w3.org/2000/svg" class="theme-icon theme-icon-light icon icon-tabler icons-tabler-outline icon-tabler-moon-stars" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M12 3c.132 0 .263 0 .393 0a7.5 7.5 0 0 0 7.92 12.446a9 9 0 1 1 -8.313 -12.454z" /><path d="M17 4a2 2 0 0 0 2 2a2 2 0 0 0 -2 2a2 2 0 0 0 -2 -2a2 2 0 0 0 2 -2" /><path d="M19 11h2m-1 -1v2" /></svg>
+        </button>
+      </div>
     </header>
 
-    <div id="overlay" class="overlay hidden"></div>
-    <aside id="sidebar" class="sidebar" aria-hidden="true">
+    <aside id="sidebar" class="sidebar" aria-hidden="false">
       <div class="sidebar-header">
-        <h2>Menu</h2>
-        <button id="sidebar-close" class="icon-btn" aria-label="Close menu">✕</button>
+        <img
+          class="sidebar-banner"
+          src="/icons/contiwatch_banner_small.png"
+          alt="Contiwatch"
+        >
       </div>
-      <label class="pin-row">
-        <input type="checkbox" id="sidebar-pin">
-        Pin sidebar
-      </label>
-      <label class="pin-row">
-        <input type="checkbox" id="sidebar-scheduler">
-        Scheduler enabled
+      <label class="sidebar-search">
+        <span class="search-field">
+          <svg xmlns="http://www.w3.org/2000/svg" class="search-icon icon icon-tabler icons-tabler-outline icon-tabler-search" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M3 10a7 7 0 1 0 14 0a7 7 0 1 0 -14 0" /><path d="M21 21l-6 -6" /></svg>
+          <input type="search" id="sidebar-search" placeholder="Servers / containers">
+        </span>
       </label>
       <nav class="sidebar-nav">
-        <button type="button" class="sidebar-link" data-view="status">Status</button>
-        <button type="button" class="sidebar-link" data-view="settings">Settings</button>
-        <button type="button" class="sidebar-link" data-view="servers">Servers</button>
-        <button type="button" class="sidebar-link" data-view="logs">Logs</button>
+        <button type="button" class="sidebar-link" data-view="status">
+          <svg xmlns="http://www.w3.org/2000/svg" class="sidebar-icon icon icon-tabler icons-tabler-outline icon-tabler-home-spark" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M5 12h-2l9 -9l9 9h-2" /><path d="M5 12v7a2 2 0 0 0 2 2h5" /><path d="M9 21v-6a2 2 0 0 1 2 -2h2a2 2 0 0 1 2 2" /><path d="M19 22.5a4.75 4.75 0 0 1 3.5 -3.5a4.75 4.75 0 0 1 -3.5 -3.5a4.75 4.75 0 0 1 -3.5 3.5a4.75 4.75 0 0 1 3.5 3.5" /></svg>
+          Status
+        </button>
+        <button type="button" class="sidebar-link" data-view="servers">
+          <svg xmlns="http://www.w3.org/2000/svg" class="sidebar-icon icon icon-tabler icons-tabler-outline icon-tabler-server-bolt" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M3 7a3 3 0 0 1 3 -3h12a3 3 0 0 1 3 3v2a3 3 0 0 1 -3 3h-12a3 3 0 0 1 -3 -3" /><path d="M15 20h-9a3 3 0 0 1 -3 -3v-2a3 3 0 0 1 3 -3h12" /><path d="M7 8v.01" /><path d="M7 16v.01" /><path d="M20 15l-2 3h3l-2 3" /></svg>
+          Servers
+        </button>
+        <button type="button" class="sidebar-link" data-view="settings">
+          <svg xmlns="http://www.w3.org/2000/svg" class="sidebar-icon icon icon-tabler icons-tabler-outline icon-tabler-settings" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M10.325 4.317c.426 -1.756 2.924 -1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543 -.94 3.31 .826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756 .426 1.756 2.924 0 3.35a1.724 1.724 0 0 0 -1.066 2.573c.94 1.543 -.826 3.31 -2.37 2.37a1.724 1.724 0 0 0 -2.572 1.065c-.426 1.756 -2.924 1.756 -3.35 0a1.724 1.724 0 0 0 -2.573 -1.066c-1.543 .94 -3.31 -.826 -2.37 -2.37a1.724 1.724 0 0 0 -1.065 -2.572c-1.756 -.426 -1.756 -2.924 0 -3.35a1.724 1.724 0 0 0 1.066 -2.573c-.94 -1.543 .826 -3.31 2.37 -2.37c1 .608 2.296 .07 2.572 -1.065" /><path d="M9 12a3 3 0 1 0 6 0a3 3 0 0 0 -6 0" /></svg>
+          Settings
+        </button>
+        <button type="button" class="sidebar-link" data-view="logs">
+          <svg xmlns="http://www.w3.org/2000/svg" class="sidebar-icon icon icon-tabler icons-tabler-outline icon-tabler-logs" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M4 12h.01" /><path d="M4 6h.01" /><path d="M4 18h.01" /><path d="M8 18h2" /><path d="M8 12h2" /><path d="M8 6h2" /><path d="M14 6h6" /><path d="M14 12h6" /><path d="M14 18h6" /></svg>
+          Logs
+        </button>
       </nav>
+      <div class="sidebar-footer">
+        <span id="app-version">vdev</span>
+      </div>
     </aside>
 
     <main>
       <section id="view-status">
         <h2>Status</h2>
         <div class="actions">
-          <button id="scan-btn">Run scan</button>
-          <button id="stop-btn" class="secondary hidden" type="button">Stop</button>
-          <span id="last-scan">No scan yet</span>
-          <span id="scan-state" class="tag hidden">Scanning…</span>
-          <span id="scheduler-state" class="tag">Scheduler: off</span>
+          <button id="scan-btn" class="scan-btn">Run scan</button>
+          <label class="scan-scope">
+            <select id="scan-scope">
+              <option value="all">All servers</option>
+            </select>
+          </label>
+          <span id="scheduler-state" class="scheduler-state has-tooltip" data-enabled="false" aria-label="Scheduler disabled">
+            <svg xmlns="http://www.w3.org/2000/svg" class="scheduler-icon scheduler-icon-off icon icon-tabler icons-tabler-outline icon-tabler-calendar-cancel" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M12.5 21h-6.5a2 2 0 0 1 -2 -2v-12a2 2 0 0 1 2 -2h12a2 2 0 0 1 2 2v5" /><path d="M16 3v4" /><path d="M8 3v4" /><path d="M4 11h12" /><path d="M22 22l-5 -5" /><path d="M17 22l5 -5" /></svg>
+            <svg xmlns="http://www.w3.org/2000/svg" class="scheduler-icon scheduler-icon-on icon icon-tabler icons-tabler-outline icon-tabler-calendar-check" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M11 19h-6a2 2 0 0 1 -2 -2v-11a2 2 0 0 1 2 -2h11a2 2 0 0 1 2 2v5" /><path d="M16 3v4" /><path d="M8 3v4" /><path d="M4 11h12" /><path d="M15 19l2 2l4 -4" /></svg>
+          </span>
         </div>
-        <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
         <div id="status-hint" class="hint hidden"></div>
         <div id="status"></div>
       </section>
@@ -53,45 +86,89 @@
       <section id="view-settings" class="hidden">
         <div class="view-header">
           <h2>Settings</h2>
-          <button id="back-from-settings" class="secondary" type="button">Back to status</button>
         </div>
         <form id="config-form">
-          <label>
-            <input type="checkbox" id="scheduler-enabled">
-            Scheduler enabled
-          </label>
-          <label>
-            Scan interval (sec)
-            <input type="number" id="scan-interval" min="30" step="30">
-          </label>
-          <label>
-            Global policy
-            <select id="global-policy">
-              <option value="update">update</option>
-              <option value="notify_only">notify_only</option>
-              <option value="skip">skip</option>
-            </select>
-          </label>
-          <label>
-            Discord webhook URL
-            <input type="text" id="discord-url" placeholder="https://discord.com/api/webhooks/...">
-          </label>
-          <label>
-            <input type="checkbox" id="discord-enabled">
-            Discord notifications enabled
-          </label>
-          <label>
-            <input type="checkbox" id="update-stopped">
-            Update stopped containers (keep them stopped)
-          </label>
-          <button type="submit">Save</button>
+          <div class="settings-grid">
+            <div class="settings-card notifications-card">
+              <h3 class="settings-title">
+                <svg xmlns="http://www.w3.org/2000/svg" class="settings-icon icon icon-tabler icons-tabler-outline icon-tabler-clock-cog" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M21 12a9 9 0 1 0 -9.002 9" /><path d="M17.001 19a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" /><path d="M19.001 15.5v1.5" /><path d="M19.001 21v1.5" /><path d="M22.032 17.25l-1.299 .75" /><path d="M17.27 20l-1.3 .75" /><path d="M15.97 17.25l1.3 .75" /><path d="M20.733 20l1.3 .75" /><path d="M12 7v5l2 2" /></svg>
+                General
+              </h3>
+              <label class="toggle-row">
+                <input type="checkbox" id="scheduler-enabled">
+                <span class="toggle-track" aria-hidden="true"><span class="toggle-thumb"></span></span>
+                <span>Scheduler enabled <span id="scheduler-next-run" class="scheduler-next"></span></span>
+              </label>
+              <label class="interval-field">
+                Scan interval (minutes)
+                <div class="interval-actions">
+                  <input type="number" id="scan-interval" min="1" step="1">
+                  <button id="save-interval" type="submit">Save</button>
+                </div>
+              </label>
+              <label>
+                <span class="settings-label-title">
+                  <svg xmlns="http://www.w3.org/2000/svg" class="settings-icon icon icon-tabler icons-tabler-outline icon-tabler-file-settings" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M10 14a2 2 0 1 0 4 0a2 2 0 1 0 -4 0" /><path d="M12 10.5v1.5" /><path d="M12 16v1.5" /><path d="M15.031 12.25l-1.299 .75" /><path d="M10.268 15l-1.3 .75" /><path d="M15 15.803l-1.285 -.773" /><path d="M10.285 12.97l-1.285 -.773" /><path d="M14 3v4a1 1 0 0 0 1 1h4" /><path d="M17 21h-10a2 2 0 0 1 -2 -2v-14a2 2 0 0 1 2 -2h7l5 5v11a2 2 0 0 1 -2 2" /></svg>
+                  Global policy
+                </span>
+                <select id="global-policy">
+                  <option value="update">update</option>
+                  <option value="notify_only">notify_only</option>
+                  <option value="skip">skip</option>
+                </select>
+              </label>
+              <label class="toggle-row">
+                <input type="checkbox" id="update-stopped">
+                <span class="toggle-track" aria-hidden="true"><span class="toggle-thumb"></span></span>
+                <span>Update stopped containers (keep them stopped)</span>
+              </label>
+              <label class="toggle-row">
+                <input type="checkbox" id="prune-dangling">
+                <span class="toggle-track" aria-hidden="true"><span class="toggle-thumb"></span></span>
+                <span>Prune dangling images after update</span>
+              </label>
+            </div>
+            <div class="settings-card">
+              <h3 class="settings-title">
+                <svg xmlns="http://www.w3.org/2000/svg" class="settings-icon icon icon-tabler icons-tabler-outline icon-tabler-bell-ringing" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M10 5a2 2 0 0 1 4 0a7 7 0 0 1 4 6v3a4 4 0 0 0 2 3h-16a4 4 0 0 0 2 -3v-3a7 7 0 0 1 4 -6" /><path d="M9 17v1a3 3 0 0 0 6 0v-1" /><path d="M21 6.727a11.05 11.05 0 0 0 -2.794 -3.727" /><path d="M3 6.727a11.05 11.05 0 0 1 2.792 -3.727" /></svg>
+                Notifications
+              </h3>
+              <label>
+                Discord webhook URL
+                <input type="text" id="discord-url" placeholder="https://discord.com/api/webhooks/...">
+              </label>
+              <label class="toggle-row">
+                <input type="checkbox" id="discord-enabled">
+                <span class="toggle-track" aria-hidden="true"><span class="toggle-thumb"></span></span>
+                <span>Discord notifications enabled</span>
+              </label>
+              <label class="toggle-row">
+                <input type="checkbox" id="discord-startup-notify">
+                <span class="toggle-track" aria-hidden="true"><span class="toggle-thumb"></span></span>
+                <span>Notify on startup</span>
+              </label>
+              <label class="toggle-row">
+                <input type="checkbox" id="discord-update-detected">
+                <span class="toggle-track" aria-hidden="true"><span class="toggle-thumb"></span></span>
+                <span>Image Update Detected</span>
+              </label>
+              <label class="toggle-row">
+                <input type="checkbox" id="discord-container-updated">
+                <span class="toggle-track" aria-hidden="true"><span class="toggle-thumb"></span></span>
+                <span>Container Updated</span>
+              </label>
+              <div class="settings-actions">
+                <button id="test-webhook" class="secondary" type="button">Test webhook</button>
+              </div>
+              <p class="settings-hint">Test must succeed to save webhook.</p>
+            </div>
+          </div>
         </form>
       </section>
 
       <section id="view-servers" class="hidden">
         <div class="view-header">
           <h2>Servers</h2>
-          <button id="back-from-servers" class="secondary" type="button">Back to status</button>
         </div>
 
         <div class="servers-grid">
@@ -117,7 +194,7 @@
           </label>
           <label>
             URL
-            <input type="text" id="remote-url" placeholder="https://10.0.0.10:8080">
+            <input type="text" id="remote-url" placeholder="http://10.0.0.10:8080">
           </label>
           <label>
             Token / API key
@@ -139,24 +216,47 @@
       <section id="view-logs" class="hidden">
         <div class="view-header">
           <h2>Logs</h2>
-          <button id="back-from-logs" class="secondary" type="button">Back to status</button>
         </div>
         <div class="logs-toolbar">
-          <label class="inline-field">
-            Level
+          <div class="logs-field">
             <select id="logs-level">
               <option value="all">All</option>
               <option value="info">Info</option>
+              <option value="warn">Warn</option>
               <option value="error">Error</option>
             </select>
-          </label>
+          </div>
           <button id="refresh-logs" class="secondary" type="button">Refresh</button>
           <button id="clear-logs" class="secondary" type="button">Clear</button>
-          <span id="logs-status" class="tag">Idle</span>
+          <div class="logs-field">
+            <button
+              id="logs-auto"
+              class="secondary logs-auto-toggle has-tooltip"
+              type="button"
+              data-enabled="true"
+              aria-pressed="true"
+              aria-label="Logs auto refresh: On"
+              data-tooltip="Logs auto refresh: On"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" class="logs-auto-icon logs-auto-icon-play icon icon-tabler icons-tabler-outline icon-tabler-player-play" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M7 4v16l13 -8z" /></svg>
+              <svg xmlns="http://www.w3.org/2000/svg" class="logs-auto-icon logs-auto-icon-stop icon icon-tabler icons-tabler-outline icon-tabler-player-stop" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M5 5h14v14h-14z" /></svg>
+            </button>
+          </div>
         </div>
         <div id="logs-list" class="logs-list"></div>
       </section>
     </main>
+
+    <div id="details-modal" class="modal hidden" aria-hidden="true" role="dialog" aria-modal="true">
+      <div class="modal-backdrop" data-close="true"></div>
+      <div class="modal-card" role="document">
+        <div class="modal-header">
+          <h3 id="details-title">Server details</h3>
+          <button id="details-close" class="secondary btn-small" type="button">Close</button>
+        </div>
+        <div id="details-body" class="modal-body"></div>
+      </div>
+    </div>
 
     <script src="/app.js"></script>
   </body>

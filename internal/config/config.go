@@ -9,8 +9,8 @@ import (
 )
 
 type RemoteServer struct {
-	Name string `json:"name"`
-	URL  string `json:"url"`
+	Name  string `json:"name"`
+	URL   string `json:"url"`
 	Token string `json:"token"`
 }
 
@@ -20,14 +20,18 @@ type LocalServer struct {
 }
 
 type Config struct {
-	ScanIntervalSec          int            `json:"scan_interval_sec"`
-	SchedulerEnabled         bool           `json:"scheduler_enabled"`
-	GlobalPolicy             string         `json:"global_policy"`
-	DiscordWebhookURL           string `json:"discord_webhook_url"`
-	DiscordNotificationsEnabled *bool  `json:"discord_notifications_enabled"`
-	UpdateStoppedContainers  bool           `json:"update_stopped_containers"`
-	LocalServers             []LocalServer  `json:"local_servers"`
-	RemoteServers            []RemoteServer `json:"remote_servers"`
+	ScanIntervalSec                 int            `json:"scan_interval_sec"`
+	SchedulerEnabled                bool           `json:"scheduler_enabled"`
+	GlobalPolicy                    string         `json:"global_policy"`
+	DiscordWebhookURL               string         `json:"discord_webhook_url"`
+	DiscordNotificationsEnabled     *bool          `json:"discord_notifications_enabled"`
+	DiscordNotifyOnStart            *bool          `json:"discord_notify_on_start"`
+	DiscordNotifyOnUpdateDetected   *bool          `json:"discord_notify_on_update_detected"`
+	DiscordNotifyOnContainerUpdated *bool          `json:"discord_notify_on_container_updated"`
+	UpdateStoppedContainers         bool           `json:"update_stopped_containers"`
+	PruneDanglingImages             bool           `json:"prune_dangling_images"`
+	LocalServers                    []LocalServer  `json:"local_servers"`
+	RemoteServers                   []RemoteServer `json:"remote_servers"`
 }
 
 const (
@@ -38,14 +42,18 @@ const (
 
 func DefaultConfig() Config {
 	return Config{
-		ScanIntervalSec:         300,
-		SchedulerEnabled:        false,
-		GlobalPolicy:            PolicyNotifyOnly,
-		DiscordWebhookURL:       "",
-		DiscordNotificationsEnabled: boolPtr(true),
-		UpdateStoppedContainers: false,
-		LocalServers:           []LocalServer{},
-		RemoteServers:           []RemoteServer{},
+		ScanIntervalSec:                 60 * 1440,
+		SchedulerEnabled:                false,
+		GlobalPolicy:                    PolicyNotifyOnly,
+		DiscordWebhookURL:               "",
+		DiscordNotificationsEnabled:     boolPtr(false),
+		DiscordNotifyOnStart:            boolPtr(false),
+		DiscordNotifyOnUpdateDetected:   boolPtr(false),
+		DiscordNotifyOnContainerUpdated: boolPtr(false),
+		UpdateStoppedContainers:         false,
+		PruneDanglingImages:             false,
+		LocalServers:                    []LocalServer{},
+		RemoteServers:                   []RemoteServer{},
 	}
 }
 
@@ -53,6 +61,12 @@ type Store struct {
 	mu     sync.RWMutex
 	path   string
 	config Config
+}
+
+func (s *Store) Path() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.path
 }
 
 func NewStore(path string) (*Store, error) {
@@ -89,11 +103,27 @@ func (s *Store) load() error {
 	if cfg.ScanIntervalSec <= 0 {
 		cfg.ScanIntervalSec = DefaultConfig().ScanIntervalSec
 	}
+	if cfg.ScanIntervalSec == 300 &&
+		!cfg.SchedulerEnabled &&
+		cfg.DiscordWebhookURL == "" &&
+		cfg.UpdateStoppedContainers == false &&
+		cfg.GlobalPolicy == DefaultConfig().GlobalPolicy {
+		cfg.ScanIntervalSec = DefaultConfig().ScanIntervalSec
+	}
 	if cfg.GlobalPolicy == "" {
 		cfg.GlobalPolicy = DefaultConfig().GlobalPolicy
 	}
 	if cfg.DiscordNotificationsEnabled == nil {
-		cfg.DiscordNotificationsEnabled = boolPtr(true)
+		cfg.DiscordNotificationsEnabled = boolPtr(false)
+	}
+	if cfg.DiscordNotifyOnStart == nil {
+		cfg.DiscordNotifyOnStart = boolPtr(false)
+	}
+	if cfg.DiscordNotifyOnUpdateDetected == nil {
+		cfg.DiscordNotifyOnUpdateDetected = boolPtr(false)
+	}
+	if cfg.DiscordNotifyOnContainerUpdated == nil {
+		cfg.DiscordNotifyOnContainerUpdated = boolPtr(false)
 	}
 	s.config = cfg
 	return nil
@@ -124,7 +154,10 @@ func (s *Store) Update(update func(*Config)) (Config, error) {
 		s.config.GlobalPolicy = DefaultConfig().GlobalPolicy
 	}
 	if s.config.DiscordNotificationsEnabled == nil {
-		s.config.DiscordNotificationsEnabled = boolPtr(true)
+		s.config.DiscordNotificationsEnabled = boolPtr(false)
+	}
+	if s.config.DiscordNotifyOnStart == nil {
+		s.config.DiscordNotifyOnStart = boolPtr(false)
 	}
 	return s.config, s.saveLocked()
 }

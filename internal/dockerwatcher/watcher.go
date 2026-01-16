@@ -1,10 +1,12 @@
 package dockerwatcher
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"time"
 
@@ -12,8 +14,10 @@ import (
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
+	"github.com/docker/docker/pkg/stdcopy"
 )
 
 const policyLabel = "contiwatch.policy"
@@ -48,12 +52,15 @@ type UpdateResult struct {
 
 // ScanResult describes a full scan for a single server.
 type ScanResult struct {
-	ServerName string            `json:"server_name"`
-	ServerURL  string            `json:"server_url"`
-	Local      bool              `json:"local"`
-	CheckedAt  time.Time         `json:"checked_at"`
-	Containers []ContainerStatus `json:"containers"`
-	Error      string            `json:"error,omitempty"`
+	ServerName     string            `json:"server_name"`
+	ServerURL      string            `json:"server_url"`
+	Local          bool              `json:"local"`
+	CheckedAt      time.Time         `json:"checked_at"`
+	Containers     []ContainerStatus `json:"containers"`
+	Error          string            `json:"error,omitempty"`
+	ScanState      string            `json:"scan_state,omitempty"`
+	ScanStartedAt  *time.Time        `json:"scan_started_at,omitempty"`
+	ScanFinishedAt *time.Time        `json:"scan_finished_at,omitempty"`
 }
 
 // Watcher performs scans against a local Docker daemon.
@@ -98,8 +105,16 @@ func (w *Watcher) Scan(ctx context.Context, cfg config.Config) (ScanResult, erro
 	}
 
 	for _, item := range containers {
+		if ctx.Err() != nil {
+			result.Error = "scan cancelled manually"
+			return result, nil
+		}
 		status := w.scanContainer(ctx, item, cfg)
 		result.Containers = append(result.Containers, status)
+		if ctx.Err() != nil {
+			result.Error = "scan cancelled manually"
+			return result, nil
+		}
 	}
 
 	return result, nil
@@ -131,7 +146,7 @@ func (w *Watcher) scanContainer(ctx context.Context, item types.Container, cfg c
 	}
 
 	if status.Policy == config.PolicySkip {
-		status.Error = ErrSkipContainer.Error()
+		status.Error = "skipped: policy"
 		return status
 	}
 
@@ -254,6 +269,14 @@ func firstOrEmpty(items []string) string {
 }
 
 func (w *Watcher) UpdateContainer(ctx context.Context, containerID string, cfg config.Config) (UpdateResult, error) {
+	return w.updateContainer(ctx, containerID, cfg, false)
+}
+
+func (w *Watcher) UpdateContainerForceStart(ctx context.Context, containerID string, cfg config.Config) (UpdateResult, error) {
+	return w.updateContainer(ctx, containerID, cfg, true)
+}
+
+func (w *Watcher) updateContainer(ctx context.Context, containerID string, cfg config.Config, forceStart bool) (UpdateResult, error) {
 	containerID = strings.TrimSpace(containerID)
 	if containerID == "" {
 		return UpdateResult{}, errors.New("container id is required")
@@ -323,7 +346,8 @@ func (w *Watcher) UpdateContainer(ctx context.Context, containerID string, cfg c
 	}
 
 	wasRunning := inspect.State != nil && inspect.State.Running
-	if !wasRunning && !cfg.UpdateStoppedContainers {
+	startAfter := wasRunning || forceStart
+	if !wasRunning && !forceStart && !cfg.UpdateStoppedContainers {
 		return UpdateResult{
 			ID:            containerID,
 			Name:          name,
@@ -335,13 +359,13 @@ func (w *Watcher) UpdateContainer(ctx context.Context, containerID string, cfg c
 		}, nil
 	}
 
-	newContainerID, err := w.recreateContainer(ctx, inspect, imageRef, wasRunning)
+	newContainerID, err := w.recreateContainer(ctx, inspect, imageRef, startAfter)
 	if err != nil {
 		return UpdateResult{}, err
 	}
 
 	currentState := "stopped"
-	if wasRunning {
+	if startAfter {
 		currentState = "online"
 	}
 
@@ -355,6 +379,17 @@ func (w *Watcher) UpdateContainer(ctx context.Context, containerID string, cfg c
 		}
 	}
 
+	message := "updated and restored state"
+	if cfg.PruneDanglingImages {
+		deleted, reclaimed, err := w.pruneDanglingImages(ctx)
+		if err != nil {
+			message = fmt.Sprintf("updated; prune failed: %v", err)
+		} else {
+			reclaimedMB := float64(reclaimed) / (1024.0 * 1024.0)
+			message = fmt.Sprintf("updated and pruned dangling images (deleted=%d reclaimed=%.1f MB)", deleted, reclaimedMB)
+		}
+	}
+
 	return UpdateResult{
 		ID:            newContainerID,
 		Name:          name,
@@ -362,6 +397,145 @@ func (w *Watcher) UpdateContainer(ctx context.Context, containerID string, cfg c
 		Updated:       true,
 		PreviousState: previousState,
 		CurrentState:  currentState,
-		Message:       "updated and restored state",
+		Message:       message,
 	}, nil
+}
+
+func (w *Watcher) pruneDanglingImages(ctx context.Context) (int, uint64, error) {
+	args := filters.NewArgs()
+	args.Add("dangling", "true")
+	report, err := w.client.ImagesPrune(ctx, args)
+	if err != nil {
+		return 0, 0, err
+	}
+	deleted := 0
+	if report.ImagesDeleted != nil {
+		deleted = len(report.ImagesDeleted)
+	}
+	return deleted, report.SpaceReclaimed, nil
+}
+
+func IsSelfContainer(containerID string) bool {
+	hostname, err := os.Hostname()
+	if err != nil || hostname == "" {
+		return false
+	}
+	return strings.HasPrefix(containerID, hostname)
+}
+
+func (w *Watcher) TriggerSelfUpdate(ctx context.Context, containerID string) error {
+	return w.triggerSelfUpdate(ctx, containerID, nil)
+}
+
+func (w *Watcher) TriggerSelfUpdateWithLogs(ctx context.Context, containerID string, logFn func(level, message string)) error {
+	return w.triggerSelfUpdate(ctx, containerID, logFn)
+}
+
+func (w *Watcher) triggerSelfUpdate(ctx context.Context, containerID string, logFn func(level, message string)) error {
+	inspect, err := w.client.ContainerInspect(ctx, containerID)
+	if err != nil {
+		return err
+	}
+	imageRef := ""
+	if inspect.Config != nil {
+		imageRef = inspect.Config.Image
+	}
+	if imageRef == "" {
+		return errors.New("missing image reference")
+	}
+	if err := w.pullImage(ctx, imageRef); err != nil {
+		return err
+	}
+
+	nameSuffix := containerID
+	if len(nameSuffix) > 12 {
+		nameSuffix = nameSuffix[:12]
+	}
+	helperName := "contiwatch-updater-" + nameSuffix
+
+	env := []string{
+		"CONTIWATCH_CONFIG=/data/config.json",
+	}
+	var binds []string
+	binds = append(binds, "/var/run/docker.sock:/var/run/docker.sock")
+	for _, mount := range inspect.Mounts {
+		if mount.Destination == "/data" {
+			binds = append(binds, mount.Source+":/data")
+			break
+		}
+	}
+
+	helperConfig := &container.Config{
+		Image:      imageRef,
+		Entrypoint: []string{"/app/contiwatch"},
+		Cmd:        []string{"--self-update", containerID},
+		Env:        env,
+	}
+	helperHost := &container.HostConfig{
+		AutoRemove: true,
+		Binds:      binds,
+	}
+
+	created, err := w.client.ContainerCreate(ctx, helperConfig, helperHost, nil, nil, helperName)
+	if err != nil {
+		return err
+	}
+	if err := w.client.ContainerStart(ctx, created.ID, types.ContainerStartOptions{}); err != nil {
+		return err
+	}
+	if logFn != nil {
+		logFn("info", fmt.Sprintf("self-update helper started: %s", helperName))
+		go w.streamContainerLogs(created.ID, logFn)
+	}
+	return nil
+}
+
+type logLineWriter struct {
+	level string
+	logFn func(level, message string)
+	buf   string
+}
+
+func (w *logLineWriter) Write(p []byte) (int, error) {
+	w.buf += string(p)
+	for {
+		idx := strings.IndexByte(w.buf, '\n')
+		if idx < 0 {
+			break
+		}
+		line := strings.TrimRight(w.buf[:idx], "\r")
+		w.buf = w.buf[idx+1:]
+		if strings.TrimSpace(line) != "" {
+			w.logFn(w.level, line)
+		}
+	}
+	return len(p), nil
+}
+
+func (w *logLineWriter) Flush() {
+	line := strings.TrimSpace(w.buf)
+	if line != "" {
+		w.logFn(w.level, line)
+	}
+	w.buf = ""
+}
+
+func (w *Watcher) streamContainerLogs(containerID string, logFn func(level, message string)) {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	reader, err := w.client.ContainerLogs(ctx, containerID, types.ContainerLogsOptions{
+		ShowStdout: true,
+		ShowStderr: true,
+		Follow:     true,
+	})
+	if err != nil {
+		logFn("warn", fmt.Sprintf("self-update helper logs unavailable: %v", err))
+		return
+	}
+	defer reader.Close()
+	stdoutWriter := &logLineWriter{level: "info", logFn: logFn}
+	stderrWriter := &logLineWriter{level: "warn", logFn: logFn}
+	_, _ = stdcopy.StdCopy(stdoutWriter, stderrWriter, bufio.NewReader(reader))
+	stdoutWriter.Flush()
+	stderrWriter.Flush()
 }

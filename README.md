@@ -4,10 +4,11 @@ Minimal Docker image watcher inspired by Watchtower. Scans local containers, che
 
 ## Features
 - Scan local Docker daemon for running containers
+- Remote agent support (token-authenticated)
 - Pull image tags and detect updates
 - Global and per-container policy (`contiwatch.policy` label)
 - Optional update (recreate container) or notify-only
-- Simple HTML UI for status + remote instance list
+- Simple HTML UI for status, servers, logs, and settings
 - Discord webhook notifications
 
 ## Policies
@@ -37,6 +38,32 @@ docker run -d \
 
 Open `http://localhost:8080`.
 
+## Agent mode (remote)
+Run on a remote host with Docker socket access and a token:
+```bash
+docker run -d \
+  --name contiwatch-agent \
+  -p 8080:8080 \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -v contiwatch-agent-data:/data \
+  -e CONTIWATCH_AGENT=true \
+  -e CONTIWATCH_AGENT_TOKEN="<TOKEN>" \
+  contiwatch
+```
+
+## Container images (GHCR)
+Main releases (multi-arch):
+```bash
+docker pull ghcr.io/<owner>/<repo>:latest
+docker pull ghcr.io/<owner>/<repo>:<version>
+```
+
+Dev releases (multi-arch):
+```bash
+docker pull ghcr.io/<owner>/<repo>:dev_latest
+docker pull ghcr.io/<owner>/<repo>:dev_<version>
+```
+
 ## Environment
 - `CONTIWATCH_ADDR` (default `:8080`)
 - `CONTIWATCH_CONFIG` (default `/data/config.json`)
@@ -46,26 +73,39 @@ Open `http://localhost:8080`.
 
 ## Config file
 `/data/config.json` fields include:
-- `scan_interval_sec`
+- `scan_interval_sec` (in seconds; UI shows minutes)
 - `scheduler_enabled` (if `true`, periodic scans run every `scan_interval_sec`)
 - `global_policy`
 - `discord_webhook_url`
 - `discord_notifications_enabled` (if `false`, no Discord notifications are sent)
+- `discord_notify_on_start`
+- `discord_notify_on_update_detected`
+- `discord_notify_on_container_updated`
 - `update_stopped_containers` (if `true`, `update` policy also updates stopped containers but keeps them stopped)
+- `prune_dangling_images` (if `true`, prune dangling images after updates)
 - `local_servers` (list of local Docker daemons with `name` and `socket`)
 - `remote_servers` (list of remote servers with `name`, `url`, and optional `token`)
 
 ## API
+- `GET /api/version`
 - `POST /api/scan` run scan
-- `GET /api/status` last scan
+- `POST /api/scan/stop` cancel scan
+- `GET /api/scan/state` scan running status
+- `GET /api/status` last scan (local or agent)
 - `GET /api/aggregate` local + remote status
 - `GET/PUT /api/config`
-- `GET/POST /api/servers`
+- `GET/POST /api/servers` (remote servers)
 - `DELETE /api/servers/{name}`
+- `GET/POST /api/locals` (local servers)
+- `GET /api/servers/info` versions + reachability
+- `POST /api/update/{container_id}` update container
+- `GET/POST/DELETE /api/logs`
+- `POST /api/notifications/test` test Discord webhook
 
 Notes:
 - `POST /api/scan` is a one-off trigger; if a scan is already running it returns `409`.
 - Periodic scans are disabled by default; enable via `scheduler_enabled` in the config (UI).
+- Agent mode exposes a limited API surface (token required).
 
 ## Run (docker compose)
 ```bash
@@ -81,8 +121,8 @@ docker compose down
 If `/data/config.json` shows permission errors, set user IDs in compose:
 ```yaml
 environment:
-  PUID: "1026"
-  PGID: "100"
+  PUID: "${PUID}"
+  PGID: "${PGID}"
 ```
 Use your host user IDs (from `id`).
 
