@@ -24,6 +24,9 @@ Policy behavior:
 - `update`: pulls the image and recreates the container with the same config; it only starts the new container if it was running before. By default, non-running containers are skipped for updates (reported as `Skipped`); enable `update_stopped_containers` to update stopped containers but keep them stopped.
 - `skip`: ignores the container entirely.
 
+When using remote agents, the controller syncs `global_policy` to agents; per-container labels still override the global setting.
+Status summary includes a Skipped metric for containers that were intentionally skipped.
+
 ## Run (container)
 ```bash
 docker build -t contiwatch .

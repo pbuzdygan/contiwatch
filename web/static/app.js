@@ -458,6 +458,7 @@ function renderStatus(results) {
     const cancelError = result.error && /cancelled|canceled|context canceled/i.test(result.error);
     const isPending = scanState === "pending";
     const isScanningActive = scanState === "scanning";
+    const isUpdatingActive = scanState === "updating";
     const isCancelled = scanState === "cancelled" || cancelError;
     const hasScanErrorState = scanState === "error";
     const restartKey = serverScopeKey(result);
@@ -467,7 +468,10 @@ function renderStatus(results) {
     let scanLabelText = "";
     let scanLabelClass = "";
     if (!isRestarting) {
-      if (isScanningActive) {
+      if (isUpdatingActive) {
+        scanLabelText = "updating";
+        scanLabelClass = "updating";
+      } else if (isScanningActive) {
         scanLabelText = "scanning";
         scanLabelClass = "scanning";
       } else if (isPending) {
@@ -581,6 +585,12 @@ function renderStatus(results) {
     const updates = hasCheckedAt && Array.isArray(result.containers)
       ? result.containers.filter((container) => container.update_available).length
       : 0;
+    const updated = hasCheckedAt && Array.isArray(result.containers)
+      ? result.containers.filter((container) => container.updated).length
+      : 0;
+    const skipped = hasCheckedAt && Array.isArray(result.containers)
+      ? result.containers.filter((container) => String(container.error || "").startsWith("skipped:")).length
+      : 0;
     const upToDate = totalScanned > 0 ? Math.max(0, totalScanned - updates) : 0;
 
     const upToDateEl = document.createElement("span");
@@ -601,9 +611,23 @@ function renderStatus(results) {
       '<svg xmlns="http://www.w3.org/2000/svg" class="summary-icon icon icon-tabler icons-tabler-outline icon-tabler-circle-dot" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M11 12a1 1 0 1 0 2 0a1 1 0 1 0 -2 0" /><path d="M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0" /></svg>' +
       `<span>${totalScanned}</span><span class="summary-label">Scanned</span>`;
 
+    const updatedEl = document.createElement("span");
+    updatedEl.className = `summary-metric${hasCheckedAt && updated > 0 ? " metric-success" : ""}`;
+    updatedEl.innerHTML =
+      '<svg xmlns="http://www.w3.org/2000/svg" class="summary-icon icon icon-tabler icons-tabler-outline icon-tabler-circle-check" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0" /><path d="M9 12l2 2l4 -4" /></svg>' +
+      `<span>${updated}</span><span class="summary-label">Updated</span>`;
+
+    const skippedEl = document.createElement("span");
+    skippedEl.className = "summary-metric";
+    skippedEl.innerHTML =
+      '<svg xmlns="http://www.w3.org/2000/svg" class="summary-icon icon icon-tabler icons-tabler-outline icon-tabler-chevrons-right" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M7 7l5 5l-5 5" /><path d="M13 7l5 5l-5 5" /></svg>' +
+      `<span>${skipped}</span><span class="summary-label">Skipped</span>`;
+
     summary.appendChild(upToDateEl);
     summary.appendChild(updatesEl);
     summary.appendChild(scannedEl);
+    summary.appendChild(updatedEl);
+    summary.appendChild(skippedEl);
 
     const meta = document.createElement("div");
     meta.className = "status-card-meta";
