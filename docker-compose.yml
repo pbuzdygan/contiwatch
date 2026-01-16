@@ -1,19 +1,23 @@
 services:
   contiwatch:
-    image: ghcr.io/pbuzdygan/contiwatch:dev_latest
+    image: ghcr.io/pbuzdygan/contiwatch:latest
     container_name: contiwatch
     ports:
-      - "8017:8080"
+      - "8080:8080"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - /data:/data
+      - contiwatch_data:/data
     environment:
+      # Default internal port can be changed - helpful when running in "network_mode: host" or other "direct IP" setups
       CONTIWATCH_ADDR: ":8080"
       CONTIWATCH_CONFIG: "/data/config.json"
-      PUID: ""
-      PGID: ""
+      # Use your host user IDs (from `id` command on your docker host)
+      PUID: "${PUID}"
+      PGID: "${PGID}"
       TZ: Europe/Warsaw
       # Optional: if contiwatch can't infer it from /var/run/docker.sock
       # DOCKER_GID: "998"
     restart: unless-stopped
 
+volumes:
+  contiwatch_data:

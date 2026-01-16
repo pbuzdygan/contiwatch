@@ -1,6 +1,6 @@
 services:
   contiwatch-agent:
-    image: ghcr.io/pbuzdygan/contiwatch:dev_latest
+    image: ghcr.io/pbuzdygan/contiwatch:latest
     container_name: contiwatch-agent
     ports:
       - "8080:8080"
@@ -8,13 +8,19 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - contiwatch_agent_data:/data
     environment:
-      CONTIWATCH_ADDR: ":8080"
-      CONTIWATCH_CONFIG: "/data/config.json"
+      # Both "CONTIWATCH_AGENT" env are MUST HAVE for REMOTE AGENT instance
+      # Remote agent instance has limited funtions compared to standard Contiwatch instance and its used to monitor remote Docker hosts
       CONTIWATCH_AGENT: "true"
       CONTIWATCH_AGENT_TOKEN: "PUT_32_CHAR_TOKEN_HERE"
-      TZ: "Europe/Warsaw"
-      PUID: "obtain_using_id_command_on_host"
-      PGID: "obtain_using_id_command_on_host"
+      # Default internal port can be changed - helpful when running in "network_mode: host" or other "direct IP" setups
+      CONTIWATCH_ADDR: ":8080"
+      CONTIWATCH_CONFIG: "/data/config.json"
+      # Use your host user IDs (from `id` command on your docker host)
+      PUID: "${PUID}"
+      PGID: "${PGID}"
+      TZ: Europe/Warsaw
+      # Optional: if contiwatch can't infer it from /var/run/docker.sock
+      # DOCKER_GID: "998"
     restart: unless-stopped
 
 volumes:
