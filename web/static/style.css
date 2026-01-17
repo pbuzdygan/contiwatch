@@ -1630,6 +1630,60 @@ input::placeholder {
   gap: var(--s-2);
 }
 
+.settings-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-2);
+}
+
+.settings-row-label {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  flex: 1;
+}
+
+.settings-row .info-icon-btn {
+  margin-top: 4px;
+}
+
+.info-icon-btn {
+  border: 1px solid transparent;
+  background: transparent;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  width: 20px;
+  height: 20px;
+  min-height: 20px;
+  border-radius: 999px;
+}
+
+.info-icon-btn:hover {
+  background: transparent;
+  border-color: color-mix(in srgb, var(--color-primary), transparent 60%);
+}
+
+.info-icon-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  border-radius: 999px;
+}
+
+.info-icon-btn:active {
+  background: transparent;
+  border-color: color-mix(in srgb, var(--color-primary), transparent 40%);
+}
+
+.details-body-text {
+  margin-top: var(--s-2);
+  color: var(--color-text);
+  font-size: 0.9rem;
+}
+
 .interval-actions {
   display: inline-flex;
   align-items: center;

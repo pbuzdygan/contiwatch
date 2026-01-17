@@ -12,6 +12,7 @@ const configForm = document.getElementById("config-form");
 const schedulerEnabledInput = document.getElementById("scheduler-enabled");
 const scanIntervalInput = document.getElementById("scan-interval");
 const globalPolicySelect = document.getElementById("global-policy");
+const globalPolicyInfoBtn = document.getElementById("global-policy-info");
 const discordInput = document.getElementById("discord-url");
 const discordEnabledInput = document.getElementById("discord-enabled");
 const discordStartupNotifyInput = document.getElementById("discord-startup-notify");
@@ -48,6 +49,8 @@ const detailsModal = document.getElementById("details-modal");
 const detailsTitle = document.getElementById("details-title");
 const detailsBody = document.getElementById("details-body");
 const detailsCloseBtn = document.getElementById("details-close");
+const policyModal = document.getElementById("policy-modal");
+const policyCloseBtn = document.getElementById("policy-close");
 
 let currentScanController = null;
 let currentView = "status";
@@ -115,6 +118,21 @@ function closeDetailsModal() {
     detailsBody.innerHTML = "";
   }
   refreshStatus().catch(() => {});
+}
+
+function openPolicyModal() {
+  if (!policyModal) return;
+  policyModal.classList.remove("hidden");
+  policyModal.setAttribute("aria-hidden", "false");
+  if (policyCloseBtn) {
+    policyCloseBtn.focus();
+  }
+}
+
+function closePolicyModal() {
+  if (!policyModal) return;
+  policyModal.classList.add("hidden");
+  policyModal.setAttribute("aria-hidden", "true");
 }
 
 function buildDetailsTitle(name) {
@@ -662,7 +680,7 @@ function renderStatus(results) {
     const skipped = hasCheckedAt && Array.isArray(result.containers)
       ? result.containers.filter((container) => String(container.error || "").startsWith("skipped:")).length
       : 0;
-    const upToDate = totalScanned > 0 ? Math.max(0, totalScanned - updates) : 0;
+    const upToDate = totalScanned > 0 ? Math.max(0, totalScanned - updates - skipped) : 0;
 
     const upToDateEl = document.createElement("span");
     upToDateEl.className = `summary-metric${hasCheckedAt && upToDate > 0 ? " metric-success" : ""}`;
@@ -1802,9 +1820,25 @@ async function init() {
       }
     });
   }
+  if (globalPolicyInfoBtn) {
+    globalPolicyInfoBtn.addEventListener("click", openPolicyModal);
+  }
+  if (policyCloseBtn) {
+    policyCloseBtn.addEventListener("click", closePolicyModal);
+  }
+  if (policyModal) {
+    policyModal.addEventListener("click", (event) => {
+      if (event.target && event.target.dataset && event.target.dataset.close) {
+        closePolicyModal();
+      }
+    });
+  }
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && detailsModal && !detailsModal.classList.contains("hidden")) {
       closeDetailsModal();
+    }
+    if (event.key === "Escape" && policyModal && !policyModal.classList.contains("hidden")) {
+      closePolicyModal();
     }
   });
 

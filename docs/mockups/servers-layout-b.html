@@ -1,0 +1,340 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Contiwatch – Servers UI Mockup B (Cards + Drawer)</title>
+    <style>
+      :root{
+        --bg:#0b1220;--surface:#0f172a;--surface2:#111c33;--border:rgba(148,163,184,.2);
+        --text:rgba(226,232,240,.92);--muted:rgba(148,163,184,.9);
+        --primary:#60a5fa;--success:#3cb179;--warning:#e6b566;--danger:#e05858;
+        --shadow:0 12px 28px rgba(0,0,0,.35);--r:14px;--h:40px;--focus:0 0 0 3px rgba(96,165,250,.35);
+        --mono:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;
+      }
+      *{box-sizing:border-box}
+      body{
+        margin:0;background:radial-gradient(1000px 600px at 15% 0%,rgba(96,165,250,.16),transparent 55%),
+          radial-gradient(900px 520px at 85% 12%,rgba(230,181,102,.12),transparent 55%),
+          var(--bg);
+        color:var(--text);
+        font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Arial,"Noto Sans","Liberation Sans",sans-serif;
+      }
+      header{
+        position:sticky;top:0;z-index:10;
+        padding:16px 18px;border-bottom:1px solid var(--border);
+        background:color-mix(in srgb,var(--surface),transparent 18%);backdrop-filter:blur(10px);
+      }
+      .top{max-width:1200px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;gap:12px}
+      h1{margin:0;font-size:1.05rem}
+      .sub{margin:4px 0 0;color:var(--muted);font-size:.85rem}
+      .btn{
+        height:var(--h);padding:0 14px;border-radius:12px;border:1px solid var(--border);
+        background:#183055;color:var(--text);font-weight:700;cursor:pointer;
+        transition:background 120ms ease,border-color 120ms ease,transform 80ms ease;
+      }
+      .btn:hover{background:#1b3a66;border-color:rgba(96,165,250,.35)}
+      .btn:active{transform:translateY(1px)}
+      .btn.secondary{background:transparent}
+      .btn.secondary:hover{background:rgba(96,165,250,.08)}
+      .btn:focus-visible{outline:none;box-shadow:var(--focus)}
+      main{max-width:1200px;margin:0 auto;padding:16px 18px 28px}
+      .toolbar{
+        display:flex;gap:10px;align-items:center;flex-wrap:wrap;
+        background:var(--surface);border:1px solid var(--border);border-radius:var(--r);
+        padding:12px;box-shadow:var(--shadow);
+      }
+      .input{
+        height:var(--h);padding:0 12px;border-radius:12px;border:1px solid var(--border);
+        background:rgba(15,23,42,.55);color:var(--text);flex:1;min-width:240px;
+      }
+      .input:focus{outline:none;box-shadow:var(--focus);border-color:rgba(96,165,250,.5)}
+      .grid{
+        margin-top:14px;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;
+      }
+      .card{
+        border:1px solid var(--border);background:var(--surface);border-radius:var(--r);
+        box-shadow:var(--shadow);padding:12px;display:flex;flex-direction:column;gap:10px;
+      }
+      .card:hover{border-color:rgba(96,165,250,.35)}
+      .row{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+      .name{display:flex;gap:10px;align-items:center}
+      .dot{width:10px;height:10px;border-radius:3px;background:rgba(148,163,184,.25)}
+      .dot.local{background:rgba(96,165,250,.25)}
+      .dot.remote{background:rgba(60,177,121,.25)}
+      .meta{color:var(--muted);font-size:.85rem}
+      .addr{font-family:var(--mono);font-size:.8rem;opacity:.9}
+      .pill{
+        display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border-radius:999px;
+        border:1px solid var(--border);background:rgba(15,23,42,.35);color:var(--muted);
+        font-size:.78rem;font-weight:750;
+      }
+      .pill.ok{border-color:rgba(60,177,121,.35);color:color-mix(in srgb,var(--success),white 10%)}
+      .pill.off{border-color:rgba(224,88,88,.35);color:color-mix(in srgb,var(--danger),white 10%)}
+      .pill.maint{border-color:rgba(230,181,102,.35);color:color-mix(in srgb,var(--warning),white 10%)}
+      .actions{display:flex;gap:8px;flex-wrap:wrap}
+      .mini{height:34px;padding:0 10px;border-radius:12px;font-size:.85rem}
+      .drawer{
+        position:fixed;top:0;right:-520px;width:min(520px,92vw);height:100vh;
+        background:var(--surface);border-left:1px solid var(--border);box-shadow:var(--shadow);
+        transition:right 180ms ease;z-index:999;display:flex;flex-direction:column;
+      }
+      .drawer.show{right:0}
+      .drawer-head{
+        padding:14px;border-bottom:1px solid var(--border);background:color-mix(in srgb,var(--surface2),transparent 10%);
+        display:flex;align-items:center;justify-content:space-between;gap:10px;
+      }
+      .drawer-body{padding:14px;overflow:auto}
+      .field{display:flex;flex-direction:column;gap:8px;margin-bottom:12px}
+      .field label{color:var(--muted);font-size:.85rem}
+      .hint{color:var(--muted);font-size:.9rem;line-height:1.35}
+      .switch{display:flex;align-items:center;gap:10px}
+      .switch input{width:18px;height:18px}
+      .footer{margin-top:auto;padding:14px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:10px}
+      .backdrop{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;z-index:998}
+      .backdrop.show{display:block}
+      @media (max-width:1080px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+      @media (max-width:740px){.grid{grid-template-columns:1fr}}
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="top">
+        <div>
+          <h1>Servers (Mockup B — Cards + Drawer)</h1>
+          <p class="sub">Compact cards + quick Maintenance toggle + edit drawer. Add remote agent with compose generator.</p>
+        </div>
+        <div class="actions">
+          <button class="btn secondary" id="fAll" type="button">All</button>
+          <button class="btn secondary" id="fActive" type="button">Active</button>
+          <button class="btn secondary" id="fMaint" type="button">Maintenance</button>
+          <button class="btn" id="add" type="button">Add remote</button>
+        </div>
+      </div>
+    </header>
+    <main>
+      <div class="toolbar">
+        <input class="input" id="q" placeholder="Search servers…" />
+        <span class="hint">Tip: Maintenance keeps the entry but excludes it from operations.</span>
+      </div>
+      <div class="grid" id="grid"></div>
+    </main>
+
+    <div class="backdrop" id="backdrop"></div>
+    <aside class="drawer" id="drawer" aria-label="Edit server drawer">
+      <div class="drawer-head">
+        <div>
+          <strong id="drawerTitle">Server</strong><br />
+          <span class="meta" id="drawerMeta">—</span>
+        </div>
+        <button class="btn secondary mini" id="close" type="button">Close</button>
+      </div>
+      <div class="drawer-body" id="drawerBody"></div>
+      <div class="footer">
+        <button class="btn secondary" id="discard" type="button">Discard</button>
+        <button class="btn" id="save" type="button">Save</button>
+      </div>
+    </aside>
+
+    <dialog id="addDialog" style="border:none;border-radius:16px;padding:0;background:transparent">
+      <div style="background:var(--surface);border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow);width:min(920px,92vw);overflow:hidden">
+        <div style="padding:14px;border-bottom:1px solid var(--border);background:color-mix(in srgb,var(--surface2),transparent 10%);display:flex;justify-content:space-between;gap:10px;align-items:center">
+          <div>
+            <strong>Add remote agent</strong><br />
+            <span class="meta">Generate token + compose. Token is shown once.</span>
+          </div>
+          <button class="btn secondary mini" id="addClose" type="button">Close</button>
+        </div>
+        <div style="padding:14px">
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">
+            <div class="field">
+              <label>Name</label>
+              <input class="input" id="rn" placeholder="BUZPI01" />
+            </div>
+            <div class="field">
+              <label>Host/IP</label>
+              <input class="input" id="rh" value="192.168.1.10" />
+            </div>
+            <div class="field">
+              <label>Host port</label>
+              <input class="input" id="rp" value="8080" />
+            </div>
+          </div>
+          <div class="field" style="margin-top:12px">
+            <label>Token</label>
+            <div style="display:flex;gap:10px;align-items:center">
+              <input class="input" id="token" readonly style="font-family:var(--mono)" />
+              <button class="btn secondary mini" id="copyToken" type="button">Copy</button>
+            </div>
+            <div class="hint"><strong>Save this API key securely.</strong> It will not be shown again.</div>
+          </div>
+          <div class="field">
+            <label>docker compose.yml</label>
+            <pre class="addr" id="compose" style="white-space:pre;overflow:auto;background:rgba(2,6,23,.65);border:1px solid var(--border);border-radius:14px;padding:12px"></pre>
+            <div style="margin-top:10px;display:flex;justify-content:flex-end">
+              <button class="btn secondary mini" id="copyCompose" type="button">Copy compose</button>
+            </div>
+          </div>
+        </div>
+        <div style="padding:14px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:10px">
+          <button class="btn" id="addFinish" type="button">Finish</button>
+        </div>
+      </div>
+    </dialog>
+
+    <script>
+      const state = {
+        filter: "all",
+        q: "",
+        servers: [
+          { id:"l1", type:"local", name:"BUZSTORAGE", address:"/var/run/docker.sock", online:true, maintenance:false },
+          { id:"r1", type:"remote", name:"BUZPI01", address:"http://buzpi01:8080", online:false, maintenance:false, tokenMasked:"9a3f…c1d2" },
+          { id:"r2", type:"remote", name:"PATONAS", address:"http://patonas:8080", online:true, maintenance:true, tokenMasked:"4f1a…aa90" },
+        ],
+      };
+      const el = (id) => document.getElementById(id);
+      const grid = el("grid");
+      const q = el("q");
+      const drawer = el("drawer");
+      const backdrop = el("backdrop");
+      const drawerTitle = el("drawerTitle");
+      const drawerMeta = el("drawerMeta");
+      const drawerBody = el("drawerBody");
+      const addDialog = el("addDialog");
+
+      function token32() {
+        const bytes = new Uint8Array(16);
+        crypto.getRandomValues(bytes);
+        return Array.from(bytes, b => b.toString(16).padStart(2,"0")).join("");
+      }
+      function composeTemplate(port, token) {
+        const exposed = String(port || "8080").trim() || "8080";
+        return `services:
+  contiwatch-agent:
+    image: ghcr.io/pbuzdygan/contiwatch:latest
+    container_name: contiwatch-agent
+    ports:
+      - "${exposed}:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - contiwatch_agent_data:/data
+    environment:
+      CONTIWATCH_AGENT: "true"
+      CONTIWATCH_AGENT_TOKEN: "${token}"
+      CONTIWATCH_ADDR: ":8080"
+      CONTIWATCH_CONFIG: "/data/config.json"
+      TZ: Europe/Warsaw
+    restart: unless-stopped
+
+volumes:
+  contiwatch_agent_data:
+`;
+      }
+
+      function statusPill(server) {
+        if (server.maintenance) return `<span class="pill maint">Maintenance</span>`;
+        return server.online ? `<span class="pill ok">Online</span>` : `<span class="pill off">Offline</span>`;
+      }
+      function visible(server) {
+        if (state.filter === "active" && server.maintenance) return false;
+        if (state.filter === "maint" && !server.maintenance) return false;
+        const text = `${server.name} ${server.address}`.toLowerCase();
+        return !state.q || text.includes(state.q.toLowerCase());
+      }
+
+      function render() {
+        grid.innerHTML = "";
+        state.servers.filter(visible).forEach((server) => {
+          const node = document.createElement("div");
+          node.className = "card";
+          node.innerHTML = `
+            <div class="row">
+              <div>
+                <div class="name"><span class="dot ${server.type}"></span><strong>${server.name}</strong></div>
+                <div class="meta">${server.type === "local" ? "Local socket" : "Remote agent"}</div>
+              </div>
+              ${statusPill(server)}
+            </div>
+            <div class="addr">${server.address}</div>
+            <div class="actions">
+              <button class="btn secondary mini" data-action="edit" type="button">Edit</button>
+              <button class="btn secondary mini" data-action="maint" type="button">${server.maintenance ? "Resume" : "Maintenance"}</button>
+              <button class="btn secondary mini" data-action="copy" type="button">Copy</button>
+            </div>
+          `;
+          node.querySelector("[data-action=maint]").addEventListener("click", () => { server.maintenance = !server.maintenance; render(); });
+          node.querySelector("[data-action=copy]").addEventListener("click", () => navigator.clipboard?.writeText?.(server.address));
+          node.querySelector("[data-action=edit]").addEventListener("click", () => openDrawer(server));
+          grid.appendChild(node);
+        });
+      }
+
+      function openDrawer(server) {
+        drawerTitle.textContent = server.name;
+        drawerMeta.textContent = `${server.type === "local" ? "Local" : "Remote"} • ${server.maintenance ? "Maintenance" : (server.online ? "Online" : "Offline")}`;
+        drawerBody.innerHTML = `
+          <div class="field">
+            <label>Name</label>
+            <input class="input" value="${server.name}" />
+          </div>
+          <div class="field">
+            <label>${server.type === "local" ? "Docker socket" : "Agent URL"}</label>
+            <input class="input" value="${server.address}" />
+          </div>
+          <div class="field">
+            <label>Maintenance</label>
+            <div class="switch">
+              <input type="checkbox" ${server.maintenance ? "checked" : ""} id="m" />
+              <span class="hint">Exclude from scans & updates, keep saved.</span>
+            </div>
+          </div>
+          ${server.type === "remote" ? `<div class="hint"><strong>Token</strong>: ${server.tokenMasked || "—"} (stored in controller config)</div>` : ""}
+        `;
+        drawerBody.querySelector("#m").addEventListener("change", (e) => { server.maintenance = e.target.checked; render(); });
+        drawer.classList.add("show");
+        backdrop.classList.add("show");
+      }
+      function closeDrawer() {
+        drawer.classList.remove("show");
+        backdrop.classList.remove("show");
+      }
+
+      el("close").addEventListener("click", closeDrawer);
+      el("discard").addEventListener("click", closeDrawer);
+      el("save").addEventListener("click", closeDrawer);
+      backdrop.addEventListener("click", closeDrawer);
+
+      q.addEventListener("input", () => { state.q = q.value || ""; render(); });
+      el("fAll").addEventListener("click", () => { state.filter = "all"; render(); });
+      el("fActive").addEventListener("click", () => { state.filter = "active"; render(); });
+      el("fMaint").addEventListener("click", () => { state.filter = "maint"; render(); });
+
+      function refreshCompose() {
+        const port = el("rp").value || "8080";
+        const token = el("token").value || "";
+        el("compose").textContent = composeTemplate(port, token);
+      }
+      function openAdd() {
+        el("token").value = token32();
+        refreshCompose();
+        addDialog.showModal();
+      }
+      function closeAdd() { addDialog.close(); }
+      el("add").addEventListener("click", openAdd);
+      el("addClose").addEventListener("click", closeAdd);
+      el("rp").addEventListener("input", refreshCompose);
+      el("copyToken").addEventListener("click", () => navigator.clipboard?.writeText?.(el("token").value));
+      el("copyCompose").addEventListener("click", () => navigator.clipboard?.writeText?.(el("compose").textContent));
+      el("addFinish").addEventListener("click", () => {
+        const name = el("rn").value || "NEW_REMOTE";
+        const host = el("rh").value || "127.0.0.1";
+        const port = el("rp").value || "8080";
+        state.servers.unshift({ id:"r"+Math.random().toString(16).slice(2), type:"remote", name, address:`http://${host}:${port}`, online:false, maintenance:false, tokenMasked: el("token").value.slice(0,4)+"…"+el("token").value.slice(-4) });
+        closeAdd(); render();
+      });
+
+      document.addEventListener("keydown", (e) => { if (e.key === "Escape") { closeDrawer(); if (addDialog.open) closeAdd(); } });
+      render();
+    </script>
+  </body>
+</html>
