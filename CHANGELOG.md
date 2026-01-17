@@ -1,5 +1,12 @@
 # Changelog
- 
+
+## v1.0.1
+
+- Global policy is now synced from the controller to remote agents.
+- Scheduled scans now run scan-only first, then perform updates with an explicit updating phase (local + remote).
+- Status cards show an Updating badge and an Updated metric for recent updates.
+- Status summary now includes a Skipped metric.
+
 ## v1.0.0
 
 ## :fire: First main release after initial development phase

@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -63,6 +64,7 @@ const (
 	scanStateIdle      = "idle"
 	scanStatePending   = "pending"
 	scanStateScanning  = "scanning"
+	scanStateUpdating  = "updating"
 	scanStateDone      = "done"
 	scanStateCancelled = "cancelled"
 	scanStateError     = "error"
@@ -123,7 +125,7 @@ func (s *Server) setScanStateKey(key string, state string) {
 	current := s.scanStates[key]
 	current.State = state
 	switch state {
-	case scanStatePending, scanStateScanning:
+	case scanStatePending, scanStateScanning, scanStateUpdating:
 		current.StartedAt = now
 		current.FinishedAt = time.Time{}
 	case scanStateDone, scanStateCancelled, scanStateError:
@@ -174,7 +176,7 @@ func (s *Server) cancelActiveScanStates() {
 	defer s.scanStateMu.Unlock()
 	now := time.Now()
 	for key, current := range s.scanStates {
-		if current.State != scanStatePending && current.State != scanStateScanning {
+		if current.State != scanStatePending && current.State != scanStateScanning && current.State != scanStateUpdating {
 			continue
 		}
 		current.State = scanStateCancelled
@@ -275,6 +277,8 @@ func (s *Server) agentAllowed(path string) bool {
 	case path == "/api/version":
 		return true
 	case path == "/api/status":
+		return true
+	case path == "/api/config":
 		return true
 	case path == "/api/scan":
 		return true
@@ -380,8 +384,14 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 		if len(changes) > 0 {
 			s.addLog("info", fmt.Sprintf("settings updated: %s", strings.Join(changes, ", ")))
 		}
+		if s.agentMode && before.GlobalPolicy != updated.GlobalPolicy {
+			s.addLog("info", fmt.Sprintf("agent policy updated: %s→%s", before.GlobalPolicy, updated.GlobalPolicy))
+		}
 		s.UpdateDiscord(updated.DiscordWebhookURL)
 		s.UpdateScheduler(updated)
+		if before.GlobalPolicy != updated.GlobalPolicy && len(updated.RemoteServers) > 0 {
+			go s.syncRemotePolicies(updated, updated.RemoteServers)
+		}
 		writeJSON(w, http.StatusOK, updated)
 	default:
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -414,6 +424,9 @@ func (s *Server) handleServers(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err)
 			return
+		}
+		if remote, ok := findRemoteServer(updated.RemoteServers, payload.Name); ok {
+			go s.syncRemotePolicies(updated, []config.RemoteServer{remote})
 		}
 		writeJSON(w, http.StatusOK, updated.RemoteServers)
 	default:
@@ -709,7 +722,7 @@ func (s *Server) handleScan(w http.ResponseWriter, r *http.Request) {
 			s.scanMutex.Unlock()
 		}()
 		s.addLog("info", fmt.Sprintf("local scan started: %s", local.Name))
-		result, err := s.scanLocalServer(ctx, cfg, local)
+		result, err := s.scanLocalServer(ctx, cfg, local, true)
 		if err != nil {
 			if ctx.Err() != nil {
 				s.setScanState(true, local.Name, scanStateCancelled)
@@ -729,10 +742,24 @@ func (s *Server) handleScan(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusOK, result)
 			return
 		}
+		s.addLog("info", fmt.Sprintf("local scan finished: %s %s", local.Name, s.formatScanSummary(result)))
+		if !s.agentMode {
+			updatedResult, _, err := s.autoUpdateLocal(ctx, cfg, local, result)
+			if err != nil {
+				if ctx.Err() != nil {
+					s.setScanState(true, local.Name, scanStateCancelled)
+				} else {
+					s.setScanState(true, local.Name, scanStateError)
+				}
+				s.addLog("error", fmt.Sprintf("local update failed: %s: %v", local.Name, err))
+				writeError(w, http.StatusInternalServerError, err)
+				return
+			}
+			result = updatedResult
+		}
+		s.sendScanNotification(cfg, result)
 		s.setScanState(true, local.Name, scanStateDone)
 		s.updateLastScans(result)
-		s.addLog("info", fmt.Sprintf("local scan finished: %s %s", local.Name, s.formatScanSummary(result)))
-		s.sendScanNotification(cfg, result)
 		s.addLog("info", fmt.Sprintf("manual scan finished: containers=%d", len(result.Containers)))
 		writeJSON(w, http.StatusOK, result)
 		return
@@ -742,6 +769,9 @@ func (s *Server) handleScan(w http.ResponseWriter, r *http.Request) {
 		if !ok {
 			writeError(w, http.StatusNotFound, errors.New("remote server not found"))
 			return
+		}
+		if _, err := s.syncRemotePolicy(ctx, cfg, remote); err != nil {
+			s.addLog("warn", fmt.Sprintf("remote policy sync failed: %s: %v", remote.Name, err))
 		}
 		s.addLog("info", fmt.Sprintf("remote scan started: %s", remote.Name))
 		s.setScanState(false, remote.Name, scanStateScanning)
@@ -766,9 +796,19 @@ func (s *Server) handleScan(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadGateway, err)
 			return
 		}
-		s.setScanState(false, remote.Name, scanStateDone)
 		s.addLog("info", fmt.Sprintf("remote scan finished: %s %s", remote.Name, s.formatScanSummary(result)))
 		s.sendScanNotification(cfg, result)
+		if _, err := s.autoUpdateRemote(ctx, cfg, remote, result); err != nil {
+			if ctx.Err() != nil {
+				s.setScanState(false, remote.Name, scanStateCancelled)
+			} else {
+				s.setScanState(false, remote.Name, scanStateError)
+			}
+			s.addLog("error", fmt.Sprintf("remote update failed: %s: %v", remote.Name, err))
+			writeError(w, http.StatusBadGateway, err)
+			return
+		}
+		s.setScanState(false, remote.Name, scanStateDone)
 		s.addLog("info", fmt.Sprintf("manual scan finished: containers=%d", len(result.Containers)))
 		writeJSON(w, http.StatusOK, result)
 		return
@@ -915,35 +955,29 @@ func (s *Server) handleUpdateContainer(w http.ResponseWriter, r *http.Request) {
 		serverScope = "remote"
 	}
 	log.Printf("manual update: server=%s (%s) container=%s updated=%t previous=%s current=%s msg=%s", serverLabel, serverScope, result.Name, result.Updated, result.PreviousState, result.CurrentState, result.Message)
-	if result.Updated {
-		s.addLog("info", fmt.Sprintf("updated %s (%s → %s) on %s (%s)", result.Name, result.PreviousState, result.CurrentState, serverLabel, serverScope))
-		if strings.Contains(result.Message, "prune") {
-			if strings.Contains(result.Message, "prune failed") {
-				s.addLog("error", fmt.Sprintf("prune dangling images failed after update: %s on %s (%s)", result.Name, serverLabel, serverScope))
-			} else {
-				s.addLog("info", fmt.Sprintf("pruned dangling images after update: %s on %s (%s) %s", result.Name, serverLabel, serverScope, result.Message))
-			}
-		} else if cfg.PruneDanglingImages && isRemote {
-			s.addLog("warn", fmt.Sprintf("prune not reported by agent: %s on %s (%s)", result.Name, serverLabel, serverScope))
-		}
-	} else {
-		s.addLog("info", fmt.Sprintf("update skipped %s on %s (%s): %s", result.Name, serverLabel, serverScope, result.Message))
-	}
-	s.sendUpdateNotification(cfg, serverLabel, result)
+	s.logUpdateResult(cfg, serverLabel, serverScope, result, isRemote)
 
 	s.lastScanMutex.Lock()
 	for i := range s.lastScan.Containers {
 		if s.lastScan.Containers[i].ID == containerID {
-			s.lastScan.Containers[i].LastChecked = time.Now()
-			s.lastScan.Containers[i].Error = ""
-			s.lastScan.Containers[i].Updated = result.Updated
-			if result.Updated {
-				s.lastScan.Containers[i].UpdateAvailable = false
-			}
+			updateScanContainerStatus(&s.lastScan.Containers[i], result)
 			break
 		}
 	}
+	for i := range s.lastScans {
+		if s.lastScans[i].ServerName != serverName || s.lastScans[i].Local == isRemote {
+			continue
+		}
+		for j := range s.lastScans[i].Containers {
+			if s.lastScans[i].Containers[j].ID == containerID {
+				updateScanContainerStatus(&s.lastScans[i].Containers[j], result)
+				break
+			}
+		}
+		break
+	}
 	s.lastScanMutex.Unlock()
+	go s.saveScanState()
 
 	writeJSON(w, http.StatusOK, result)
 }
@@ -1077,7 +1111,7 @@ func (s *Server) runScan(ctx context.Context) (dockerwatcher.ScanResult, error) 
 			}
 			s.addLog("info", fmt.Sprintf("local scan started: %s", local.Name))
 			s.setScanState(true, local.Name, scanStateScanning)
-			result, err := s.scanLocalServer(ctx, cfg, local)
+			result, err := s.scanLocalServer(ctx, cfg, local, true)
 			if err != nil {
 				if ctx.Err() != nil {
 					s.setScanState(true, local.Name, scanStateCancelled)
@@ -1099,8 +1133,28 @@ func (s *Server) runScan(ctx context.Context) (dockerwatcher.ScanResult, error) 
 				results = append(results, result)
 				continue
 			}
-			s.setScanState(true, local.Name, scanStateDone)
 			s.addLog("info", fmt.Sprintf("local scan finished: %s %s", local.Name, s.formatScanSummary(result)))
+			if !s.agentMode {
+				updatedResult, _, err := s.autoUpdateLocal(ctx, cfg, local, result)
+				if err != nil {
+					if ctx.Err() != nil {
+						s.setScanState(true, local.Name, scanStateCancelled)
+					} else {
+						s.setScanState(true, local.Name, scanStateError)
+					}
+					s.addLog("error", fmt.Sprintf("local update failed: %s: %v", local.Name, err))
+					results = append(results, dockerwatcher.ScanResult{
+						ServerName: local.Name,
+						ServerURL:  local.Socket,
+						Local:      true,
+						CheckedAt:  time.Now(),
+						Error:      err.Error(),
+					})
+					continue
+				}
+				result = updatedResult
+			}
+			s.setScanState(true, local.Name, scanStateDone)
 			results = append(results, result)
 			s.sendScanNotification(cfg, result)
 		}
@@ -1148,13 +1202,18 @@ func (s *Server) updateLastScans(result dockerwatcher.ScanResult) {
 	go s.saveScanState()
 }
 
-func (s *Server) scanLocalServer(ctx context.Context, cfg config.Config, local config.LocalServer) (dockerwatcher.ScanResult, error) {
+func (s *Server) scanLocalServer(ctx context.Context, cfg config.Config, local config.LocalServer, scanOnly bool) (dockerwatcher.ScanResult, error) {
 	watcher, err := dockerwatcher.NewWithHost(dockerHostFromSocket(local.Socket))
 	if err != nil {
 		return dockerwatcher.ScanResult{}, err
 	}
 	defer watcher.Close()
-	result, err := watcher.Scan(ctx, cfg)
+	var result dockerwatcher.ScanResult
+	if scanOnly {
+		result, err = watcher.ScanNoUpdate(ctx, cfg)
+	} else {
+		result, err = watcher.Scan(ctx, cfg)
+	}
 	if err != nil {
 		return dockerwatcher.ScanResult{}, err
 	}
@@ -1187,18 +1246,9 @@ func (s *Server) loadScanState() {
 	if len(payload.LastScans) == 0 {
 		return
 	}
-	localScans := make([]dockerwatcher.ScanResult, 0, len(payload.LastScans))
-	for _, scan := range payload.LastScans {
-		if scan.Local {
-			localScans = append(localScans, scan)
-		}
-	}
-	if len(localScans) == 0 {
-		return
-	}
 	s.lastScanMutex.Lock()
-	s.lastScans = localScans
-	s.lastScan = latestScan(localScans)
+	s.lastScans = payload.LastScans
+	s.lastScan = latestScan(payload.LastScans)
 	s.lastScanMutex.Unlock()
 }
 
@@ -1212,7 +1262,7 @@ func (s *Server) saveScanState() {
 	localScans := make([]dockerwatcher.ScanResult, 0, len(scans))
 	for _, scan := range scans {
 		if scan.Local {
-			localScans = append(localScans, slimScanResult(scan))
+			localScans = append(localScans, scan)
 		}
 	}
 	if len(localScans) == 0 {
@@ -1249,7 +1299,6 @@ func latestScan(scans []dockerwatcher.ScanResult) dockerwatcher.ScanResult {
 }
 
 func slimScanResult(scan dockerwatcher.ScanResult) dockerwatcher.ScanResult {
-	scan.Containers = nil
 	return scan
 }
 
@@ -1348,6 +1397,10 @@ func (s *Server) triggerRemoteScans(ctx context.Context, remotes []config.Remote
 			}
 			break
 		}
+		cfg := s.store.Get()
+		if _, err := s.syncRemotePolicy(ctx, cfg, remote); err != nil {
+			s.addLog("warn", fmt.Sprintf("remote policy sync failed: %s: %v", remote.Name, err))
+		}
 		s.setScanState(false, remote.Name, scanStateScanning)
 		s.addLog("info", fmt.Sprintf("remote scan started: %s", remote.Name))
 		result, err := s.scanRemoteServer(ctx, remote)
@@ -1361,10 +1414,19 @@ func (s *Server) triggerRemoteScans(ctx context.Context, remotes []config.Remote
 			failCount++
 			continue
 		}
-		s.setScanState(false, remote.Name, scanStateDone)
-		cfg := s.store.Get()
 		s.addLog("info", fmt.Sprintf("remote scan finished: %s %s", remote.Name, s.formatScanSummary(result)))
 		s.sendScanNotification(cfg, result)
+		if _, err := s.autoUpdateRemote(ctx, cfg, remote, result); err != nil {
+			if ctx.Err() != nil {
+				s.setScanState(false, remote.Name, scanStateCancelled)
+			} else {
+				s.setScanState(false, remote.Name, scanStateError)
+			}
+			s.addLog("error", fmt.Sprintf("remote update failed: %s: %v", remote.Name, err))
+			failCount++
+			continue
+		}
+		s.setScanState(false, remote.Name, scanStateDone)
 		successCount++
 	}
 	if len(remotes) > 0 {
@@ -1493,6 +1555,215 @@ func (s *Server) sendUpdateNotification(cfg config.Config, serverName string, re
 	)
 	const discordBlue = 0x3498DB
 	_ = s.discord.SendEmbed("Contiwatch updates:", description, discordBlue)
+}
+
+func (s *Server) logUpdateResult(cfg config.Config, serverLabel, serverScope string, result dockerwatcher.UpdateResult, isRemote bool) {
+	if result.Updated {
+		s.addLog("info", fmt.Sprintf("updated %s (%s → %s) on %s (%s)", result.Name, result.PreviousState, result.CurrentState, serverLabel, serverScope))
+		if strings.Contains(result.Message, "prune") {
+			if strings.Contains(result.Message, "prune failed") {
+				s.addLog("error", fmt.Sprintf("prune dangling images failed after update: %s on %s (%s)", result.Name, serverLabel, serverScope))
+			} else {
+				s.addLog("info", fmt.Sprintf("pruned dangling images after update: %s on %s (%s) %s", result.Name, serverLabel, serverScope, result.Message))
+			}
+		} else if cfg.PruneDanglingImages && isRemote {
+			s.addLog("warn", fmt.Sprintf("prune not reported by agent: %s on %s (%s)", result.Name, serverLabel, serverScope))
+		}
+	} else {
+		s.addLog("info", fmt.Sprintf("update skipped %s on %s (%s): %s", result.Name, serverLabel, serverScope, result.Message))
+	}
+	s.sendUpdateNotification(cfg, serverLabel, result)
+}
+
+func (s *Server) autoUpdateRemote(ctx context.Context, cfg config.Config, remote config.RemoteServer, result dockerwatcher.ScanResult) (int, error) {
+	targets := []dockerwatcher.ContainerStatus{}
+	for _, container := range result.Containers {
+		if !container.UpdateAvailable {
+			continue
+		}
+		if container.Policy != config.PolicyUpdate {
+			continue
+		}
+		if container.Error != "" && !strings.HasPrefix(container.Error, "skipped:") {
+			continue
+		}
+		targets = append(targets, container)
+	}
+	if len(targets) == 0 {
+		return 0, nil
+	}
+	s.setScanState(false, remote.Name, scanStateUpdating)
+	s.addLog("info", fmt.Sprintf("remote update started: %s containers=%d", remote.Name, len(targets)))
+	updatedCount := 0
+	for _, container := range targets {
+		if ctx.Err() != nil {
+			return updatedCount, ctx.Err()
+		}
+		updateResult, err := s.updateRemoteContainer(ctx, remote, container.ID, cfg.PruneDanglingImages)
+		if err != nil {
+			if isRemoteUpdateDisconnect(err) {
+				updateResult = dockerwatcher.UpdateResult{
+					ID:      container.ID,
+					Name:    shortID(container.ID),
+					Updated: false,
+					Message: "update triggered; agent restarting",
+				}
+				s.addLog("warn", fmt.Sprintf("update connection closed: %s (agent restarting)", container.ID))
+			} else {
+				s.addLog("error", fmt.Sprintf("update failed: %s: %v", container.ID, err))
+				continue
+			}
+		}
+		s.logUpdateResult(cfg, remote.Name, "remote", updateResult, true)
+		if updateResult.Updated {
+			updatedCount++
+		}
+	}
+	s.addLog("info", fmt.Sprintf("remote update finished: %s updated=%d", remote.Name, updatedCount))
+	return updatedCount, nil
+}
+
+func (s *Server) syncRemotePolicies(cfg config.Config, remotes []config.RemoteServer) {
+	for _, remote := range remotes {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		changed, err := s.syncRemotePolicy(ctx, cfg, remote)
+		cancel()
+		if err != nil {
+			s.addLog("warn", fmt.Sprintf("remote policy sync failed: %s: %v", remote.Name, err))
+			continue
+		}
+		if changed {
+			s.addLog("info", fmt.Sprintf("remote policy synced: %s policy=%s", remote.Name, cfg.GlobalPolicy))
+		} else {
+			s.addLog("info", fmt.Sprintf("remote policy already up to date: %s policy=%s", remote.Name, cfg.GlobalPolicy))
+		}
+	}
+}
+
+func (s *Server) syncRemotePolicy(ctx context.Context, cfg config.Config, remote config.RemoteServer) (bool, error) {
+	if remote.URL == "" {
+		return false, errors.New("missing url")
+	}
+	configURL := strings.TrimSuffix(remote.URL, "/") + "/api/config"
+	client := &http.Client{Timeout: 10 * time.Second}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, configURL, nil)
+	if err != nil {
+		return false, err
+	}
+	if remote.Token != "" {
+		req.Header.Set("Authorization", "Bearer "+remote.Token)
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return false, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return false, fmt.Errorf("status %d", resp.StatusCode)
+	}
+	var payload config.Config
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return false, err
+	}
+	if payload.GlobalPolicy == cfg.GlobalPolicy {
+		return false, nil
+	}
+	payload.GlobalPolicy = cfg.GlobalPolicy
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return false, err
+	}
+	updateReq, err := http.NewRequestWithContext(ctx, http.MethodPut, configURL, bytes.NewReader(body))
+	if err != nil {
+		return false, err
+	}
+	updateReq.Header.Set("Content-Type", "application/json")
+	if remote.Token != "" {
+		updateReq.Header.Set("Authorization", "Bearer "+remote.Token)
+	}
+	updateResp, err := client.Do(updateReq)
+	if err != nil {
+		return false, err
+	}
+	defer updateResp.Body.Close()
+	if updateResp.StatusCode < 200 || updateResp.StatusCode >= 300 {
+		return false, fmt.Errorf("status %d", updateResp.StatusCode)
+	}
+	return true, nil
+}
+
+func (s *Server) autoUpdateLocal(ctx context.Context, cfg config.Config, local config.LocalServer, result dockerwatcher.ScanResult) (dockerwatcher.ScanResult, int, error) {
+	targets := []dockerwatcher.ContainerStatus{}
+	for _, container := range result.Containers {
+		if !container.UpdateAvailable {
+			continue
+		}
+		if container.Policy != config.PolicyUpdate {
+			continue
+		}
+		if container.Error != "" && !strings.HasPrefix(container.Error, "skipped:") {
+			continue
+		}
+		targets = append(targets, container)
+	}
+	if len(targets) == 0 {
+		return result, 0, nil
+	}
+	watcher, err := dockerwatcher.NewWithHost(dockerHostFromSocket(local.Socket))
+	if err != nil {
+		return result, 0, err
+	}
+	defer watcher.Close()
+	s.setScanState(true, local.Name, scanStateUpdating)
+	s.addLog("info", fmt.Sprintf("local update started: %s containers=%d", local.Name, len(targets)))
+	updatedCount := 0
+	for _, container := range targets {
+		if ctx.Err() != nil {
+			return result, updatedCount, ctx.Err()
+		}
+		updateResult, err := watcher.UpdateContainer(ctx, container.ID, cfg)
+		if err != nil {
+			s.addLog("error", fmt.Sprintf("update failed: %s: %v", container.ID, err))
+			continue
+		}
+		s.logUpdateResult(cfg, local.Name, "local", updateResult, false)
+		if updateResult.Updated {
+			updatedCount++
+		}
+		updateScanResultContainer(&result, container.ID, updateResult)
+	}
+	s.addLog("info", fmt.Sprintf("local update finished: %s updated=%d", local.Name, updatedCount))
+	return result, updatedCount, nil
+}
+
+func updateScanResultContainer(result *dockerwatcher.ScanResult, containerID string, updateResult dockerwatcher.UpdateResult) {
+	if result == nil {
+		return
+	}
+	for i := range result.Containers {
+		if result.Containers[i].ID != containerID {
+			continue
+		}
+		result.Containers[i].LastChecked = time.Now()
+		result.Containers[i].Error = ""
+		result.Containers[i].Updated = updateResult.Updated
+		if updateResult.Updated {
+			result.Containers[i].UpdateAvailable = false
+		}
+		return
+	}
+}
+
+func updateScanContainerStatus(container *dockerwatcher.ContainerStatus, updateResult dockerwatcher.UpdateResult) {
+	if container == nil {
+		return
+	}
+	container.LastChecked = time.Now()
+	container.Error = ""
+	container.Updated = updateResult.Updated
+	if updateResult.Updated {
+		container.UpdateAvailable = false
+	}
 }
 
 type logEntry struct {

@@ -93,6 +93,14 @@ func (w *Watcher) Close() error {
 }
 
 func (w *Watcher) Scan(ctx context.Context, cfg config.Config) (ScanResult, error) {
+	return w.scan(ctx, cfg, false)
+}
+
+func (w *Watcher) ScanNoUpdate(ctx context.Context, cfg config.Config) (ScanResult, error) {
+	return w.scan(ctx, cfg, true)
+}
+
+func (w *Watcher) scan(ctx context.Context, cfg config.Config, scanOnly bool) (ScanResult, error) {
 	containers, err := w.client.ContainerList(ctx, types.ContainerListOptions{All: true})
 	if err != nil {
 		return ScanResult{}, err
@@ -109,7 +117,7 @@ func (w *Watcher) Scan(ctx context.Context, cfg config.Config) (ScanResult, erro
 			result.Error = "scan cancelled manually"
 			return result, nil
 		}
-		status := w.scanContainer(ctx, item, cfg)
+		status := w.scanContainer(ctx, item, cfg, scanOnly)
 		result.Containers = append(result.Containers, status)
 		if ctx.Err() != nil {
 			result.Error = "scan cancelled manually"
@@ -120,7 +128,7 @@ func (w *Watcher) Scan(ctx context.Context, cfg config.Config) (ScanResult, erro
 	return result, nil
 }
 
-func (w *Watcher) scanContainer(ctx context.Context, item types.Container, cfg config.Config) ContainerStatus {
+func (w *Watcher) scanContainer(ctx context.Context, item types.Container, cfg config.Config, scanOnly bool) ContainerStatus {
 	status := ContainerStatus{
 		ID:          item.ID,
 		Name:        strings.TrimPrefix(firstOrEmpty(item.Names), "/"),
@@ -177,6 +185,9 @@ func (w *Watcher) scanContainer(ctx context.Context, item types.Container, cfg c
 	}
 
 	if status.Policy == config.PolicyUpdate {
+		if scanOnly {
+			return status
+		}
 		if inspect.State != nil && inspect.State.Paused {
 			status.Error = "skipped: container paused"
 			return status

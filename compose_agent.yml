@@ -15,12 +15,7 @@ services:
       # Default internal port can be changed - helpful when running in "network_mode: host" or other "direct IP" setups
       CONTIWATCH_ADDR: ":8080"
       CONTIWATCH_CONFIG: "/data/config.json"
-      # Use your host user IDs (from `id` command on your docker host)
-      PUID: "${PUID}"
-      PGID: "${PGID}"
       TZ: Europe/Warsaw
-      # Optional: if contiwatch can't infer it from /var/run/docker.sock
-      # DOCKER_GID: "998"
     restart: unless-stopped
 
 volumes:

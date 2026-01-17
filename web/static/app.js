@@ -12,6 +12,7 @@ const configForm = document.getElementById("config-form");
 const schedulerEnabledInput = document.getElementById("scheduler-enabled");
 const scanIntervalInput = document.getElementById("scan-interval");
 const globalPolicySelect = document.getElementById("global-policy");
+const globalPolicyInfoBtn = document.getElementById("global-policy-info");
 const discordInput = document.getElementById("discord-url");
 const discordEnabledInput = document.getElementById("discord-enabled");
 const discordStartupNotifyInput = document.getElementById("discord-startup-notify");
@@ -48,6 +49,8 @@ const detailsModal = document.getElementById("details-modal");
 const detailsTitle = document.getElementById("details-title");
 const detailsBody = document.getElementById("details-body");
 const detailsCloseBtn = document.getElementById("details-close");
+const policyModal = document.getElementById("policy-modal");
+const policyCloseBtn = document.getElementById("policy-close");
 
 let currentScanController = null;
 let currentView = "status";
@@ -59,12 +62,17 @@ let cachedRemotes = [];
 let cachedServerInfo = {};
 let scanPollingTimer = null;
 let scanActive = false;
+let scanRequestActive = false;
 let lastStatusResults = [];
 let scanStateOverrides = {};
 let currentScanStartedAtMs = null;
 let selectedScanScope = "all";
 let restartingServers = {};
 let currentDetailsServerKey = null;
+let selectedScanServers = new Set();
+const schedulerAnchorKey = "contiwatch_scheduler_anchor";
+let lastSchedulerEnabled = null;
+let lastSchedulerIntervalSec = null;
 
 async function fetchJSON(url, options = {}) {
   const res = await fetch(url, options);
@@ -109,6 +117,22 @@ function closeDetailsModal() {
   if (detailsBody) {
     detailsBody.innerHTML = "";
   }
+  refreshStatus().catch(() => {});
+}
+
+function openPolicyModal() {
+  if (!policyModal) return;
+  policyModal.classList.remove("hidden");
+  policyModal.setAttribute("aria-hidden", "false");
+  if (policyCloseBtn) {
+    policyCloseBtn.focus();
+  }
+}
+
+function closePolicyModal() {
+  if (!policyModal) return;
+  policyModal.classList.add("hidden");
+  policyModal.setAttribute("aria-hidden", "true");
 }
 
 function buildDetailsTitle(name) {
@@ -158,14 +182,24 @@ function buildContainerCard(container, result, canUpdateStopped, variant) {
   card.appendChild(name);
 
   const statusLine = document.createElement("div");
-  const statusLabel = variant === "updates" ? "Update available" : "Up to date";
-  const statusClass = variant === "updates" ? "details-card-status warning" : "details-card-status success";
+  let statusLabel = "Up to date";
+  let statusClass = "details-card-status success";
+  let statusIcon = '<svg xmlns="http://www.w3.org/2000/svg" class="details-card-status-icon icon icon-tabler icons-tabler-outline icon-tabler-progress-check" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M10 20.777a8.942 8.942 0 0 1 -2.48 -.969" /><path d="M14 3.223a9.003 9.003 0 0 1 0 17.554" /><path d="M4.579 17.093a8.961 8.961 0 0 1 -1.227 -2.592" /><path d="M3.124 10.5c.16 -.95 .468 -1.85 .9 -2.675l.169 -.305" /><path d="M6.907 4.579a8.954 8.954 0 0 1 3.093 -1.356" /><path d="M9 12l2 2l4 -4" /></svg>';
+  if (variant === "updates") {
+    statusLabel = "Update available";
+    statusClass = "details-card-status warning";
+    statusIcon = '<svg xmlns="http://www.w3.org/2000/svg" class="details-card-status-icon icon icon-tabler icons-tabler-outline icon-tabler-progress-down" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M10 20.777a8.942 8.942 0 0 1 -2.48 -.969" /><path d="M14 3.223a9.003 9.003 0 0 1 0 17.554" /><path d="M4.579 17.093a8.961 8.961 0 0 1 -1.227 -2.592" /><path d="M3.124 10.5c.16 -.95 .468 -1.85 .9 -2.675l.169 -.305" /><path d="M6.907 4.579a8.954 8.954 0 0 1 3.093 -1.356" /><path d="M12 9v6" /><path d="M15 12l-3 3l-3 -3" /></svg>';
+  } else if (variant === "updated") {
+    statusLabel = "Updated";
+    statusClass = "details-card-status success";
+    statusIcon = '<svg xmlns="http://www.w3.org/2000/svg" class="details-card-status-icon icon icon-tabler icons-tabler-outline icon-tabler-circle-check" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0" /><path d="M9 12l2 2l4 -4" /></svg>';
+  } else if (variant === "skipped") {
+    statusLabel = "Skipped";
+    statusClass = "details-card-status warning";
+    statusIcon = '<svg xmlns="http://www.w3.org/2000/svg" class="details-card-status-icon icon icon-tabler icons-tabler-outline icon-tabler-chevrons-right" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M7 7l5 5l-5 5" /><path d="M13 7l5 5l-5 5" /></svg>';
+  }
   statusLine.className = statusClass;
-  statusLine.innerHTML =
-    (variant === "updates"
-      ? '<svg xmlns="http://www.w3.org/2000/svg" class="details-card-status-icon icon icon-tabler icons-tabler-outline icon-tabler-progress-down" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M10 20.777a8.942 8.942 0 0 1 -2.48 -.969" /><path d="M14 3.223a9.003 9.003 0 0 1 0 17.554" /><path d="M4.579 17.093a8.961 8.961 0 0 1 -1.227 -2.592" /><path d="M3.124 10.5c.16 -.95 .468 -1.85 .9 -2.675l.169 -.305" /><path d="M6.907 4.579a8.954 8.954 0 0 1 3.093 -1.356" /><path d="M12 9v6" /><path d="M15 12l-3 3l-3 -3" /></svg>'
-      : '<svg xmlns="http://www.w3.org/2000/svg" class="details-card-status-icon icon icon-tabler icons-tabler-outline icon-tabler-progress-check" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M10 20.777a8.942 8.942 0 0 1 -2.48 -.969" /><path d="M14 3.223a9.003 9.003 0 0 1 0 17.554" /><path d="M4.579 17.093a8.961 8.961 0 0 1 -1.227 -2.592" /><path d="M3.124 10.5c.16 -.95 .468 -1.85 .9 -2.675l.169 -.305" /><path d="M6.907 4.579a8.954 8.954 0 0 1 3.093 -1.356" /><path d="M9 12l2 2l4 -4" /></svg>') +
-    `<span>${statusLabel}</span>`;
+  statusLine.innerHTML = `${statusIcon}<span>${statusLabel}</span>`;
   card.appendChild(statusLine);
 
   const isSelfContainer = result.local && container.name === "contiwatch";
@@ -317,11 +351,17 @@ function buildDetailsContent(result, canUpdateStopped) {
     return wrapper;
   }
 
+  const skippedContainers = result.containers
+    .filter((container) => String(container.error || "").startsWith("skipped:"))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const updatedContainers = result.containers
+    .filter((container) => container.updated)
+    .sort((a, b) => a.name.localeCompare(b.name));
   const updateRequired = result.containers
-    .filter((container) => container.update_available)
+    .filter((container) => container.update_available && !container.updated && !String(container.error || "").startsWith("skipped:"))
     .sort((a, b) => a.name.localeCompare(b.name));
   const upToDate = result.containers
-    .filter((container) => !container.update_available)
+    .filter((container) => !container.update_available && !container.updated && !String(container.error || "").startsWith("skipped:"))
     .sort((a, b) => a.name.localeCompare(b.name));
 
   const updatesGroup = document.createElement("details");
@@ -349,6 +389,58 @@ function buildDetailsContent(result, canUpdateStopped) {
   }
   updatesGroup.appendChild(updatesGrid);
   wrapper.appendChild(updatesGroup);
+
+  const updatedGroup = document.createElement("details");
+  updatedGroup.className = "details-group";
+  updatedGroup.open = false;
+  const updatedSummary = document.createElement("summary");
+  updatedSummary.className = "details-group-header";
+  updatedSummary.innerHTML = `
+    <span class="details-group-label">
+      <svg xmlns="http://www.w3.org/2000/svg" class="details-group-icon icon icon-tabler icons-tabler-outline icon-tabler-circle-check" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0" /><path d="M9 12l2 2l4 -4" /></svg>
+      <span>Updated</span>
+      <span class="details-count">${updatedContainers.length}</span>
+    </span>
+  `;
+  updatedGroup.appendChild(updatedSummary);
+  const updatedGrid = document.createElement("div");
+  updatedGrid.className = "details-card-grid";
+  if (updatedContainers.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "details-empty";
+    empty.textContent = "No updated containers.";
+    updatedGrid.appendChild(empty);
+  } else {
+    updatedContainers.forEach((container) => updatedGrid.appendChild(buildContainerCard(container, result, canUpdateStopped, "updated")));
+  }
+  updatedGroup.appendChild(updatedGrid);
+  wrapper.appendChild(updatedGroup);
+
+  const skippedGroup = document.createElement("details");
+  skippedGroup.className = "details-group";
+  skippedGroup.open = false;
+  const skippedSummary = document.createElement("summary");
+  skippedSummary.className = "details-group-header";
+  skippedSummary.innerHTML = `
+    <span class="details-group-label">
+      <svg xmlns="http://www.w3.org/2000/svg" class="details-group-icon icon icon-tabler icons-tabler-outline icon-tabler-chevrons-right" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M7 7l5 5l-5 5" /><path d="M13 7l5 5l-5 5" /></svg>
+      <span>Skipped</span>
+      <span class="details-count">${skippedContainers.length}</span>
+    </span>
+  `;
+  skippedGroup.appendChild(skippedSummary);
+  const skippedGrid = document.createElement("div");
+  skippedGrid.className = "details-card-grid";
+  if (skippedContainers.length === 0) {
+    const empty = document.createElement("p");
+    empty.className = "details-empty";
+    empty.textContent = "No skipped containers.";
+    skippedGrid.appendChild(empty);
+  } else {
+    skippedContainers.forEach((container) => skippedGrid.appendChild(buildContainerCard(container, result, canUpdateStopped, "skipped")));
+  }
+  skippedGroup.appendChild(skippedGrid);
+  wrapper.appendChild(skippedGroup);
 
   const scannedGroup = document.createElement("details");
   scannedGroup.className = "details-group";
@@ -414,7 +506,7 @@ function renderStatus(results) {
   const canUpdateStopped = Boolean(currentConfig && currentConfig.update_stopped_containers);
   statusHintEl.classList.add("hidden");
 
-  const visibleResults = selectedScanScope && selectedScanScope !== "all"
+  const visibleResults = selectedScanScope && selectedScanScope !== "all" && selectedScanScope !== "selective"
     ? results.filter((result) => {
       const prefix = result.local ? "local:" : "remote:";
       return `${prefix}${result.server_name}` === selectedScanScope;
@@ -440,34 +532,32 @@ function renderStatus(results) {
     const hasCheckedAt = checkedAt && !Number.isNaN(checkedAt.getTime()) && checkedAt.getTime() > 0;
     const isOffline = Boolean(result.error);
     const key = serverScopeKey(result);
+    const infoKey = `${result.local ? "local" : "remote"}:${result.server_name || ""}`;
+    const infoStatusRaw = cachedServerInfo[infoKey] ? String(cachedServerInfo[infoKey].status || "") : "";
+    const infoStatus = infoStatusRaw.toLowerCase();
     const backendState = String(result.scan_state || "").toLowerCase();
     const overrideState = scanStateOverrides[key];
     let scanState = backendState && backendState !== "idle"
       ? backendState
       : (overrideState || backendState);
-    if (
-      (!scanState || scanState === "idle") &&
-      scanActive &&
-      selectedScanScope === "all"
-    ) {
-      const checkedAtMs = hasCheckedAt ? checkedAt.getTime() : 0;
-      if (!currentScanStartedAtMs || !checkedAtMs || checkedAtMs < currentScanStartedAtMs) {
-        scanState = "pending";
-      }
-    }
     const cancelError = result.error && /cancelled|canceled|context canceled/i.test(result.error);
     const isPending = scanState === "pending";
     const isScanningActive = scanState === "scanning";
+    const isUpdatingActive = scanState === "updating";
     const isCancelled = scanState === "cancelled" || cancelError;
     const hasScanErrorState = scanState === "error";
     const restartKey = serverScopeKey(result);
     const isRestarting = Boolean(restartingServers[restartKey] && restartingServers[restartKey] > Date.now());
-    const isOfflineForStatus = isOffline && !isCancelled;
-    const statusLabel = isRestarting ? "restarting" : (isOfflineForStatus ? "offline" : "online");
+    const isOfflineForStatus = (isOffline && !isCancelled) || infoStatus === "offline";
+    const isRestartingForStatus = isRestarting || infoStatus === "restarting";
+    const statusLabel = isRestartingForStatus ? "restarting" : (isOfflineForStatus ? "offline" : "online");
     let scanLabelText = "";
     let scanLabelClass = "";
     if (!isRestarting) {
-      if (isScanningActive) {
+      if (isUpdatingActive) {
+        scanLabelText = "updating";
+        scanLabelClass = "updating";
+      } else if (isScanningActive) {
         scanLabelText = "scanning";
         scanLabelClass = "scanning";
       } else if (isPending) {
@@ -547,6 +637,7 @@ function renderStatus(results) {
       const tooltip = formatSchedulerNextRun(currentConfig);
       schedulerWrap.setAttribute("data-tooltip", tooltip);
       schedulerWrap.setAttribute("aria-label", tooltip);
+      schedulerWrap.dataset.tooltipScheduler = "true";
 
       const schedulerIcon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
       schedulerIcon.setAttribute(
@@ -576,12 +667,20 @@ function renderStatus(results) {
     }
 
     const summary = document.createElement("div");
-    summary.className = "server-summary server-summary-metrics";
+    summary.className = "server-summary";
+    const summaryTop = document.createElement("div");
+    summaryTop.className = "server-summary-metrics";
     const totalScanned = hasCheckedAt && Array.isArray(result.containers) ? result.containers.length : 0;
     const updates = hasCheckedAt && Array.isArray(result.containers)
       ? result.containers.filter((container) => container.update_available).length
       : 0;
-    const upToDate = totalScanned > 0 ? Math.max(0, totalScanned - updates) : 0;
+    const updated = hasCheckedAt && Array.isArray(result.containers)
+      ? result.containers.filter((container) => container.updated).length
+      : 0;
+    const skipped = hasCheckedAt && Array.isArray(result.containers)
+      ? result.containers.filter((container) => String(container.error || "").startsWith("skipped:")).length
+      : 0;
+    const upToDate = totalScanned > 0 ? Math.max(0, totalScanned - updates - skipped) : 0;
 
     const upToDateEl = document.createElement("span");
     upToDateEl.className = `summary-metric${hasCheckedAt && upToDate > 0 ? " metric-success" : ""}`;
@@ -601,9 +700,28 @@ function renderStatus(results) {
       '<svg xmlns="http://www.w3.org/2000/svg" class="summary-icon icon icon-tabler icons-tabler-outline icon-tabler-circle-dot" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M11 12a1 1 0 1 0 2 0a1 1 0 1 0 -2 0" /><path d="M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0" /></svg>' +
       `<span>${totalScanned}</span><span class="summary-label">Scanned</span>`;
 
-    summary.appendChild(upToDateEl);
-    summary.appendChild(updatesEl);
-    summary.appendChild(scannedEl);
+    const updatedEl = document.createElement("span");
+    updatedEl.className = `summary-metric${hasCheckedAt && updated > 0 ? " metric-success" : ""}`;
+    updatedEl.innerHTML =
+      '<svg xmlns="http://www.w3.org/2000/svg" class="summary-icon icon icon-tabler icons-tabler-outline icon-tabler-circle-check" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0" /><path d="M9 12l2 2l4 -4" /></svg>' +
+      `<span>${updated}</span><span class="summary-label">Updated</span>`;
+
+    const skippedEl = document.createElement("span");
+    skippedEl.className = "summary-metric";
+    skippedEl.innerHTML =
+      '<svg xmlns="http://www.w3.org/2000/svg" class="summary-icon icon icon-tabler icons-tabler-outline icon-tabler-chevrons-right" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M7 7l5 5l-5 5" /><path d="M13 7l5 5l-5 5" /></svg>' +
+      `<span>${skipped}</span><span class="summary-label">Skipped</span>`;
+
+    summaryTop.appendChild(upToDateEl);
+    summaryTop.appendChild(updatesEl);
+    summaryTop.appendChild(scannedEl);
+    summary.appendChild(summaryTop);
+
+    const summaryBottom = document.createElement("div");
+    summaryBottom.className = "server-summary-metrics";
+    summaryBottom.appendChild(updatedEl);
+    summaryBottom.appendChild(skippedEl);
+    summary.appendChild(summaryBottom);
 
     const meta = document.createElement("div");
     meta.className = "status-card-meta";
@@ -629,10 +747,47 @@ function renderStatus(results) {
     const detailsBtn = document.createElement("button");
     detailsBtn.type = "button";
     detailsBtn.className = "secondary btn-small";
-    detailsBtn.textContent = "Details";
-    detailsBtn.addEventListener("click", () => {
-      openDetailsModal(result, canUpdateStopped);
-    });
+    const serverKey = serverScopeKey(result);
+    if (selectedScanScope === "selective") {
+      detailsBtn.classList.add("server-select-toggle");
+      detailsBtn.setAttribute("aria-pressed", selectedScanServers.has(serverKey) ? "true" : "false");
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.className = "server-select-checkbox";
+      checkbox.checked = selectedScanServers.has(serverKey);
+      checkbox.setAttribute("aria-label", `Select ${result.server_name || "server"}`);
+      const label = document.createElement("span");
+      label.className = "server-select-label";
+      label.textContent = "Details";
+      detailsBtn.append(checkbox, label);
+      const setChecked = (checked) => {
+        if (checked) {
+          selectedScanServers.add(serverKey);
+        } else {
+          selectedScanServers.delete(serverKey);
+        }
+        detailsBtn.setAttribute("aria-pressed", checked ? "true" : "false");
+        checkbox.checked = checked;
+      };
+      checkbox.addEventListener("click", (event) => {
+        event.stopPropagation();
+      });
+      detailsBtn.addEventListener("click", (event) => {
+        event.preventDefault();
+        if (detailsBtn.disabled) return;
+        setChecked(!checkbox.checked);
+      });
+      checkbox.addEventListener("change", () => {
+        setChecked(checkbox.checked);
+      });
+      detailsBtn.disabled = updateInProgress || scanActive;
+    } else {
+      detailsBtn.textContent = "Details";
+      detailsBtn.addEventListener("click", () => {
+        openDetailsModal(result, canUpdateStopped);
+      });
+      detailsBtn.disabled = updateInProgress || scanActive;
+    }
     headRight.appendChild(detailsBtn);
 
     head.appendChild(headLeft);
@@ -867,6 +1022,54 @@ function applyTheme(mode) {
   }
 }
 
+function loadSchedulerAnchor() {
+  const raw = localStorage.getItem(schedulerAnchorKey);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed.anchorMs !== "number" || typeof parsed.intervalSec !== "number") {
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function saveSchedulerAnchor(anchorMs, intervalSec) {
+  localStorage.setItem(schedulerAnchorKey, JSON.stringify({ anchorMs, intervalSec }));
+}
+
+function clearSchedulerAnchor() {
+  localStorage.removeItem(schedulerAnchorKey);
+}
+
+function getSchedulerNextRun(cfg) {
+  const enabled = Boolean(cfg && cfg.scheduler_enabled);
+  if (!enabled) {
+    return null;
+  }
+  const intervalSec = Number(cfg.scan_interval_sec);
+  if (!Number.isFinite(intervalSec) || intervalSec <= 0) {
+    return null;
+  }
+  const stored = loadSchedulerAnchor();
+  if (!stored || stored.intervalSec !== intervalSec) {
+    const anchorMs = Date.now();
+    saveSchedulerAnchor(anchorMs, intervalSec);
+    return new Date(anchorMs + intervalSec * 1000);
+  }
+  const intervalMs = intervalSec * 1000;
+  const now = Date.now();
+  const anchorMs = stored.anchorMs;
+  if (now <= anchorMs) {
+    return new Date(anchorMs + intervalMs);
+  }
+  const elapsed = now - anchorMs;
+  const cycles = Math.floor(elapsed / intervalMs) + 1;
+  return new Date(anchorMs + cycles * intervalMs);
+}
+
 function initThemeToggle() {
   const saved = localStorage.getItem(themeStorageKey);
   applyTheme(saved && themeModes.includes(saved) ? saved : "light");
@@ -882,6 +1085,7 @@ function updateScanScopeOptions() {
   if (!scanScopeSelect) return;
   const currentValue = scanScopeSelect.value || selectedScanScope || "all";
   const options = [
+    { value: "selective", label: "Selective scan" },
     { value: "all", label: "All servers" },
   ];
 
@@ -910,6 +1114,7 @@ function updateScanScopeOptions() {
 if (scanScopeSelect) {
   scanScopeSelect.addEventListener("change", () => {
     selectedScanScope = scanScopeSelect.value || "all";
+    selectedScanServers.clear();
     refreshStatus();
   });
 }
@@ -933,15 +1138,28 @@ async function refreshConfig() {
   }
   updateStoppedInput.checked = Boolean(cfg.update_stopped_containers);
   pruneDanglingInput.checked = Boolean(cfg.prune_dangling_images);
-  updateSchedulerNextRun(cfg);
   const enabled = Boolean(cfg.scheduler_enabled);
-  if (schedulerStateEl) {
-    schedulerStateEl.dataset.enabled = enabled ? "true" : "false";
-    const tooltip = enabled ? formatSchedulerNextRun(cfg) : "Scheduler disabled";
-    schedulerStateEl.setAttribute("data-tooltip", tooltip);
-    schedulerStateEl.setAttribute("aria-label", tooltip);
+  const intervalSec = Number(cfg.scan_interval_sec);
+  const enableChanged = lastSchedulerEnabled === null ? false : enabled !== lastSchedulerEnabled;
+  const intervalChanged = lastSchedulerIntervalSec === null ? false : intervalSec !== lastSchedulerIntervalSec;
+  if (!enabled) {
+    clearSchedulerAnchor();
+  } else if (enableChanged || intervalChanged) {
+    saveSchedulerAnchor(Date.now(), intervalSec);
+  } else {
+    getSchedulerNextRun(cfg);
   }
-}
+  lastSchedulerEnabled = enabled;
+  lastSchedulerIntervalSec = intervalSec;
+  updateSchedulerNextRun(cfg);
+    if (schedulerStateEl) {
+      schedulerStateEl.dataset.enabled = enabled ? "true" : "false";
+      const tooltip = enabled ? formatSchedulerNextRun(cfg) : "Scheduler disabled";
+      schedulerStateEl.setAttribute("data-tooltip", tooltip);
+      schedulerStateEl.setAttribute("aria-label", tooltip);
+      schedulerStateEl.dataset.tooltipScheduler = "true";
+    }
+  }
 
 function formatSchedulerNextRun(cfg) {
   const enabled = Boolean(cfg && cfg.scheduler_enabled);
@@ -952,7 +1170,10 @@ function formatSchedulerNextRun(cfg) {
   if (!Number.isFinite(interval) || interval <= 0) {
     return "Next run: unavailable.";
   }
-  const nextRun = new Date(Date.now() + interval * 1000);
+  const nextRun = getSchedulerNextRun(cfg);
+  if (!nextRun) {
+    return "Next run: unavailable.";
+  }
   const timeLabel = nextRun.toLocaleString([], {
     year: "numeric",
     month: "short",
@@ -1054,8 +1275,8 @@ async function refreshStatus() {
     });
     scanStateOverrides = nextOverrides;
   }
-  renderStatus(results);
   updateScanPolling(results);
+  renderStatus(results);
   return results;
 }
 
@@ -1190,9 +1411,12 @@ function setScanningUI(isScanning) {
 }
 
 function updateScanPolling(results) {
-  const active = Array.isArray(results)
-    ? results.some((result) => ["pending", "scanning"].includes(String(result.scan_state || "")))
+  let active = Array.isArray(results)
+    ? results.some((result) => ["pending", "scanning", "updating"].includes(String(result.scan_state || "")))
     : false;
+  if (!active) {
+    active = scanRequestActive || Boolean(currentScanController);
+  }
   scanActive = active;
   setScanningUI(false);
   if (active && !scanPollingTimer) {
@@ -1220,9 +1444,12 @@ function applyOptimisticScanState(scope) {
       local: false,
     })));
   const items = Array.isArray(base) ? base : [];
-  if (scope && scope !== "all") {
-    const key = scope;
-    nextOverrides[key] = "scanning";
+  if (Array.isArray(scope)) {
+    scope.forEach((key, index) => {
+      nextOverrides[key] = index === 0 ? "scanning" : "pending";
+    });
+  } else if (scope && scope !== "all") {
+    nextOverrides[scope] = "scanning";
   } else if (items.length > 0) {
     items.forEach((item, index) => {
       const key = serverScopeKey(item);
@@ -1257,6 +1484,13 @@ function showToast(message, timeoutMs = 8000) {
 let tooltipTarget = null;
 
 function showTooltip(target) {
+  if (target && target.dataset && target.dataset.tooltipScheduler === "true") {
+    const label = currentConfig && currentConfig.scheduler_enabled
+      ? formatSchedulerNextRun(currentConfig)
+      : "Scheduler disabled";
+    target.setAttribute("data-tooltip", label);
+    target.setAttribute("aria-label", label);
+  }
   const text = target?.dataset?.tooltip || target?.getAttribute("aria-label") || "";
   if (!text) return;
   tooltipEl.textContent = text;
@@ -1348,7 +1582,6 @@ function setView(nextView) {
   } else {
     stopLogsAutoRefresh();
   }
-
   refreshViewData(nextView);
 }
 
@@ -1374,16 +1607,34 @@ scanBtn.addEventListener("click", async () => {
   }
   currentScanController = new AbortController();
   selectedScanScope = scanScopeSelect ? scanScopeSelect.value : "all";
+  if (selectedScanScope === "selective" && selectedScanServers.size === 0) {
+    showToast("Select at least one server to scan.");
+    currentScanController = null;
+    scanActive = false;
+    setScanningUI(false);
+    return;
+  }
+  scanRequestActive = true;
   setScanningUI(true);
   startScanPolling();
-  applyOptimisticScanState(selectedScanScope);
+  const scanTargets = selectedScanScope === "selective"
+    ? Array.from(selectedScanServers)
+    : selectedScanScope;
+  applyOptimisticScanState(scanTargets);
   refreshStatus().catch(() => {});
   try {
-    const scope = scanScopeSelect ? scanScopeSelect.value : "all";
-    const url = scope && scope !== "all"
-      ? `/api/scan?server=${encodeURIComponent(scope)}`
-      : "/api/scan?server=all";
-    await fetchJSON(url, { method: "POST", signal: currentScanController.signal });
+    if (selectedScanScope === "selective") {
+      for (const scope of scanTargets) {
+        const url = `/api/scan?server=${encodeURIComponent(scope)}`;
+        await fetchJSON(url, { method: "POST", signal: currentScanController.signal });
+      }
+    } else {
+      const scope = scanScopeSelect ? scanScopeSelect.value : "all";
+      const url = scope && scope !== "all"
+        ? `/api/scan?server=${encodeURIComponent(scope)}`
+        : "/api/scan?server=all";
+      await fetchJSON(url, { method: "POST", signal: currentScanController.signal });
+    }
   } catch (err) {
     if (err.name === "AbortError" || /aborted|canceled|cancelled/i.test(err.message)) {
       alert("Scan cancelled.");
@@ -1392,6 +1643,14 @@ scanBtn.addEventListener("click", async () => {
     }
   } finally {
     currentScanController = null;
+    scanRequestActive = false;
+    if (selectedScanScope === "selective") {
+      selectedScanServers.clear();
+      selectedScanScope = "all";
+      if (scanScopeSelect) {
+        scanScopeSelect.value = "all";
+      }
+    }
     setScanningUI(false);
     await refreshStatus();
     await refreshLogs();
@@ -1429,7 +1688,7 @@ function attachImmediateSave(input) {
   input.addEventListener("change", async () => {
     try {
       await saveConfig({ useWebhookInput: false });
-      currentConfig = await fetchJSON("/api/config");
+      await refreshConfig();
     } catch (err) {
       showToast(err.message || "Failed to save setting.");
     }
@@ -1446,7 +1705,7 @@ attachImmediateSave(discordContainerUpdatedInput);
 globalPolicySelect.addEventListener("change", async () => {
   try {
     await saveConfig({ useWebhookInput: false });
-    currentConfig = await fetchJSON("/api/config");
+    await refreshConfig();
   } catch (err) {
     showToast(err.message || "Failed to save policy.");
   }
@@ -1561,9 +1820,25 @@ async function init() {
       }
     });
   }
+  if (globalPolicyInfoBtn) {
+    globalPolicyInfoBtn.addEventListener("click", openPolicyModal);
+  }
+  if (policyCloseBtn) {
+    policyCloseBtn.addEventListener("click", closePolicyModal);
+  }
+  if (policyModal) {
+    policyModal.addEventListener("click", (event) => {
+      if (event.target && event.target.dataset && event.target.dataset.close) {
+        closePolicyModal();
+      }
+    });
+  }
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && detailsModal && !detailsModal.classList.contains("hidden")) {
       closeDetailsModal();
+    }
+    if (event.key === "Escape" && policyModal && !policyModal.classList.contains("hidden")) {
+      closePolicyModal();
     }
   });
 

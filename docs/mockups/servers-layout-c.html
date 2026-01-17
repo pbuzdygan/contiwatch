@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Contiwatch – Servers UI Mockup C (Table + Maintenance)</title>
+    <style>
+      :root{
+        --bg:#0b1220;--surface:#0f172a;--surface2:#111c33;--border:rgba(148,163,184,.2);
+        --text:rgba(226,232,240,.92);--muted:rgba(148,163,184,.9);
+        --primary:#60a5fa;--success:#3cb179;--warning:#e6b566;--danger:#e05858;
+        --shadow:0 12px 28px rgba(0,0,0,.35);--r:14px;--h:40px;--focus:0 0 0 3px rgba(96,165,250,.35);
+        --mono:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace;
+      }
+      *{box-sizing:border-box}
+      body{
+        margin:0;background:
+          radial-gradient(1100px 650px at 18% 0%,rgba(96,165,250,.16),transparent 55%),
+          radial-gradient(900px 520px at 86% 10%,rgba(60,177,121,.12),transparent 55%),
+          var(--bg);
+        color:var(--text);
+        font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Arial,"Noto Sans","Liberation Sans",sans-serif;
+      }
+      header{
+        position:sticky;top:0;z-index:10;
+        padding:16px 18px;border-bottom:1px solid var(--border);
+        background:color-mix(in srgb,var(--surface),transparent 18%);backdrop-filter:blur(10px);
+      }
+      .wrap{max-width:1200px;margin:0 auto}
+      h1{margin:0;font-size:1.05rem}
+      .sub{margin:4px 0 0;color:var(--muted);font-size:.85rem}
+      main{max-width:1200px;margin:0 auto;padding:16px 18px 28px}
+      .panel{
+        background:var(--surface);border:1px solid var(--border);border-radius:var(--r);
+        box-shadow:var(--shadow);overflow:hidden;
+      }
+      .panel-head{
+        padding:14px;border-bottom:1px solid var(--border);
+        display:flex;align-items:center;justify-content:space-between;gap:10px;
+        background:color-mix(in srgb,var(--surface2),transparent 10%);
+      }
+      .toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap; width:100%}
+      .input{
+        height:var(--h);padding:0 12px;border-radius:12px;border:1px solid var(--border);
+        background:rgba(15,23,42,.55);color:var(--text);min-width:240px;flex:1;
+      }
+      .input:focus{outline:none;box-shadow:var(--focus);border-color:rgba(96,165,250,.5)}
+      .btn{
+        height:var(--h);padding:0 14px;border-radius:12px;border:1px solid var(--border);
+        background:#183055;color:var(--text);font-weight:700;cursor:pointer;
+        transition:background 120ms ease,border-color 120ms ease,transform 80ms ease;
+      }
+      .btn:hover{background:#1b3a66;border-color:rgba(96,165,250,.35)}
+      .btn:active{transform:translateY(1px)}
+      .btn.secondary{background:transparent}
+      .btn.secondary:hover{background:rgba(96,165,250,.08)}
+      .btn.warning{background:rgba(230,181,102,.12);border-color:rgba(230,181,102,.35)}
+      .btn.danger{background:rgba(224,88,88,.12);border-color:rgba(224,88,88,.35)}
+      table{width:100%;border-collapse:collapse}
+      th,td{padding:12px 14px;border-bottom:1px solid var(--border);vertical-align:top}
+      th{color:var(--muted);font-size:.8rem;text-align:left}
+      tr:hover td{background:rgba(96,165,250,.06)}
+      .mono{font-family:var(--mono);font-size:.82rem}
+      .pill{
+        display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border-radius:999px;
+        border:1px solid var(--border);background:rgba(15,23,42,.35);color:var(--muted);
+        font-size:.78rem;font-weight:750;
+      }
+      .pill.ok{border-color:rgba(60,177,121,.35);color:color-mix(in srgb,var(--success),white 10%)}
+      .pill.off{border-color:rgba(224,88,88,.35);color:color-mix(in srgb,var(--danger),white 10%)}
+      .pill.maint{border-color:rgba(230,181,102,.35);color:color-mix(in srgb,var(--warning),white 10%)}
+      .actions{display:flex;gap:8px;flex-wrap:wrap}
+      .mini{height:34px;padding:0 10px;border-radius:12px;font-size:.85rem}
+      .bulk{
+        padding:12px 14px;border-top:1px solid var(--border);
+        display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;
+        background:rgba(15,23,42,.35);
+      }
+      .hint{color:var(--muted);font-size:.9rem;line-height:1.35}
+      @media (max-width:860px){ th:nth-child(3),td:nth-child(3){display:none} }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="wrap" style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+        <div>
+          <h1>Servers (Mockup C — Table + Bulk Ops)</h1>
+          <p class="sub">Table view for power users: bulk maintenance, bulk delete, bulk copy.</p>
+        </div>
+        <div class="actions">
+          <button class="btn" id="add" type="button">Add server</button>
+        </div>
+      </div>
+    </header>
+    <main>
+      <section class="panel">
+        <div class="panel-head">
+          <div class="toolbar">
+            <input class="input" id="q" placeholder="Search…" />
+            <button class="btn secondary" id="showAll" type="button">All</button>
+            <button class="btn secondary" id="showActive" type="button">Active</button>
+            <button class="btn secondary" id="showMaint" type="button">Maintenance</button>
+          </div>
+        </div>
+        <div style="overflow:auto">
+          <table>
+            <thead>
+              <tr>
+                <th style="width:44px"><input type="checkbox" id="all" /></th>
+                <th>Name</th>
+                <th>Address</th>
+                <th>Status</th>
+                <th style="width:260px">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="rows"></tbody>
+          </table>
+        </div>
+        <div class="bulk">
+          <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+            <span class="hint"><strong id="sel">0</strong> selected</span>
+            <button class="btn warning mini" id="bulkMaint" type="button">Toggle maintenance</button>
+            <button class="btn secondary mini" id="bulkCopy" type="button">Copy addresses</button>
+          </div>
+          <button class="btn danger mini" id="bulkDelete" type="button">Delete</button>
+        </div>
+      </section>
+      <p class="hint" style="margin-top:14px">
+        Maintenance mode: server stays saved but is excluded from scans/updates until resumed.
+      </p>
+    </main>
+
+    <script>
+      const state = {
+        filter: "all",
+        q: "",
+        selected: new Set(),
+        servers: [
+          { id:"l1", type:"local", name:"BUZSTORAGE", addr:"/var/run/docker.sock", online:true, maint:false },
+          { id:"r1", type:"remote", name:"BUZPI01", addr:"http://buzpi01:8080", online:false, maint:false },
+          { id:"r2", type:"remote", name:"PATONAS", addr:"http://patonas:8080", online:true, maint:true },
+        ],
+      };
+      const el = (id) => document.getElementById(id);
+      const rows = el("rows");
+      const q = el("q");
+
+      function visible(s) {
+        if (state.filter === "active" && s.maint) return false;
+        if (state.filter === "maint" && !s.maint) return false;
+        const hay = `${s.name} ${s.addr}`.toLowerCase();
+        return !state.q || hay.includes(state.q.toLowerCase());
+      }
+      function pill(s) {
+        if (s.maint) return `<span class="pill maint">Maintenance</span>`;
+        return s.online ? `<span class="pill ok">Online</span>` : `<span class="pill off">Offline</span>`;
+      }
+      function render() {
+        const items = state.servers.filter(visible);
+        rows.innerHTML = "";
+        items.forEach((s) => {
+          const tr = document.createElement("tr");
+          tr.innerHTML = `
+            <td><input type="checkbox" data-id="${s.id}" ${state.selected.has(s.id) ? "checked" : ""} /></td>
+            <td>
+              <div style="font-weight:800">${s.name}</div>
+              <div class="hint">${s.type === "local" ? "Local socket" : "Remote agent"}</div>
+            </td>
+            <td class="mono">${s.addr}</td>
+            <td>${pill(s)}</td>
+            <td>
+              <div class="actions">
+                <button class="btn secondary mini" data-action="edit" data-id="${s.id}" type="button">Edit</button>
+                <button class="btn warning mini" data-action="maint" data-id="${s.id}" type="button">${s.maint ? "Resume" : "Maintenance"}</button>
+                <button class="btn danger mini" data-action="del" data-id="${s.id}" type="button">Delete</button>
+              </div>
+            </td>
+          `;
+          tr.addEventListener("click", (ev) => {
+            const cb = ev.target.closest?.("input[type=checkbox][data-id]");
+            const btn = ev.target.closest?.("button[data-action]");
+            if (cb) {
+              if (cb.checked) state.selected.add(cb.dataset.id);
+              else state.selected.delete(cb.dataset.id);
+              el("sel").textContent = state.selected.size;
+              return;
+            }
+            if (btn) {
+              const id = btn.dataset.id;
+              const srv = state.servers.find((x) => x.id === id);
+              if (!srv) return;
+              if (btn.dataset.action === "maint") { srv.maint = !srv.maint; render(); return; }
+              if (btn.dataset.action === "del") {
+                state.servers = state.servers.filter((x) => x.id !== id);
+                state.selected.delete(id);
+                el("sel").textContent = state.selected.size;
+                render();
+                return;
+              }
+              if (btn.dataset.action === "edit") { alert("Edit modal/drawer in real UI (mock)"); return; }
+            }
+          });
+          rows.appendChild(tr);
+        });
+        el("sel").textContent = state.selected.size;
+      }
+
+      q.addEventListener("input", () => { state.q = q.value || ""; render(); });
+      el("showAll").addEventListener("click", () => { state.filter = "all"; render(); });
+      el("showActive").addEventListener("click", () => { state.filter = "active"; render(); });
+      el("showMaint").addEventListener("click", () => { state.filter = "maint"; render(); });
+      el("all").addEventListener("change", (e) => {
+        const items = state.servers.filter(visible);
+        if (e.target.checked) items.forEach((s) => state.selected.add(s.id));
+        else items.forEach((s) => state.selected.delete(s.id));
+        render();
+      });
+      el("bulkMaint").addEventListener("click", () => { state.servers.forEach((s) => { if (state.selected.has(s.id)) s.maint = !s.maint; }); render(); });
+      el("bulkCopy").addEventListener("click", () => {
+        const addrs = state.servers.filter((s) => state.selected.has(s.id)).map((s) => s.addr).join("\\n");
+        navigator.clipboard?.writeText?.(addrs);
+      });
+      el("bulkDelete").addEventListener("click", () => {
+        state.servers = state.servers.filter((s) => !state.selected.has(s.id));
+        state.selected.clear();
+        render();
+      });
+      el("add").addEventListener("click", () => alert("Add wizard in real UI (mock)"));
+
+      render();
+    </script>
+  </body>
+</html>
