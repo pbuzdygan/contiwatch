@@ -12,11 +12,13 @@ type RemoteServer struct {
 	Name  string `json:"name"`
 	URL   string `json:"url"`
 	Token string `json:"token"`
+	Maintenance bool `json:"maintenance"`
 }
 
 type LocalServer struct {
 	Name   string `json:"name"`
 	Socket string `json:"socket"`
+	Maintenance bool `json:"maintenance"`
 }
 
 type Config struct {

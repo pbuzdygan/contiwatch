@@ -1,6 +1,7 @@
 const statusEl = document.getElementById("status");
 const scanBtn = document.getElementById("scan-btn");
 const scanScopeSelect = document.getElementById("scan-scope");
+const refreshStatusBtn = document.getElementById("refresh-status");
 const schedulerStateEl = document.getElementById("scheduler-state");
 const schedulerNextRunEl = document.getElementById("scheduler-next-run");
 const tooltipEl = document.createElement("div");
@@ -20,19 +21,41 @@ const discordUpdateDetectedInput = document.getElementById("discord-update-detec
 const discordContainerUpdatedInput = document.getElementById("discord-container-updated");
 const updateStoppedInput = document.getElementById("update-stopped");
 const pruneDanglingInput = document.getElementById("prune-dangling");
-const localForm = document.getElementById("local-form");
-const localNameInput = document.getElementById("local-name");
-const localSocketInput = document.getElementById("local-socket");
-const remoteForm = document.getElementById("remote-form");
-const remoteNameInput = document.getElementById("remote-name");
-const remoteUrlInput = document.getElementById("remote-url");
-const remoteTokenInput = document.getElementById("remote-token");
-const generateTokenBtn = document.getElementById("generate-token");
-const serversListEl = document.getElementById("servers-list");
+const addLocalBtn = document.getElementById("add-local");
+const addRemoteBtn = document.getElementById("add-remote");
+const refreshServersBtn = document.getElementById("refresh-servers");
+const serversTableWrap = document.getElementById("servers-table-wrap");
+const serversTableBody = document.getElementById("servers-table-body");
+const serversCardsEl = document.getElementById("servers-cards");
+const serversViewButtons = Array.from(document.querySelectorAll(".servers-view-toggle [data-view]"));
+const serversFilterButtons = Array.from(document.querySelectorAll(".servers-filters [data-filter]"));
+const localModal = document.getElementById("local-modal");
+const localModalTitle = document.getElementById("local-modal-title");
+const localModalClose = document.getElementById("local-modal-close");
+const localModalForm = document.getElementById("local-modal-form");
+const localModalNameInput = document.getElementById("local-modal-name");
+const localModalSocketInput = document.getElementById("local-modal-socket");
+const localModalSave = document.getElementById("local-modal-save");
+const localModalCancel = document.getElementById("local-modal-cancel");
+const remoteModal = document.getElementById("remote-modal");
+const remoteModalTitle = document.getElementById("remote-modal-title");
+const remoteModalClose = document.getElementById("remote-modal-close");
+const remoteModalNameInput = document.getElementById("remote-modal-name");
+const remoteModalHostInput = document.getElementById("remote-modal-host");
+const remoteModalPortInput = document.getElementById("remote-modal-port");
+const remoteModalTokenInput = document.getElementById("remote-modal-token");
+const remoteModalTokenCopy = document.getElementById("remote-modal-token-copy");
+const remoteModalCompose = document.getElementById("remote-modal-compose");
+const remoteModalComposeCopy = document.getElementById("remote-modal-compose-copy");
+const remoteModalSave = document.getElementById("remote-modal-save");
+const remoteModalCancel = document.getElementById("remote-modal-cancel");
 const sidebar = document.getElementById("sidebar");
 const sidebarSearch = document.getElementById("sidebar-search");
 const themeToggleBtn = document.getElementById("theme-toggle");
 const themeLabel = document.getElementById("theme-label");
+const topbarStatusEl = document.getElementById("topbar-status");
+const topbarSettingsEl = document.getElementById("topbar-settings");
+const topbarLogsEl = document.getElementById("topbar-logs");
 const viewStatusEl = document.getElementById("view-status");
 const viewSettingsEl = document.getElementById("view-settings");
 const viewServersEl = document.getElementById("view-servers");
@@ -70,9 +93,19 @@ let selectedScanScope = "all";
 let restartingServers = {};
 let currentDetailsServerKey = null;
 let selectedScanServers = new Set();
+let serversRemoveConfirming = new Set();
+let serversFilterMode = "all";
+let serversSearchQuery = "";
+let editingLocalServer = null;
+let editingRemoteServer = null;
 const schedulerAnchorKey = "contiwatch_scheduler_anchor";
+const serversViewStorageKey = "contiwatch_servers_view";
+let serversViewMode = "table";
 let lastSchedulerEnabled = null;
 let lastSchedulerIntervalSec = null;
+let serverStream = null;
+let checkingStartMsByServerKey = {};
+let checkingDebounceTimersByServerKey = {};
 
 async function fetchJSON(url, options = {}) {
   const res = await fetch(url, options);
@@ -107,6 +140,174 @@ function maskToken(token) {
   if (!token) return "";
   if (token.length <= 8) return "********";
   return `${token.slice(0, 4)}…${token.slice(-4)}`;
+}
+
+function normalizeRemoteUrl(host, port) {
+  const trimmedHost = String(host || "").trim();
+  const trimmedPort = String(port || "").trim();
+  if (!trimmedHost) return "";
+  try {
+    const base = /^https?:\/\//i.test(trimmedHost) ? trimmedHost : `http://${trimmedHost}`;
+    const parsed = new URL(base);
+    parsed.port = trimmedPort || parsed.port || "8080";
+    return parsed.toString().replace(/\/$/, "");
+  } catch {
+    const cleanedHost = trimmedHost.replace(/\/+$/, "");
+    return `http://${cleanedHost}:${trimmedPort || "8080"}`;
+  }
+}
+
+function parseRemoteUrl(url) {
+  const raw = String(url || "").trim();
+  if (!raw) {
+    return { host: "", port: "8080" };
+  }
+  try {
+    const parsed = new URL(/^https?:\/\//i.test(raw) ? raw : `http://${raw}`);
+    return {
+      host: parsed.hostname || raw,
+      port: parsed.port || "8080",
+    };
+  } catch {
+    return { host: raw, port: "8080" };
+  }
+}
+
+function buildAgentCompose(token, port) {
+  const tokenValue = token || "PUT_32_CHAR_TOKEN_HERE";
+  const hostPort = port || "8080";
+  return `services:
+  contiwatch-agent:
+    image: ghcr.io/pbuzdygan/contiwatch:latest
+    container_name: contiwatch-agent
+    ports:
+      - "${hostPort}:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - contiwatch_agent_data:/data
+    environment:
+      CONTIWATCH_AGENT: "true"
+      CONTIWATCH_AGENT_TOKEN: "${tokenValue}"
+      CONTIWATCH_ADDR: ":8080"
+      CONTIWATCH_CONFIG: "/data/config.json"
+      TZ: Europe/Warsaw
+    restart: unless-stopped
+
+volumes:
+  contiwatch_agent_data:
+`;
+}
+
+function updateRemoteComposePreview() {
+  if (!remoteModalCompose) return;
+  const token = remoteModalTokenInput ? remoteModalTokenInput.value.trim() : "";
+  const port = remoteModalPortInput ? remoteModalPortInput.value.trim() : "8080";
+  remoteModalCompose.textContent = buildAgentCompose(token, port);
+}
+
+function openLocalModal(mode, server) {
+  if (!localModal) return;
+  const isEdit = mode === "edit";
+  editingLocalServer = isEdit ? server : null;
+  if (localModalTitle) {
+    localModalTitle.textContent = isEdit ? "Edit local server" : "Add local server";
+  }
+  if (localModalNameInput) {
+    localModalNameInput.value = server ? server.name || "" : "";
+  }
+  if (localModalSocketInput) {
+    localModalSocketInput.value = server ? server.socket || "/var/run/docker.sock" : "/var/run/docker.sock";
+  }
+  localModal.classList.remove("hidden");
+  localModal.setAttribute("aria-hidden", "false");
+  if (localModalNameInput) {
+    localModalNameInput.focus();
+  }
+}
+
+function closeLocalModal() {
+  if (!localModal) return;
+  localModal.classList.add("hidden");
+  localModal.setAttribute("aria-hidden", "true");
+  editingLocalServer = null;
+}
+
+function openRemoteModal(mode, server) {
+  if (!remoteModal) return;
+  const isEdit = mode === "edit";
+  editingRemoteServer = isEdit ? server : null;
+  if (remoteModalTitle) {
+    remoteModalTitle.textContent = isEdit ? "Edit remote agent" : "Add remote agent";
+  }
+  const parsed = server ? parseRemoteUrl(server.url) : { host: "", port: "8080" };
+  if (remoteModalNameInput) {
+    remoteModalNameInput.value = server ? server.name || "" : "";
+  }
+  if (remoteModalHostInput) {
+    remoteModalHostInput.value = parsed.host || "";
+  }
+  if (remoteModalPortInput) {
+    remoteModalPortInput.value = parsed.port || "8080";
+  }
+  if (remoteModalTokenInput) {
+    if (server && server.token) {
+      remoteModalTokenInput.value = server.token;
+    } else {
+      remoteModalTokenInput.value = generateToken(32);
+    }
+  }
+  updateRemoteComposePreview();
+  remoteModal.classList.remove("hidden");
+  remoteModal.setAttribute("aria-hidden", "false");
+  if (remoteModalNameInput) {
+    remoteModalNameInput.focus();
+  }
+}
+
+function closeRemoteModal() {
+  if (!remoteModal) return;
+  remoteModal.classList.add("hidden");
+  remoteModal.setAttribute("aria-hidden", "true");
+  editingRemoteServer = null;
+}
+
+async function copyToClipboard(value, label) {
+  if (!value) return;
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(value);
+    } else {
+      const temp = document.createElement("textarea");
+      temp.value = value;
+      temp.setAttribute("readonly", "true");
+      temp.style.position = "absolute";
+      temp.style.left = "-9999px";
+      document.body.appendChild(temp);
+      temp.select();
+      document.execCommand("copy");
+      document.body.removeChild(temp);
+    }
+    showToast(`${label || "Copied"} to clipboard.`);
+  } catch {
+    showToast("Copy failed.");
+  }
+}
+
+async function toggleMaintenance(type, server) {
+  if (!server || !type) return;
+  const payload = { ...server, maintenance: !server.maintenance };
+  const path = type === "local" ? "/api/locals" : "/api/servers";
+  try {
+    await fetchJSON(path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    await refreshServers();
+    await refreshStatus();
+  } catch (err) {
+    showToast(err.message || "Failed to update maintenance.");
+  }
 }
 
 function closeDetailsModal() {
@@ -366,6 +567,7 @@ function buildDetailsContent(result, canUpdateStopped) {
 
   const updatesGroup = document.createElement("details");
   updatesGroup.className = "details-group";
+  updatesGroup.dataset.group = "updates";
   updatesGroup.open = true;
   const updatesSummary = document.createElement("summary");
   updatesSummary.className = "details-group-header";
@@ -392,6 +594,7 @@ function buildDetailsContent(result, canUpdateStopped) {
 
   const updatedGroup = document.createElement("details");
   updatedGroup.className = "details-group";
+  updatedGroup.dataset.group = "updated";
   updatedGroup.open = false;
   const updatedSummary = document.createElement("summary");
   updatedSummary.className = "details-group-header";
@@ -418,6 +621,7 @@ function buildDetailsContent(result, canUpdateStopped) {
 
   const skippedGroup = document.createElement("details");
   skippedGroup.className = "details-group";
+  skippedGroup.dataset.group = "skipped";
   skippedGroup.open = false;
   const skippedSummary = document.createElement("summary");
   skippedSummary.className = "details-group-header";
@@ -444,6 +648,7 @@ function buildDetailsContent(result, canUpdateStopped) {
 
   const scannedGroup = document.createElement("details");
   scannedGroup.className = "details-group";
+  scannedGroup.dataset.group = "scanned";
   scannedGroup.open = false;
   const scannedSummary = document.createElement("summary");
   scannedSummary.className = "details-group-header";
@@ -488,8 +693,17 @@ function openDetailsModal(result, canUpdateStopped) {
 
 function updateDetailsModal(result, canUpdateStopped) {
   if (!detailsModal || !detailsBody) return;
+  const groupStates = new Map();
+  detailsBody.querySelectorAll("details[data-group]").forEach((group) => {
+    groupStates.set(group.dataset.group, group.open);
+  });
   detailsBody.innerHTML = "";
   detailsBody.appendChild(buildDetailsContent(result, canUpdateStopped));
+  detailsBody.querySelectorAll("details[data-group]").forEach((group) => {
+    if (groupStates.has(group.dataset.group)) {
+      group.open = groupStates.get(group.dataset.group);
+    }
+  });
   if (detailsTitle) {
     detailsTitle.textContent = "";
     detailsTitle.appendChild(buildDetailsTitle(result.server_name || "server"));
@@ -533,8 +747,15 @@ function renderStatus(results) {
     const isOffline = Boolean(result.error);
     const key = serverScopeKey(result);
     const infoKey = `${result.local ? "local" : "remote"}:${result.server_name || ""}`;
-    const infoStatusRaw = cachedServerInfo[infoKey] ? String(cachedServerInfo[infoKey].status || "") : "";
+    const infoEntry = cachedServerInfo[infoKey] || {};
+    const infoStatusRaw = String(infoEntry.status || "");
+    const infoChecking = debouncedCheckingVisible(infoKey, infoEntry);
+    const infoCheckedAt = infoEntry.checked_at;
     const infoStatus = infoStatusRaw.toLowerCase();
+    const serverConfig = result.local
+      ? cachedLocals.find((local) => local.name === result.server_name)
+      : cachedRemotes.find((remote) => remote.name === result.server_name);
+    const isMaintenance = Boolean(serverConfig && serverConfig.maintenance);
     const backendState = String(result.scan_state || "").toLowerCase();
     const overrideState = scanStateOverrides[key];
     let scanState = backendState && backendState !== "idle"
@@ -548,12 +769,27 @@ function renderStatus(results) {
     const hasScanErrorState = scanState === "error";
     const restartKey = serverScopeKey(result);
     const isRestarting = Boolean(restartingServers[restartKey] && restartingServers[restartKey] > Date.now());
-    const isOfflineForStatus = (isOffline && !isCancelled) || infoStatus === "offline";
-    const isRestartingForStatus = isRestarting || infoStatus === "restarting";
-    const statusLabel = isRestartingForStatus ? "restarting" : (isOfflineForStatus ? "offline" : "online");
+    const isOfflineForStatus = !isMaintenance && ((isOffline && !isCancelled) || infoStatus === "offline");
+    const isRestartingForStatus = !isMaintenance && (isRestarting || infoStatus === "restarting");
+    let statusLabel = "online";
+    if (isMaintenance) {
+      statusLabel = "maintenance";
+    } else if (isRestartingForStatus) {
+      statusLabel = "restarting";
+    } else if (isOfflineForStatus) {
+      statusLabel = "offline";
+    } else if (infoChecking) {
+      statusLabel = "checking";
+    }
+    if (!hasCheckedAt && !infoStatus && !result.error && !isMaintenance && !infoChecking) {
+      statusLabel = "unknown";
+    }
     let scanLabelText = "";
     let scanLabelClass = "";
-    if (!isRestarting) {
+    if (isMaintenance) {
+      scanLabelText = "maintenance";
+      scanLabelClass = "maintenance";
+    } else if (!isRestarting) {
       if (isUpdatingActive) {
         scanLabelText = "updating";
         scanLabelClass = "updating";
@@ -570,6 +806,18 @@ function renderStatus(results) {
         scanLabelText = "scan error";
         scanLabelClass = "error";
       }
+    }
+    if (!scanLabelText && infoChecking) {
+      scanLabelText = "checking";
+      scanLabelClass = "checking";
+    }
+    if (scanLabelText === "checking" && (scanActive || scanRequestActive || isScanningActive || isUpdatingActive || isPending)) {
+      scanLabelText = "";
+      scanLabelClass = "";
+    }
+    if (!scanActive && !scanRequestActive && !isScanningActive && !isUpdatingActive && !isPending && infoStatus === "offline") {
+      scanLabelText = "";
+      scanLabelClass = "";
     }
 
     const head = document.createElement("div");
@@ -594,6 +842,9 @@ function renderStatus(results) {
     nameIcon.innerHTML = '<path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M3 7a3 3 0 0 1 3 -3h12a3 3 0 0 1 3 3v2a3 3 0 0 1 -3 3h-12a3 3 0 0 1 -3 -3" /><path d="M15 20h-9a3 3 0 0 1 -3 -3v-2a3 3 0 0 1 3 -3h12" /><path d="M7 8v.01" /><path d="M7 16v.01" /><path d="M20 15l-2 3h3l-2 3" />';
     const nameIconWrap = document.createElement("span");
     nameIconWrap.className = "status-card-icon-wrap has-tooltip";
+    nameIconWrap.dataset.tooltipServerStatus = "true";
+    nameIconWrap.dataset.statusLabel = statusLabel;
+    nameIconWrap.dataset.checkedAt = infoCheckedAt || "";
     nameIconWrap.setAttribute("data-tooltip", `Status: ${statusLabel}`);
     nameIconWrap.setAttribute("aria-label", `Status: ${statusLabel}`);
     nameIconWrap.appendChild(nameIcon);
@@ -780,7 +1031,7 @@ function renderStatus(results) {
       checkbox.addEventListener("change", () => {
         setChecked(checkbox.checked);
       });
-      detailsBtn.disabled = updateInProgress || scanActive;
+      detailsBtn.disabled = updateInProgress || scanActive || isMaintenance;
     } else {
       detailsBtn.textContent = "Details";
       detailsBtn.addEventListener("click", () => {
@@ -814,168 +1065,277 @@ function renderStatus(results) {
   applySidebarFilter();
 }
 
+function buildServerActions(item) {
+  const actions = document.createElement("div");
+  actions.className = "servers-row-actions";
+  const isMaintenance = Boolean(item.server.maintenance);
+  const confirmKey = `${item.type}:${item.server.name}`;
+
+  let isConfirming = false;
+  const editBtn = document.createElement("button");
+  editBtn.type = "button";
+  editBtn.className = "secondary";
+  editBtn.textContent = "Edit";
+  editBtn.addEventListener("click", () => {
+    if (isConfirming) {
+      setConfirming(false);
+      return;
+    }
+    if (item.type === "local") {
+      openLocalModal("edit", item.server);
+    } else {
+      openRemoteModal("edit", item.server);
+    }
+  });
+
+  const maintenanceBtn = document.createElement("button");
+  maintenanceBtn.type = "button";
+  maintenanceBtn.className = "secondary";
+  maintenanceBtn.textContent = isMaintenance ? "Resume" : "Maintenance";
+  maintenanceBtn.addEventListener("click", async () => {
+    await toggleMaintenance(item.type, item.server);
+  });
+
+  const removeBtn = document.createElement("button");
+  removeBtn.type = "button";
+  removeBtn.textContent = "Remove";
+
+  const confirmBtn = document.createElement("button");
+  confirmBtn.type = "button";
+  confirmBtn.textContent = "Confirm";
+  confirmBtn.className = "btn-danger hidden";
+
+  function setConfirming(next) {
+    isConfirming = next;
+    if (next) {
+      serversRemoveConfirming.add(confirmKey);
+      removeBtn.classList.add("hidden");
+      confirmBtn.classList.remove("hidden");
+      editBtn.textContent = "Cancel";
+    } else {
+      serversRemoveConfirming.delete(confirmKey);
+      removeBtn.classList.remove("hidden");
+      confirmBtn.classList.add("hidden");
+      editBtn.textContent = "Edit";
+    }
+  }
+
+  removeBtn.addEventListener("click", () => {
+    setConfirming(true);
+  });
+
+  confirmBtn.addEventListener("click", async () => {
+    const path = item.type === "local" ? "/api/locals/" : "/api/servers/";
+    serversRemoveConfirming.delete(confirmKey);
+    await fetchJSON(`${path}${encodeURIComponent(item.server.name)}`, { method: "DELETE" });
+    await refreshServers();
+    await refreshStatus();
+  });
+
+  actions.append(editBtn, maintenanceBtn, removeBtn, confirmBtn);
+  if (serversRemoveConfirming.has(confirmKey)) {
+    setConfirming(true);
+  }
+  return actions;
+}
+
+function buildServersNameRow(item, statusLabel) {
+  const infoKey = `${item.type}:${item.server.name}`;
+  const info = cachedServerInfo[infoKey] || {};
+  const row = document.createElement("div");
+  row.className = "servers-name-row";
+
+  const nameIcon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  nameIcon.setAttribute(
+    "class",
+    `status-card-icon status-icon status-icon-${statusLabel} icon icon-tabler icons-tabler-outline icon-tabler-server-bolt`
+  );
+  nameIcon.setAttribute("width", "24");
+  nameIcon.setAttribute("height", "24");
+  nameIcon.setAttribute("viewBox", "0 0 24 24");
+  nameIcon.setAttribute("fill", "none");
+  nameIcon.setAttribute("stroke", "currentColor");
+  nameIcon.setAttribute("stroke-width", "2");
+  nameIcon.setAttribute("stroke-linecap", "round");
+  nameIcon.setAttribute("stroke-linejoin", "round");
+  nameIcon.setAttribute("aria-hidden", "true");
+  nameIcon.innerHTML = '<path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M3 7a3 3 0 0 1 3 -3h12a3 3 0 0 1 3 3v2a3 3 0 0 1 -3 3h-12a3 3 0 0 1 -3 -3" /><path d="M15 20h-9a3 3 0 0 1 -3 -3v-2a3 3 0 0 1 3 -3h12" /><path d="M7 8v.01" /><path d="M7 16v.01" /><path d="M20 15l-2 3h3l-2 3" />';
+
+  const nameIconWrap = document.createElement("span");
+  nameIconWrap.className = "status-card-icon-wrap has-tooltip";
+  nameIconWrap.dataset.tooltipServerStatus = "true";
+  nameIconWrap.dataset.statusLabel = statusLabel;
+  nameIconWrap.dataset.checkedAt = info.checked_at || "";
+  nameIconWrap.setAttribute("data-tooltip", `Status: ${statusLabel}`);
+  nameIconWrap.setAttribute("aria-label", `Status: ${statusLabel}`);
+  nameIconWrap.appendChild(nameIcon);
+
+  const nameEl = document.createElement("strong");
+  nameEl.textContent = item.server.name;
+
+  const typeIcon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  typeIcon.setAttribute(
+    "class",
+    `status-card-type-icon icon icon-tabler icons-tabler-outline icon-tabler-${item.type === "local" ? "plug-connected" : "network"}`
+  );
+  typeIcon.setAttribute("width", "24");
+  typeIcon.setAttribute("height", "24");
+  typeIcon.setAttribute("viewBox", "0 0 24 24");
+  typeIcon.setAttribute("fill", "none");
+  typeIcon.setAttribute("stroke", "currentColor");
+  typeIcon.setAttribute("stroke-width", "2");
+  typeIcon.setAttribute("stroke-linecap", "round");
+  typeIcon.setAttribute("stroke-linejoin", "round");
+  typeIcon.setAttribute("aria-hidden", "true");
+  const typeWrap = document.createElement("span");
+  typeWrap.className = "status-card-type has-tooltip";
+  if (item.type === "local") {
+    typeWrap.setAttribute("data-tooltip", "Local socket");
+    typeWrap.setAttribute("aria-label", "Local socket");
+    typeIcon.innerHTML = '<path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M7 12l5 5l-1.5 1.5a3.536 3.536 0 1 1 -5 -5l1.5 -1.5" /><path d="M17 12l-5 -5l1.5 -1.5a3.536 3.536 0 1 1 5 5l-1.5 1.5" /><path d="M3 21l2.5 -2.5" /><path d="M18.5 5.5l2.5 -2.5" /><path d="M10 11l-2 2" /><path d="M13 14l-2 2" />';
+  } else {
+    typeWrap.setAttribute("data-tooltip", "Remote agent");
+    typeWrap.setAttribute("aria-label", "Remote agent");
+    typeIcon.innerHTML = '<path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M6 9a6 6 0 1 0 12 0a6 6 0 0 0 -12 0" /><path d="M12 3c1.333 .333 2 2.333 2 6s-.667 5.667 -2 6" /><path d="M12 3c-1.333 .333 -2 2.333 -2 6s.667 5.667 2 6" /><path d="M6 9h12" /><path d="M3 20h7" /><path d="M14 20h7" /><path d="M10 20a2 2 0 1 0 4 0a2 2 0 0 0 -4 0" /><path d="M12 15v3" />';
+  }
+  typeWrap.appendChild(typeIcon);
+
+  row.append(nameIconWrap, nameEl, typeWrap);
+  return row;
+}
+
 function renderServers(localServers, remoteServers) {
-  serversListEl.innerHTML = "";
+  if (!serversTableBody || !serversCardsEl || !serversTableWrap) return;
   const items = [
     ...localServers.map((server) => ({ type: "local", server })),
     ...remoteServers.map((server) => ({ type: "remote", server })),
   ];
+  const query = normalizeQuery(serversSearchQuery);
+  const filtered = items.filter((item) => {
+    const isMaintenance = Boolean(item.server && item.server.maintenance);
+    if (serversFilterMode === "maintenance" && !isMaintenance) return false;
+    if (serversFilterMode === "active" && isMaintenance) return false;
+    if (!query) return true;
+    const address = item.type === "local" ? item.server.socket : item.server.url;
+    const statusValue = String(cachedServerInfo[`${item.type}:${item.server.name}`]?.status || "");
+    const haystack = normalizeQuery(`${item.server.name} ${address} ${item.type} ${statusValue}`);
+    return haystack.includes(query);
+  });
 
-  if (items.length === 0) {
-    const empty = document.createElement("li");
-    empty.textContent = "No servers added.";
-    serversListEl.appendChild(empty);
+  const showTable = serversViewMode === "table";
+  serversTableWrap.classList.toggle("hidden", !showTable);
+  serversCardsEl.classList.toggle("hidden", showTable);
+
+  serversTableBody.innerHTML = "";
+  serversCardsEl.innerHTML = "";
+
+  if (items.length === 0 || filtered.length === 0) {
+    const message = items.length === 0 ? "No servers added." : "No matching servers.";
+    if (showTable) {
+      const row = document.createElement("tr");
+      const cell = document.createElement("td");
+      cell.colSpan = 5;
+      cell.className = "servers-empty";
+      cell.textContent = message;
+      row.appendChild(cell);
+      serversTableBody.appendChild(row);
+    } else {
+      const empty = document.createElement("div");
+      empty.className = "servers-empty";
+      empty.textContent = message;
+      serversCardsEl.appendChild(empty);
+    }
     return;
   }
 
-  items.forEach((item) => {
+  filtered.forEach((item) => {
     const infoKey = `${item.type}:${item.server.name}`;
     const info = cachedServerInfo[infoKey] || {};
-    const li = document.createElement("li");
-    li.className = "server-item";
+    const isMaintenance = Boolean(item.server.maintenance);
+    const infoChecking = debouncedCheckingVisible(infoKey, info);
+    let statusValue = String(info.status || "").toLowerCase();
+    if (infoChecking) statusValue = "checking";
+    if (isMaintenance) statusValue = "maintenance";
+    if (!statusValue) statusValue = "unknown";
+    const statusClass = ["online", "offline", "maintenance", "restarting", "checking"].includes(statusValue)
+      ? statusValue
+      : "";
+    const statusLabel = statusValue;
 
-    const infoBlock = document.createElement("div");
-    infoBlock.className = "server-item-info";
-
-    const nameRow = document.createElement("div");
-    nameRow.className = "server-item-title";
-    const status = String(info.status || "").toLowerCase();
-    const statusLabel = status === "online" ? "online" : (status === "offline" ? "offline" : "restarting");
-    const statusIconWrap = document.createElement("span");
-    statusIconWrap.className = "server-item-status-icon has-tooltip";
-    statusIconWrap.setAttribute("data-tooltip", `Status: ${statusLabel}`);
-    statusIconWrap.setAttribute("aria-label", `Status: ${statusLabel}`);
-    const statusIcon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-    statusIcon.setAttribute(
-      "class",
-      `server-item-status-svg status-icon status-icon-${statusLabel} icon icon-tabler icons-tabler-outline icon-tabler-server-bolt`
-    );
-    statusIcon.setAttribute("width", "24");
-    statusIcon.setAttribute("height", "24");
-    statusIcon.setAttribute("viewBox", "0 0 24 24");
-    statusIcon.setAttribute("fill", "none");
-    statusIcon.setAttribute("stroke", "currentColor");
-    statusIcon.setAttribute("stroke-width", "2");
-    statusIcon.setAttribute("stroke-linecap", "round");
-    statusIcon.setAttribute("stroke-linejoin", "round");
-    statusIcon.setAttribute("aria-hidden", "true");
-    statusIcon.innerHTML = '<path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M3 7a3 3 0 0 1 3 -3h12a3 3 0 0 1 3 3v2a3 3 0 0 1 -3 3h-12a3 3 0 0 1 -3 -3" /><path d="M15 20h-9a3 3 0 0 1 -3 -3v-2a3 3 0 0 1 3 -3h12" /><path d="M7 8v.01" /><path d="M7 16v.01" /><path d="M20 15l-2 3h3l-2 3" />';
-
-    const nameEl = document.createElement("strong");
-    nameEl.textContent = item.server.name;
-
-    const typeIconWrap = document.createElement("span");
-    typeIconWrap.className = "server-item-type-icon has-tooltip";
-    if (item.type === "local") {
-      typeIconWrap.setAttribute("data-tooltip", "Local socket");
-      typeIconWrap.setAttribute("aria-label", "Local socket");
-    } else {
-      typeIconWrap.setAttribute("data-tooltip", "Remote agent");
-      typeIconWrap.setAttribute("aria-label", "Remote agent");
-    }
-    const typeIcon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-    typeIcon.setAttribute(
-      "class",
-      `server-item-type-svg icon icon-tabler icons-tabler-outline icon-tabler-${item.type === "local" ? "plug-connected" : "network"}`
-    );
-    typeIcon.setAttribute("width", "24");
-    typeIcon.setAttribute("height", "24");
-    typeIcon.setAttribute("viewBox", "0 0 24 24");
-    typeIcon.setAttribute("fill", "none");
-    typeIcon.setAttribute("stroke", "currentColor");
-    typeIcon.setAttribute("stroke-width", "2");
-    typeIcon.setAttribute("stroke-linecap", "round");
-    typeIcon.setAttribute("stroke-linejoin", "round");
-    typeIcon.setAttribute("aria-hidden", "true");
-    if (item.type === "local") {
-      typeIcon.innerHTML = '<path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M7 12l5 5l-1.5 1.5a3.536 3.536 0 1 1 -5 -5l1.5 -1.5" /><path d="M17 12l-5 -5l1.5 -1.5a3.536 3.536 0 1 1 5 5l-1.5 1.5" /><path d="M3 21l2.5 -2.5" /><path d="M18.5 5.5l2.5 -2.5" /><path d="M10 11l-2 2" /><path d="M13 14l-2 2" />';
-    } else {
-      typeIcon.innerHTML = '<path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M6 9a6 6 0 1 0 12 0a6 6 0 0 0 -12 0" /><path d="M12 3c1.333 .333 2 2.333 2 6s-.667 5.667 -2 6" /><path d="M12 3c-1.333 .333 -2 2.333 -2 6s.667 5.667 2 6" /><path d="M6 9h12" /><path d="M3 20h7" /><path d="M14 20h7" /><path d="M10 20a2 2 0 1 0 4 0a2 2 0 0 0 -4 0" /><path d="M12 15v3" />';
-    }
-
-    statusIconWrap.appendChild(statusIcon);
-    nameRow.appendChild(statusIconWrap);
-    nameRow.appendChild(nameEl);
-    typeIconWrap.appendChild(typeIcon);
-    nameRow.appendChild(typeIconWrap);
-    infoBlock.appendChild(nameRow);
-
-    const addressRow = document.createElement("div");
-    addressRow.className = "server-item-meta";
     const addressValue = item.type === "local" ? item.server.socket : item.server.url;
-    addressRow.textContent = addressValue || "unknown";
-    infoBlock.appendChild(addressRow);
+    const actions = buildServerActions(item);
+    const versionValue = info && info.version ? formatVersion(info.version) : "unknown";
 
-    const versionRow = document.createElement("div");
-    versionRow.className = "server-item-meta";
-    const versionValue = info.version ? formatVersion(info.version) : "unknown";
-    versionRow.textContent = versionValue;
-    infoBlock.appendChild(versionRow);
+    if (showTable) {
+      const row = document.createElement("tr");
+      const nameCell = document.createElement("td");
+      const nameWrap = document.createElement("div");
+      nameWrap.className = "servers-name";
+      const nameRow = buildServersNameRow(item, statusLabel);
+      nameWrap.appendChild(nameRow);
+      nameCell.appendChild(nameWrap);
 
-    li.appendChild(infoBlock);
+      const addressCell = document.createElement("td");
+      addressCell.className = "servers-address";
+      addressCell.textContent = addressValue || "unknown";
 
-    let isConfirming = false;
-    const editBtn = document.createElement("button");
-    editBtn.textContent = "Edit";
-    editBtn.className = "secondary";
-    editBtn.addEventListener("click", () => {
-      if (isConfirming) {
-        setConfirming(false);
-        return;
-      }
-      if (item.type === "local") {
-        localNameInput.value = item.server.name;
-        localSocketInput.value = item.server.socket;
-      } else {
-        remoteNameInput.value = item.server.name;
-        remoteUrlInput.value = item.server.url;
-        remoteTokenInput.value = item.server.token || "";
-      }
-      showToast(`Editing ${item.type} server: ${item.server.name}`);
-    });
+      const versionCell = document.createElement("td");
+      versionCell.className = "servers-version";
+      versionCell.textContent = versionValue;
 
-    const removeBtn = document.createElement("button");
-    removeBtn.textContent = "Remove";
+      const statusCell = document.createElement("td");
+      const statusPill = document.createElement("span");
+      statusPill.className = `server-status-pill${statusClass ? ` server-status-${statusClass}` : ""}`;
+      statusPill.textContent = statusLabel;
+      statusPill.classList.add("has-tooltip");
+      statusPill.dataset.tooltipLastChecked = "true";
+      statusPill.dataset.checkedAt = info.checked_at || "";
+      statusPill.setAttribute("data-tooltip", "Last checked: unavailable");
+      statusPill.setAttribute("aria-label", "Last checked: unavailable");
+      statusCell.appendChild(statusPill);
 
-    const confirmBtn = document.createElement("button");
-    confirmBtn.textContent = "Confirm";
-    confirmBtn.className = "btn-danger";
-    confirmBtn.classList.add("hidden");
+      const actionsCell = document.createElement("td");
+      actionsCell.appendChild(actions);
 
-    function setConfirming(next) {
-      isConfirming = next;
-      if (next) {
-        removeBtn.classList.add("hidden");
-        confirmBtn.classList.remove("hidden");
-        editBtn.textContent = "Cancel";
-      } else {
-        removeBtn.classList.remove("hidden");
-        confirmBtn.classList.add("hidden");
-        editBtn.textContent = "Edit";
-      }
+      row.append(nameCell, addressCell, versionCell, statusCell, actionsCell);
+      serversTableBody.appendChild(row);
+    } else {
+      const card = document.createElement("div");
+      card.className = "servers-card";
+      const head = document.createElement("div");
+      head.className = "servers-card-head";
+      const meta = document.createElement("div");
+      meta.className = "servers-card-meta";
+      const title = buildServersNameRow(item, statusLabel);
+      title.classList.add("servers-card-name");
+      meta.appendChild(title);
+
+      const statusPill = document.createElement("span");
+      statusPill.className = `server-status-pill${statusClass ? ` server-status-${statusClass}` : ""}`;
+      statusPill.textContent = statusLabel;
+      statusPill.classList.add("has-tooltip");
+      statusPill.dataset.tooltipLastChecked = "true";
+      statusPill.dataset.checkedAt = info.checked_at || "";
+      statusPill.setAttribute("data-tooltip", "Last checked: unavailable");
+      statusPill.setAttribute("aria-label", "Last checked: unavailable");
+      head.append(meta, statusPill);
+
+      const address = document.createElement("div");
+      address.className = "servers-card-address";
+      address.textContent = addressValue || "unknown";
+
+      const version = document.createElement("div");
+      version.className = "servers-card-version";
+      version.textContent = versionValue;
+
+      const actionsWrap = document.createElement("div");
+      actionsWrap.className = "servers-card-actions";
+      actionsWrap.appendChild(actions);
+
+      card.append(head, address, version, actionsWrap);
+      serversCardsEl.appendChild(card);
     }
-
-    removeBtn.addEventListener("click", () => {
-      setConfirming(true);
-    });
-
-    confirmBtn.addEventListener("click", async () => {
-      const path = item.type === "local" ? "/api/locals/" : "/api/servers/";
-      await fetchJSON(`${path}${encodeURIComponent(item.server.name)}`, { method: "DELETE" });
-      await refreshServers();
-      await refreshStatus();
-    });
-
-    const actions = document.createElement("div");
-    actions.className = "server-item-actions";
-    actions.appendChild(editBtn);
-    actions.appendChild(removeBtn);
-    actions.appendChild(confirmBtn);
-    li.appendChild(actions);
-    serversListEl.appendChild(li);
   });
-
-  applySidebarFilter();
 }
 
 function formatVersion(raw) {
@@ -985,6 +1345,102 @@ function formatVersion(raw) {
   return `v${version}`;
 }
 
+function formatLastChecked(value) {
+  if (!value) return "";
+  const checkedAt = new Date(value);
+  if (Number.isNaN(checkedAt.getTime())) return "";
+  if (checkedAt.getUTCFullYear() < 2000) return "";
+  const diffMs = Date.now() - checkedAt.getTime();
+  if (diffMs < 0) return "Last checked: just now";
+  const seconds = Math.floor(diffMs / 1000);
+  if (seconds < 10) return "Last checked: just now";
+  if (seconds < 60) return `Last checked: ${seconds}s ago`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `Last checked: ${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `Last checked: ${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `Last checked: ${days}d ago`;
+}
+
+function debouncedCheckingVisible(serverKey, info) {
+  if (!info || !info.checking) return false;
+  const startedAt = checkingStartMsByServerKey[serverKey];
+  if (!startedAt) return false;
+  return Date.now() - startedAt >= 300;
+}
+
+function scheduleCheckingDebounceRender(serverKey) {
+  if (checkingDebounceTimersByServerKey[serverKey]) return;
+  checkingDebounceTimersByServerKey[serverKey] = window.setTimeout(() => {
+    delete checkingDebounceTimersByServerKey[serverKey];
+    if (cachedServerInfo[serverKey] && cachedServerInfo[serverKey].checking) {
+      renderServers(cachedLocals, cachedRemotes);
+      if (currentView === "status") {
+        renderStatus(lastStatusResults.length > 0 ? lastStatusResults : buildStatusPlaceholders());
+      }
+    }
+  }, 320);
+}
+
+function applyCheckingTracking(serverKey, info) {
+  if (!info || !info.checking) {
+    delete checkingStartMsByServerKey[serverKey];
+    if (checkingDebounceTimersByServerKey[serverKey]) {
+      window.clearTimeout(checkingDebounceTimersByServerKey[serverKey]);
+      delete checkingDebounceTimersByServerKey[serverKey];
+    }
+    return;
+  }
+  if (!checkingStartMsByServerKey[serverKey]) {
+    checkingStartMsByServerKey[serverKey] = Date.now();
+    scheduleCheckingDebounceRender(serverKey);
+  }
+}
+
+function serverInfoCheckedAtMs(info) {
+  if (!info || !info.checked_at) return 0;
+  const checkedAt = new Date(info.checked_at);
+  if (Number.isNaN(checkedAt.getTime())) return 0;
+  return checkedAt.getTime();
+}
+
+function shouldReplaceServerInfo(existing, incoming) {
+  if (!existing) return true;
+  const existingAddress = String(existing.address || "");
+  const incomingAddress = String(incoming.address || "");
+  if (incomingAddress && existingAddress && incomingAddress !== existingAddress) {
+    return true;
+  }
+  const incomingCheckedAt = serverInfoCheckedAtMs(incoming);
+  const existingCheckedAt = serverInfoCheckedAtMs(existing);
+  if (incomingCheckedAt > existingCheckedAt) return true;
+  if (incomingCheckedAt < existingCheckedAt) return false;
+  const existingChecking = Boolean(existing.checking);
+  const incomingChecking = Boolean(incoming.checking);
+  if (existingChecking && !incomingChecking) return true;
+  if (!existingChecking && incomingChecking) return false;
+  const existingStatus = String(existing.status || "");
+  const incomingStatus = String(incoming.status || "");
+  if (!existingStatus && incomingStatus) return true;
+  if (existingStatus && !incomingStatus) return false;
+  if (existingStatus.toLowerCase() === "unknown" && incomingStatus.toLowerCase() !== "unknown") return true;
+  return false;
+}
+
+function mergeServerInfoSnapshot(list) {
+  if (!Array.isArray(list)) return;
+  list.forEach((item) => {
+    if (!item || !item.name || !item.type) return;
+    const key = `${item.type}:${item.name}`;
+    applyCheckingTracking(key, item);
+    const existing = cachedServerInfo[key];
+    if (shouldReplaceServerInfo(existing, item)) {
+      cachedServerInfo[key] = item;
+    }
+  });
+}
+
 function normalizeQuery(value) {
   return String(value || "").trim().toLowerCase();
 }
@@ -992,15 +1448,48 @@ function normalizeQuery(value) {
 function applySidebarFilter(queryOverride) {
   if (!sidebarSearch) return;
   const query = normalizeQuery(queryOverride ?? sidebarSearch.value);
+  if (currentView === "servers") {
+    serversSearchQuery = query;
+    renderServers(cachedLocals, cachedRemotes);
+    return;
+  }
+  if (currentView !== "status") return;
   const cards = Array.from(statusEl ? statusEl.querySelectorAll(".server-card") : []);
-  const listItems = Array.from(serversListEl ? serversListEl.querySelectorAll(".server-item") : []);
-  const targets = cards.concat(listItems);
-  targets.forEach((el) => {
+  cards.forEach((el) => {
     const source = el.dataset && el.dataset.search ? el.dataset.search : el.textContent;
     const haystack = normalizeQuery(source);
     const match = !query || haystack.includes(query);
     el.classList.toggle("filtered-out", !match);
   });
+}
+
+function updateServersFilterButtons() {
+  serversFilterButtons.forEach((btn) => {
+    const mode = btn.getAttribute("data-filter");
+    btn.classList.toggle("is-active", mode === serversFilterMode);
+  });
+}
+
+function updateServersViewButtons() {
+  serversViewButtons.forEach((btn) => {
+    const mode = btn.getAttribute("data-view");
+    btn.classList.toggle("is-active", mode === serversViewMode);
+  });
+}
+
+function setServersFilterMode(mode) {
+  serversFilterMode = mode || "all";
+  updateServersFilterButtons();
+  renderServers(cachedLocals, cachedRemotes);
+}
+
+function setServersViewMode(mode, persist = true) {
+  serversViewMode = mode || "table";
+  if (persist) {
+    localStorage.setItem(serversViewStorageKey, serversViewMode);
+  }
+  updateServersViewButtons();
+  renderServers(cachedLocals, cachedRemotes);
 }
 
 const themeModes = ["light", "dark"];
@@ -1090,10 +1579,12 @@ function updateScanScopeOptions() {
   ];
 
   cachedLocals.forEach((local) => {
+    if (local.maintenance) return;
     options.push({ value: `local:${local.name}`, label: local.name });
   });
 
   cachedRemotes.forEach((remote) => {
+    if (remote.maintenance) return;
     options.push({ value: `remote:${remote.name}`, label: remote.name });
   });
 
@@ -1107,6 +1598,9 @@ function updateScanScopeOptions() {
 
   if (options.some((option) => option.value === currentValue)) {
     scanScopeSelect.value = currentValue;
+  } else {
+    const fallback = options.find((option) => option.value === "all") ? "all" : options[0].value;
+    scanScopeSelect.value = fallback;
   }
   selectedScanScope = scanScopeSelect.value;
 }
@@ -1226,28 +1720,40 @@ async function saveConfig(options = {}) {
 }
 
 async function refreshServers() {
-  const [locals, remotes, info] = await Promise.all([
+  const [locals, remotes] = await Promise.all([
     fetchJSON("/api/locals"),
     fetchJSON("/api/servers"),
-    fetchJSON("/api/servers/info").catch(() => []),
   ]);
   cachedLocals = locals || [];
   cachedRemotes = remotes || [];
-  cachedServerInfo = {};
-  if (Array.isArray(info)) {
-    info.forEach((item) => {
-      if (!item || !item.name || !item.type) return;
-      const key = `${item.type}:${item.name}`;
-      cachedServerInfo[key] = item;
-    });
+  if (serversRemoveConfirming.size > 0) {
+    const valid = new Set([
+      ...cachedLocals.map((server) => `local:${server.name}`),
+      ...cachedRemotes.map((server) => `remote:${server.name}`),
+    ]);
+    serversRemoveConfirming = new Set(Array.from(serversRemoveConfirming).filter((key) => valid.has(key)));
   }
   renderServers(cachedLocals, cachedRemotes);
+  updateServersFilterButtons();
+  updateServersViewButtons();
   updateScanScopeOptions();
   statusHintEl.classList.add("hidden");
 }
 
-async function refreshStatus() {
-  const results = await fetchJSON("/api/aggregate");
+async function triggerServersRefresh() {
+  const info = await fetchJSON("/api/servers/refresh", { method: "POST" });
+  mergeServerInfoSnapshot(info);
+  renderServers(cachedLocals, cachedRemotes);
+  if (currentView === "status") {
+    renderStatus(lastStatusResults.length > 0 ? lastStatusResults : buildStatusPlaceholders());
+  }
+}
+
+async function triggerStatusRefresh() {
+  await fetchJSON("/api/status/refresh", { method: "POST" });
+}
+
+function applyStatusResults(results) {
   if (Array.isArray(results)) {
     results.sort((a, b) => {
       if (a.local === b.local) return 0;
@@ -1278,6 +1784,75 @@ async function refreshStatus() {
   updateScanPolling(results);
   renderStatus(results);
   return results;
+}
+
+async function refreshStatus() {
+  const results = await fetchJSON("/api/aggregate");
+  return applyStatusResults(results);
+}
+
+function upsertStatusResult(next) {
+  if (!next) return;
+  const key = serverScopeKey(next);
+  const index = lastStatusResults.findIndex((entry) => serverScopeKey(entry) === key);
+  if (index >= 0) {
+    lastStatusResults[index] = next;
+  } else {
+    lastStatusResults.push(next);
+  }
+  applyStatusResults(lastStatusResults);
+}
+
+function initServerStream() {
+  if (serverStream || typeof window.EventSource === "undefined") return;
+  serverStream = new EventSource("/api/servers/stream");
+  serverStream.addEventListener("server_info_snapshot", (event) => {
+    try {
+      const list = JSON.parse(event.data);
+      mergeServerInfoSnapshot(list);
+      renderServers(cachedLocals, cachedRemotes);
+      if (currentView === "status") {
+        renderStatus(lastStatusResults.length > 0 ? lastStatusResults : buildStatusPlaceholders());
+      }
+    } catch {
+      return;
+    }
+  });
+  serverStream.addEventListener("server_info", (event) => {
+    try {
+      const info = JSON.parse(event.data);
+      if (!info || !info.name || !info.type) return;
+      const key = `${info.type}:${info.name}`;
+      applyCheckingTracking(key, info);
+      const existing = cachedServerInfo[key];
+      if (shouldReplaceServerInfo(existing, info)) {
+        cachedServerInfo[key] = info;
+      }
+      renderServers(cachedLocals, cachedRemotes);
+      if (currentView === "status") {
+        renderStatus(lastStatusResults.length > 0 ? lastStatusResults : buildStatusPlaceholders());
+      }
+    } catch {
+      return;
+    }
+  });
+  serverStream.addEventListener("scan_snapshot", (event) => {
+    try {
+      const list = JSON.parse(event.data);
+      if (!Array.isArray(list)) return;
+      applyStatusResults(list);
+    } catch {
+      return;
+    }
+  });
+  serverStream.addEventListener("scan_result", (event) => {
+    try {
+      const result = JSON.parse(event.data);
+      upsertStatusResult(result);
+    } catch {
+      return;
+    }
+  });
 }
 
 async function refreshVersion() {
@@ -1451,8 +2026,13 @@ function applyOptimisticScanState(scope) {
   } else if (scope && scope !== "all") {
     nextOverrides[scope] = "scanning";
   } else if (items.length > 0) {
-    items.forEach((item, index) => {
-      const key = serverScopeKey(item);
+    const onlineTargets = items
+      .map((item) => serverScopeKey(item))
+      .filter((key) => {
+        const info = cachedServerInfo[key] || {};
+        return String(info.status || "").toLowerCase() === "online";
+      });
+    onlineTargets.forEach((key, index) => {
       nextOverrides[key] = index === 0 ? "scanning" : "pending";
     });
   }
@@ -1460,6 +2040,24 @@ function applyOptimisticScanState(scope) {
   if (lastStatusResults.length > 0) {
     renderStatus(lastStatusResults);
   }
+}
+
+function buildStatusPlaceholders() {
+  return cachedLocals.map((server) => ({
+    server_name: server.name,
+    server_url: server.socket,
+    local: true,
+  })).concat(cachedRemotes.map((server) => ({
+    server_name: server.name,
+    server_url: server.url,
+    local: false,
+  })));
+}
+
+function renderStatusPlaceholders() {
+  const placeholders = buildStatusPlaceholders();
+  if (placeholders.length === 0) return;
+  renderStatus(placeholders);
 }
 
 function startScanPolling() {
@@ -1488,6 +2086,20 @@ function showTooltip(target) {
     const label = currentConfig && currentConfig.scheduler_enabled
       ? formatSchedulerNextRun(currentConfig)
       : "Scheduler disabled";
+    target.setAttribute("data-tooltip", label);
+    target.setAttribute("aria-label", label);
+  }
+  if (target && target.dataset && target.dataset.tooltipLastChecked === "true") {
+    const label = formatLastChecked(target.dataset.checkedAt);
+    if (label) {
+      target.setAttribute("data-tooltip", label);
+      target.setAttribute("aria-label", label);
+    }
+  }
+  if (target && target.dataset && target.dataset.tooltipServerStatus === "true") {
+    const statusLabel = String(target.dataset.statusLabel || "").trim();
+    const lastChecked = formatLastChecked(target.dataset.checkedAt);
+    const label = lastChecked ? `Status: ${statusLabel} · ${lastChecked}` : `Status: ${statusLabel}`;
     target.setAttribute("data-tooltip", label);
     target.setAttribute("aria-label", label);
   }
@@ -1554,12 +2166,6 @@ window.addEventListener("resize", () => {
 function refreshViewData(view) {
   const tasks = [];
   tasks.push(refreshConfig().catch(() => {}));
-  if (view === "status") {
-    tasks.push(refreshStatus().catch(() => {}));
-  }
-  if (view === "servers") {
-    tasks.push(refreshServers().catch(() => {}));
-  }
   if (view === "logs") {
     tasks.push(refreshLogs().catch(() => {}));
   }
@@ -1572,6 +2178,15 @@ function setView(nextView) {
   viewSettingsEl.classList.toggle("hidden", nextView !== "settings");
   viewServersEl.classList.toggle("hidden", nextView !== "servers");
   viewLogsEl.classList.toggle("hidden", nextView !== "logs");
+  if (topbarStatusEl) {
+    topbarStatusEl.classList.toggle("hidden", nextView !== "status");
+  }
+  if (topbarSettingsEl) {
+    topbarSettingsEl.classList.toggle("hidden", nextView !== "settings");
+  }
+  if (topbarLogsEl) {
+    topbarLogsEl.classList.toggle("hidden", nextView !== "logs");
+  }
 
   sidebar.querySelectorAll("[data-view]").forEach((btn) => {
     btn.classList.toggle("active", btn.getAttribute("data-view") === nextView);
@@ -1581,6 +2196,24 @@ function setView(nextView) {
     startLogsAutoRefresh();
   } else {
     stopLogsAutoRefresh();
+  }
+  if (nextView === "servers" && sidebarSearch) {
+    serversSearchQuery = normalizeQuery(sidebarSearch.value);
+  }
+  if (nextView === "status" && lastStatusResults.length === 0) {
+    renderStatusPlaceholders();
+  }
+  if (nextView === "servers") {
+    refreshServers()
+      .then(() => triggerServersRefresh())
+      .catch(() => {});
+  }
+  if (nextView === "status") {
+    refreshServers()
+      .then(() => triggerServersRefresh())
+      .then(() => triggerStatusRefresh())
+      .then(() => refreshStatus())
+      .catch(() => {});
   }
   refreshViewData(nextView);
 }
@@ -1744,53 +2377,100 @@ configForm.addEventListener("submit", async (event) => {
   }
 });
 
-remoteForm.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  const payload = {
-    name: remoteNameInput.value.trim(),
-    url: remoteUrlInput.value.trim(),
-    token: remoteTokenInput.value.trim(),
-  };
-  try {
-    await fetchJSON("/api/servers", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    remoteNameInput.value = "";
-    remoteUrlInput.value = "";
-    remoteTokenInput.value = "";
-    await refreshServers();
-    await refreshStatus();
-  } catch (err) {
-    alert(err.message);
-  }
-});
+if (localModalForm) {
+  localModalForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const payload = {
+      name: localModalNameInput ? localModalNameInput.value.trim() : "",
+      socket: localModalSocketInput ? localModalSocketInput.value.trim() : "/var/run/docker.sock",
+    };
+    if (editingLocalServer && editingLocalServer.maintenance) {
+      payload.maintenance = true;
+    }
+    try {
+      await fetchJSON("/api/locals", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      closeLocalModal();
+      await refreshServers();
+      await refreshStatus();
+    } catch (err) {
+      alert(err.message);
+    }
+  });
+}
 
-generateTokenBtn.addEventListener("click", () => {
-  remoteTokenInput.value = generateToken(32);
-});
+if (localModalCancel) {
+  localModalCancel.addEventListener("click", () => {
+    closeLocalModal();
+  });
+}
 
-localForm.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  const payload = {
-    name: localNameInput.value.trim(),
-    socket: localSocketInput.value.trim() || "/var/run/docker.sock",
-  };
-  try {
-    await fetchJSON("/api/locals", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-    localNameInput.value = "";
-    localSocketInput.value = "/var/run/docker.sock";
-    await refreshServers();
-    await refreshStatus();
-  } catch (err) {
-    alert(err.message);
-  }
-});
+if (localModalClose) {
+  localModalClose.addEventListener("click", () => {
+    closeLocalModal();
+  });
+}
+
+if (remoteModalSave) {
+  remoteModalSave.addEventListener("click", async () => {
+    const payload = {
+      name: remoteModalNameInput ? remoteModalNameInput.value.trim() : "",
+      url: normalizeRemoteUrl(
+        remoteModalHostInput ? remoteModalHostInput.value.trim() : "",
+        remoteModalPortInput ? remoteModalPortInput.value.trim() : "8080"
+      ),
+      token: remoteModalTokenInput ? remoteModalTokenInput.value.trim() : "",
+    };
+    if (editingRemoteServer && editingRemoteServer.maintenance) {
+      payload.maintenance = true;
+    }
+    try {
+      await fetchJSON("/api/servers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      closeRemoteModal();
+      await refreshServers();
+      await refreshStatus();
+    } catch (err) {
+      alert(err.message);
+    }
+  });
+}
+
+if (remoteModalCancel) {
+  remoteModalCancel.addEventListener("click", () => {
+    closeRemoteModal();
+  });
+}
+
+if (remoteModalClose) {
+  remoteModalClose.addEventListener("click", () => {
+    closeRemoteModal();
+  });
+}
+
+if (remoteModalTokenCopy) {
+  remoteModalTokenCopy.addEventListener("click", () => {
+    copyToClipboard(remoteModalTokenInput ? remoteModalTokenInput.value : "", "Token");
+  });
+}
+
+if (remoteModalComposeCopy) {
+  remoteModalComposeCopy.addEventListener("click", () => {
+    copyToClipboard(remoteModalCompose ? remoteModalCompose.textContent : "", "Compose");
+  });
+}
+
+if (remoteModalPortInput) {
+  remoteModalPortInput.addEventListener("input", () => {
+    updateRemoteComposePreview();
+  });
+}
 
 async function init() {
   sidebar.setAttribute("aria-hidden", "false");
@@ -1798,6 +2478,52 @@ async function init() {
   if (sidebarSearch) {
     sidebarSearch.addEventListener("input", (event) => {
       applySidebarFilter(event.target.value);
+    });
+  }
+
+  serversFilterButtons.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const mode = btn.getAttribute("data-filter") || "all";
+      setServersFilterMode(mode);
+    });
+  });
+
+  serversViewButtons.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const mode = btn.getAttribute("data-view") || "table";
+      setServersViewMode(mode);
+    });
+  });
+
+  if (addLocalBtn) {
+    addLocalBtn.addEventListener("click", () => {
+      openLocalModal("add");
+    });
+  }
+
+  if (addRemoteBtn) {
+    addRemoteBtn.addEventListener("click", () => {
+      openRemoteModal("add");
+    });
+  }
+
+  if (refreshStatusBtn) {
+    refreshStatusBtn.addEventListener("click", async () => {
+      showToast("Refreshing status…", 2000);
+      await refreshServers();
+      await triggerServersRefresh();
+      await triggerStatusRefresh();
+      await refreshStatus();
+      showToast("Status refreshed.", 2000);
+    });
+  }
+
+  if (refreshServersBtn) {
+    refreshServersBtn.addEventListener("click", async () => {
+      showToast("Refreshing servers…", 2000);
+      await refreshServers();
+      await triggerServersRefresh();
+      showToast("Servers refreshed.", 2000);
     });
   }
 
@@ -1817,6 +2543,20 @@ async function init() {
     detailsModal.addEventListener("click", (event) => {
       if (event.target && event.target.dataset && event.target.dataset.close) {
         closeDetailsModal();
+      }
+    });
+  }
+  if (localModal) {
+    localModal.addEventListener("click", (event) => {
+      if (event.target && event.target.dataset && event.target.dataset.close) {
+        closeLocalModal();
+      }
+    });
+  }
+  if (remoteModal) {
+    remoteModal.addEventListener("click", (event) => {
+      if (event.target && event.target.dataset && event.target.dataset.close) {
+        closeRemoteModal();
       }
     });
   }
@@ -1840,18 +2580,29 @@ async function init() {
     if (event.key === "Escape" && policyModal && !policyModal.classList.contains("hidden")) {
       closePolicyModal();
     }
+    if (event.key === "Escape" && localModal && !localModal.classList.contains("hidden")) {
+      closeLocalModal();
+    }
+    if (event.key === "Escape" && remoteModal && !remoteModal.classList.contains("hidden")) {
+      closeRemoteModal();
+    }
   });
 
   initThemeToggle();
+  const storedServersView = localStorage.getItem(serversViewStorageKey);
+  if (storedServersView === "cards" || storedServersView === "table") {
+    serversViewMode = storedServersView;
+  }
   setView("status");
   setScanningUI(false);
   await refreshConfig();
   await refreshServers();
-  await refreshStatus();
+  initServerStream();
+  await triggerServersRefresh();
+  triggerStatusRefresh().catch(() => {});
+  renderStatusPlaceholders();
+  refreshStatus().catch(() => {});
   await refreshVersion();
-  if (localSocketInput && !localSocketInput.value) {
-    localSocketInput.value = "/var/run/docker.sock";
-  }
   statusHintEl.classList.toggle("hidden", cachedLocals.length > 0);
 }
 

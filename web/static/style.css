@@ -142,7 +142,9 @@ textarea {
   gap: var(--s-3);
   border-bottom: 1px solid var(--color-divider);
   background: var(--color-surface);
-  position: relative;
+  position: sticky;
+  top: 0;
+  z-index: 60;
 }
 
 .topbar-left {
@@ -156,6 +158,16 @@ textarea {
   display: inline-flex;
   align-items: center;
   gap: var(--s-2);
+}
+
+.topbar-status {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+}
+
+.topbar-status h2 {
+  margin: 0;
 }
 
 .brand h1 {
@@ -324,6 +336,14 @@ h2 {
   gap: var(--s-3);
   margin: var(--s-3) 0;
   flex-wrap: wrap;
+}
+
+.topbar-status .logs-toolbar {
+  margin: 0;
+}
+
+.topbar-status .actions {
+  margin-bottom: 0;
 }
 
 .logs-toolbar > * {
@@ -611,10 +631,22 @@ h2 {
   border-color: rgba(75, 163, 217, 0.28);
 }
 
+.status-checking {
+  background: rgba(75, 163, 217, 0.12);
+  color: var(--status-info);
+  border-color: rgba(75, 163, 217, 0.28);
+}
+
 .status-updating {
   background: rgba(60, 177, 121, 0.12);
   color: var(--status-success);
   border-color: rgba(60, 177, 121, 0.28);
+}
+
+.status-maintenance {
+  background: rgba(230, 181, 102, 0.12);
+  color: var(--status-warning);
+  border-color: rgba(230, 181, 102, 0.28);
 }
 
 .status-cancelled {
@@ -955,7 +987,7 @@ input::placeholder {
 
 #status {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: var(--s-3);
 }
 
@@ -1103,6 +1135,14 @@ input::placeholder {
 
 .status-icon-restarting {
   color: var(--color-text-muted);
+}
+
+.status-icon-maintenance {
+  color: var(--status-warning);
+}
+
+.status-icon-checking {
+  color: var(--status-info);
 }
 
 .status-card-meta {
@@ -1445,34 +1485,284 @@ input::placeholder {
   font-size: 0.9rem;
 }
 
-.servers-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: var(--s-4);
+.servers-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-3);
 }
 
-.servers-col h3 {
-  margin-top: var(--s-2);
-}
-
-#servers-list {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-  display: grid;
+.servers-actions {
+  display: inline-flex;
+  align-items: center;
   gap: var(--s-2);
 }
 
-#servers-list li {
+.servers-toolbar {
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  padding: var(--s-2) var(--s-3);
+  justify-content: space-between;
+  gap: var(--s-3);
+  margin-bottom: var(--s-3);
+  flex-wrap: wrap;
+}
+
+.servers-toolbar input {
+  min-width: 240px;
+  flex: 1;
+}
+
+.servers-filters {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+
+.servers-filters .is-active {
+  background: var(--color-primary);
+  color: var(--color-primary-on);
+  border-color: transparent;
+}
+
+.servers-view-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+
+.servers-view-toggle .is-active {
+  background: var(--color-primary);
+  color: var(--color-primary-on);
+  border-color: transparent;
+}
+
+.servers-table-wrap {
   border: 1px solid var(--color-border);
   border-radius: var(--r-card);
+  overflow: hidden;
+  background: var(--color-surface);
+  box-shadow: var(--shadow-card);
+}
+
+.servers-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.servers-table th,
+.servers-table td {
+  padding: var(--s-3);
+  border-bottom: 1px solid var(--color-border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.servers-table th {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+  background: color-mix(in srgb, var(--color-surface), var(--color-border) 8%);
+  letter-spacing: 0.02em;
+}
+
+.servers-table tr:hover td {
+  background: color-mix(in srgb, var(--color-surface), var(--color-primary) 4%);
+}
+
+.servers-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.servers-cards {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(240px, 1fr));
+  gap: var(--s-3);
+}
+
+.servers-card {
+  border: 1px solid var(--color-border);
+  border-radius: var(--r-card);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-card);
+  padding: var(--s-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+}
+
+.servers-card:hover {
+  border-color: color-mix(in srgb, var(--color-primary), transparent 60%);
+}
+
+.servers-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--s-2);
+}
+
+.servers-card-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.servers-card-name {
+  font-weight: 600;
+}
+
+.servers-card-type {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.servers-card-address {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.82rem;
+  color: var(--color-text-muted);
+}
+
+.servers-card-version {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.82rem;
+  color: var(--color-text-muted);
+}
+
+.servers-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+}
+
+.servers-name {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.servers-name-row {
+  display: inline-flex;
+  align-items: center;
   gap: var(--s-2);
   flex-wrap: wrap;
-  background: var(--color-surface);
+}
+
+.servers-type {
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.servers-address {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.85rem;
+}
+
+.servers-version {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+}
+
+.servers-empty {
+  text-align: center;
+  color: var(--color-text-muted);
+  padding: var(--s-4);
+}
+
+.server-name-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-weight: 600;
+}
+
+.server-type-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  padding: 2px 8px;
+  width: fit-content;
+}
+
+.server-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border-radius: 999px;
+  padding: 4px 10px;
+  border: 1px solid transparent;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.server-status-online {
+  background: rgba(60, 177, 121, 0.12);
+  color: var(--status-success);
+  border-color: rgba(60, 177, 121, 0.28);
+}
+
+.server-status-offline {
+  background: rgba(224, 88, 88, 0.12);
+  color: var(--status-error);
+  border-color: rgba(224, 88, 88, 0.28);
+}
+
+.server-status-maintenance {
+  background: rgba(230, 181, 102, 0.12);
+  color: var(--status-warning);
+  border-color: rgba(230, 181, 102, 0.28);
+}
+
+.server-status-restarting {
+  background: rgba(148, 163, 184, 0.12);
+  color: var(--color-text-muted);
+  border-color: rgba(148, 163, 184, 0.28);
+}
+
+.server-status-checking {
+  background: rgba(75, 163, 217, 0.12);
+  color: var(--status-info);
+  border-color: rgba(75, 163, 217, 0.3);
+}
+
+.servers-row-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  flex-wrap: wrap;
+}
+
+.server-wizard-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--s-3);
+}
+
+.server-compose {
+  background: color-mix(in srgb, var(--color-surface), var(--color-border) 14%);
+  border: 1px solid var(--color-border);
+  border-radius: var(--r-control);
+  padding: var(--s-2);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.82rem;
+  white-space: pre;
+  overflow: auto;
+  max-height: 240px;
+}
+
+.server-compose-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: var(--s-2);
 }
 
 @media (min-width: 900px) {
@@ -1486,6 +1776,20 @@ input::placeholder {
 
   #view-logs {
     grid-column: span 2;
+  }
+
+  #view-servers {
+    grid-column: span 2;
+  }
+}
+
+@media (max-width: 1200px) {
+  #status {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .servers-cards {
+    grid-template-columns: repeat(2, minmax(240px, 1fr));
   }
 }
 
