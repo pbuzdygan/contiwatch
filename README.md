@@ -9,6 +9,7 @@ Minimal Docker image watcher inspired by Watchtower. Scans local containers, che
 - Global and per-container policy (`contiwatch.policy` label)
 - Optional update (recreate container) or notify-only
 - Simple HTML UI for status, servers, logs, and settings
+- Server maintenance mode to pause scans and updates per server
 - Discord webhook notifications
 
 ## Policies
@@ -86,8 +87,8 @@ docker pull ghcr.io/<owner>/<repo>:dev_<version>
 - `discord_notify_on_container_updated`
 - `update_stopped_containers` (if `true`, `update` policy also updates stopped containers but keeps them stopped)
 - `prune_dangling_images` (if `true`, prune dangling images after updates)
-- `local_servers` (list of local Docker daemons with `name` and `socket`)
-- `remote_servers` (list of remote servers with `name`, `url`, and optional `token`)
+- `local_servers` (list of local Docker daemons with `name`, `socket`, and optional `maintenance`)
+- `remote_servers` (list of remote servers with `name`, `url`, optional `token`, and optional `maintenance`)
 
 ## API
 - `GET /api/version`
@@ -101,7 +102,11 @@ docker pull ghcr.io/<owner>/<repo>:dev_<version>
 - `DELETE /api/servers/{name}`
 - `GET/POST /api/locals` (local servers)
 - `GET /api/servers/info` versions + reachability
+- `GET /api/servers/stream` live server info + scan updates (SSE)
+- `POST /api/servers/refresh` trigger on-demand reachability checks (updates stream + returns snapshot)
+- `POST /api/status/refresh` pull last scan snapshots from online agents (updates stream)
 - `POST /api/update/{container_id}` update container
+- `POST /api/self-update?container={container_id}` update agent container via helper (agent mode only)
 - `GET/POST/DELETE /api/logs`
 - `POST /api/notifications/test` test Discord webhook
 
@@ -109,6 +114,10 @@ Notes:
 - `POST /api/scan` is a one-off trigger; if a scan is already running it returns `409`.
 - Periodic scans are disabled by default; enable via `scheduler_enabled` in the config (UI).
 - Agent mode exposes a limited API surface (token required).
+
+UI timing:
+- `Last scan` refers to the last update-check scan (`/api/scan` / agent `/api/status`).
+- `Last checked` in server tooltips refers to the last reachability check (`POST /api/servers/refresh`), not the scan time.
 
 ## Run (docker compose)
 ```bash

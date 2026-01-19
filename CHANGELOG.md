@@ -1,5 +1,34 @@
 # Changelog
 
+## v1.1.0
+
+## New features
+- Live server status updates via server stream (SSE) with on-demand reachability checks.
+- New CHECKING state for servers awaiting reachability confirmation.
+- Maintenance mode for local/remote servers, reflected in status and scan targeting.
+- New add/edit modals for local and remote servers, including token + compose copy for agents.
+
+## Improvements
+- Servers view rebuilt with table/cards layout, active/maintenance filters, and view toggle.
+- Sidebar search now filters the Servers list.
+- Server list renders immediately; health/status updates arrive asynchronously.
+- Server name rows now use consistent status/type icons.
+- Status, Settings, Servers and Logs headers/actions moved into the top bar.
+- Servers filter controls consolidated into a dropdown (All/Active/Maintenance/Offline) with a one-click reset icon.
+- Add server flow unified into a single modal with Local/Remote tabs.
+- Servers view toggle consolidated into a single icon switch (table/cards).
+- Manual refresh buttons for Servers and Status (reachability checks are on-demand).
+- Reachability checks now use `/api/version`; `Last checked` reflects connection checks, not scan time.
+- Added `POST /api/status/refresh` to repopulate remote scan snapshots after controller restarts.
+- Added `POST /api/self-update` for safe agent self-updates.
+
+## Bug fixes
+- Offline servers no longer block the initial Servers view render.
+- Newly added offline servers appear immediately while status checks run.
+- Remove-confirm state no longer resets on background refresh.
+- Fixed status races where stale reachability snapshots could keep a server stuck in CHECKING.
+- Fixed agent self-update flow: controller now refreshes status after agent restarts and outdated counts clear correctly.
+
 ## v1.0.1
 
 - Global policy is now synced from the controller to remote agents.

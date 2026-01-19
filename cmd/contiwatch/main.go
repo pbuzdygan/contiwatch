@@ -2,11 +2,13 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"runtime/debug"
 	"strings"
 	"syscall"
@@ -74,8 +76,12 @@ func main() {
 			}
 			defer watcher.Close()
 			cfg := store.Get()
-			if _, err := watcher.UpdateContainerForceStart(context.Background(), containerID, cfg); err != nil {
+			updateResult, err := watcher.UpdateContainerForceStart(context.Background(), containerID, cfg)
+			if err != nil {
 				log.Fatalf("self-update failed: %v", err)
+			}
+			if err := patchLocalScanStateAfterSelfUpdate(server.ResolveConfigPath(), containerID, updateResult); err != nil {
+				log.Printf("self-update: scan state patch failed: %v", err)
 			}
 			log.Printf("self-update completed: %s", containerID)
 			return
@@ -210,6 +216,60 @@ func main() {
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer shutdownCancel()
 	_ = httpServer.Shutdown(shutdownCtx)
+}
+
+type scanStateFile struct {
+	LastScans []dockerwatcher.ScanResult `json:"last_scans"`
+}
+
+func patchLocalScanStateAfterSelfUpdate(configPath, oldContainerID string, update dockerwatcher.UpdateResult) error {
+	if strings.TrimSpace(configPath) == "" || strings.TrimSpace(oldContainerID) == "" {
+		return nil
+	}
+	statePath := filepath.Join(filepath.Dir(configPath), "scan_state.json")
+	data, err := os.ReadFile(statePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	var payload scanStateFile
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return err
+	}
+	if len(payload.LastScans) == 0 {
+		return nil
+	}
+	now := time.Now()
+	changed := false
+	for i := range payload.LastScans {
+		for j := range payload.LastScans[i].Containers {
+			if payload.LastScans[i].Containers[j].ID != oldContainerID {
+				continue
+			}
+			if strings.TrimSpace(update.ID) != "" {
+				payload.LastScans[i].Containers[j].ID = update.ID
+			}
+			payload.LastScans[i].Containers[j].Updated = true
+			payload.LastScans[i].Containers[j].UpdateAvailable = false
+			payload.LastScans[i].Containers[j].LastChecked = now
+			payload.LastScans[i].Containers[j].Error = ""
+			changed = true
+		}
+	}
+	if !changed {
+		return nil
+	}
+	next, err := json.MarshalIndent(payload, "", "  ")
+	if err != nil {
+		return err
+	}
+	tmp := statePath + ".tmp"
+	if err := os.WriteFile(tmp, next, 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, statePath)
 }
 
 func resolveAddr() string {
