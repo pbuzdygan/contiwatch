@@ -1,6 +1,6 @@
 # Changelog
 
-## v1.0.2
+## v1.1.0
 
 ## New features
 - Live server status updates via server stream (SSE) with on-demand reachability checks.
@@ -13,8 +13,7 @@
 - Sidebar search now filters the Servers list.
 - Server list renders immediately; health/status updates arrive asynchronously.
 - Server name rows now use consistent status/type icons.
-- Status, Settings, and Logs headers/actions moved into the top bar.
-- Servers header and actions moved into the top bar for consistency.
+- Status, Settings, Servers and Logs headers/actions moved into the top bar.
 - Servers filter controls consolidated into a dropdown (All/Active/Maintenance/Offline) with a one-click reset icon.
 - Add server flow unified into a single modal with Local/Remote tabs.
 - Servers view toggle consolidated into a single icon switch (table/cards).
