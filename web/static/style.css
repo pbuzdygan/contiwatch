@@ -1608,6 +1608,11 @@ input::placeholder {
   mask-image: url("/icons/ui/filter-off.svg");
 }
 
+.icon-plus {
+  -webkit-mask-image: url("/icons/ui/plus.svg");
+  mask-image: url("/icons/ui/plus.svg");
+}
+
 .servers-view-toggle-btn[data-mode="table"] .servers-view-icon {
   -webkit-mask-image: url("/icons/ui/table.svg");
   mask-image: url("/icons/ui/table.svg");
