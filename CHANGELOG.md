@@ -23,6 +23,7 @@
 - Newly added offline servers appear immediately while status checks run.
 - Remove-confirm state no longer resets on background refresh.
 - Fixed status races where stale reachability snapshots could keep a server stuck in CHECKING.
+- Fixed agent self-update flow: controller now refreshes status after agent restarts and outdated counts clear correctly.
 
 ## v1.0.1
 

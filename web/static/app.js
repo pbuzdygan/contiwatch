@@ -106,6 +106,89 @@ let lastSchedulerIntervalSec = null;
 let serverStream = null;
 let checkingStartMsByServerKey = {};
 let checkingDebounceTimersByServerKey = {};
+let pendingSelfUpdates = {};
+let pendingSelfUpdateTimers = {};
+
+function pendingSelfUpdateKey(serverKey, containerName) {
+  return `${serverKey}::${containerName}`;
+}
+
+function markPendingSelfUpdate(serverKey, containerName, ttlMs = 60000) {
+  if (!serverKey || !containerName) return;
+  const key = pendingSelfUpdateKey(serverKey, containerName);
+  const expiresAt = Date.now() + ttlMs;
+  pendingSelfUpdates[key] = expiresAt;
+  if (pendingSelfUpdateTimers[key]) {
+    window.clearTimeout(pendingSelfUpdateTimers[key]);
+  }
+  pendingSelfUpdateTimers[key] = window.setTimeout(() => {
+    delete pendingSelfUpdates[key];
+    delete pendingSelfUpdateTimers[key];
+  }, ttlMs + 1500);
+}
+
+function clearPendingSelfUpdate(serverKey, containerName) {
+  const key = pendingSelfUpdateKey(serverKey, containerName);
+  delete pendingSelfUpdates[key];
+  if (pendingSelfUpdateTimers[key]) {
+    window.clearTimeout(pendingSelfUpdateTimers[key]);
+    delete pendingSelfUpdateTimers[key];
+  }
+}
+
+function isSelfUpdateResolved(serverKey, containerName) {
+  if (!serverKey || !containerName) return false;
+  const result = lastStatusResults.find((entry) => serverScopeKey(entry) === serverKey);
+  if (!result || !Array.isArray(result.containers)) return false;
+  const container = result.containers.find((item) => item && item.name === containerName);
+  if (!container) return false;
+  return Boolean(container.updated) || !Boolean(container.update_available);
+}
+
+function schedulePostSelfUpdateRefresh(serverKey, containerName) {
+  markPendingSelfUpdate(serverKey, containerName);
+  restartingServers[serverKey] = Date.now() + 60000;
+
+  const startedAt = Date.now();
+  const deadlineMs = 60000;
+  let attempt = 0;
+
+  const tick = async () => {
+    attempt++;
+    if (isSelfUpdateResolved(serverKey, containerName)) {
+      clearPendingSelfUpdate(serverKey, containerName);
+      delete restartingServers[serverKey];
+      showToast("Agent back online — status refreshed.");
+      return;
+    }
+    if (Date.now() - startedAt > deadlineMs) {
+      clearPendingSelfUpdate(serverKey, containerName);
+      delete restartingServers[serverKey];
+      showToast("Agent update pending — use Refresh status in a moment.");
+      return;
+    }
+    try {
+      await triggerServersRefresh();
+    } catch {
+      // ignore
+    }
+    try {
+      await triggerStatusRefresh();
+    } catch {
+      // ignore
+    }
+    try {
+      await refreshStatus();
+    } catch {
+      // ignore
+    }
+
+    const nextDelay = attempt <= 4 ? 2500 : 5000;
+    window.setTimeout(tick, nextDelay);
+  };
+
+  window.setTimeout(tick, 1500);
+}
 
 async function fetchJSON(url, options = {}) {
   const res = await fetch(url, options);
@@ -404,6 +487,9 @@ function buildContainerCard(container, result, canUpdateStopped, variant) {
   card.appendChild(statusLine);
 
   const isSelfContainer = result.local && container.name === "contiwatch";
+  const serverKey = serverScopeKey(result);
+  const pendingKey = pendingSelfUpdateKey(serverKey, container.name);
+  const isPendingSelfUpdate = Boolean(pendingSelfUpdates[pendingKey] && pendingSelfUpdates[pendingKey] > Date.now());
   const canUpdate =
     container.update_available &&
     !container.updated &&
@@ -411,7 +497,8 @@ function buildContainerCard(container, result, canUpdateStopped, variant) {
     !currentScanController &&
     !updateInProgress &&
     (container.running || canUpdateStopped) &&
-    !isSelfContainer;
+    !isSelfContainer &&
+    !isPendingSelfUpdate;
 
   const actions = document.createElement("div");
   actions.className = "details-card-actions";
@@ -435,6 +522,13 @@ function buildContainerCard(container, result, canUpdateStopped, variant) {
   const updateState = document.createElement("span");
   updateState.className = "details-card-state hidden";
 
+  if (isPendingSelfUpdate) {
+    updateBtn.textContent = "Waiting…";
+    updateBtn.disabled = true;
+    updateState.classList.remove("hidden");
+    updateState.textContent = "Agent restarting — waiting for reconnect…";
+  }
+
   const infoPanel = document.createElement("div");
   infoPanel.className = "info-panel hidden";
   const currentImageID = container.image_id || "unknown";
@@ -443,7 +537,6 @@ function buildContainerCard(container, result, canUpdateStopped, variant) {
 
   updateBtn.addEventListener("click", async () => {
     if (updateInProgress || currentScanController || updateBtn.disabled) return;
-    const serverKey = serverScopeKey(result);
     updateInProgress = true;
     scanBtn.disabled = true;
     if (scanScopeSelect) {
@@ -475,24 +568,21 @@ function buildContainerCard(container, result, canUpdateStopped, variant) {
     } finally {
       updateInProgress = false;
       if (restartHint) {
-        restartingServers[serverKey] = Date.now() + 30000;
-        window.setTimeout(async () => {
-          delete restartingServers[serverKey];
-          await refreshStatus();
-        }, 30000);
+        schedulePostSelfUpdateRefresh(serverKey, container.name);
       }
       scanBtn.disabled = Boolean(currentScanController);
       if (scanScopeSelect) {
         scanScopeSelect.disabled = Boolean(currentScanController);
       }
-      setTimeout(() => updateState.classList.add("hidden"), 8000);
+      const hideDelay = restartHint ? 30000 : 8000;
+      setTimeout(() => updateState.classList.add("hidden"), hideDelay);
       await refreshStatus();
       await refreshLogs();
       if (updateResult) {
         if (updateResult.updated) {
           showToast(`Updated ${updateResult.name} (${updateResult.previous_state} → ${updateResult.current_state})`);
         } else if (restartHint) {
-          showToast("Agent restarting — recheck in 30s.");
+          showToast("Agent restarting — waiting for reconnect.");
         } else {
           showToast(`${updateResult.name}: ${updateResult.message || "Not updated"}`);
         }
@@ -1761,6 +1851,21 @@ function applyStatusResults(results) {
     });
   }
   lastStatusResults = Array.isArray(results) ? results : [];
+  Object.entries(pendingSelfUpdates).forEach(([key, expiresAt]) => {
+    if (!expiresAt || expiresAt <= Date.now()) {
+      delete pendingSelfUpdates[key];
+      return;
+    }
+    const sep = key.indexOf("::");
+    if (sep < 0) return;
+    const serverKey = key.slice(0, sep);
+    const containerName = key.slice(sep + 2);
+    if (!serverKey || !containerName) return;
+    if (isSelfUpdateResolved(serverKey, containerName)) {
+      clearPendingSelfUpdate(serverKey, containerName);
+      delete restartingServers[serverKey];
+    }
+  });
   if (detailsModal && !detailsModal.classList.contains("hidden") && currentDetailsServerKey) {
     const target = lastStatusResults.find((entry) => {
       const key = serverScopeKey(entry);
