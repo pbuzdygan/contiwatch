@@ -209,6 +209,10 @@ function displayImage(imageRef) {
   return imageRef.split("@")[0];
 }
 
+function isContiwatchImage(value) {
+  return /contiwatch/i.test(String(value || ""));
+}
+
 function serverScopeKey(result) {
   if (!result) return "unknown:unknown";
   const scope = result.local ? "local" : "remote";
@@ -571,7 +575,11 @@ function buildContainerCard(container, result, canUpdateStopped, variant) {
         ? `local:${result.server_name || "local"}`
         : `remote:${result.server_name || "remote"}`;
       const serverParam = encodeURIComponent(scope);
-      updateResult = await fetchJSON(`/api/update/${encodeURIComponent(container.id)}?server=${serverParam}`, { method: "POST" });
+      let updateURL = `/api/update/${encodeURIComponent(container.id)}?server=${serverParam}`;
+      if (!result.local && isContiwatchImage(container.image)) {
+        updateURL += "&self_update=1";
+      }
+      updateResult = await fetchJSON(updateURL, { method: "POST" });
       if (updateResult.updated) {
         updateState.textContent = `Updated (${updateResult.previous_state} → ${updateResult.current_state})`;
       } else {

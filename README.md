@@ -106,6 +106,7 @@ docker pull ghcr.io/<owner>/<repo>:dev_<version>
 - `POST /api/servers/refresh` trigger on-demand reachability checks (updates stream + returns snapshot)
 - `POST /api/status/refresh` pull last scan snapshots from online agents (updates stream)
 - `POST /api/update/{container_id}` update container
+- `POST /api/self-update?container={container_id}` update agent container via helper (agent mode only)
 - `GET/POST/DELETE /api/logs`
 - `POST /api/notifications/test` test Discord webhook
 

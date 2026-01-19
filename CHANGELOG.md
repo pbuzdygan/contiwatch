@@ -21,6 +21,7 @@
 - Manual refresh buttons for Servers and Status (reachability checks are on-demand).
 - Reachability checks now use `/api/version`; `Last checked` reflects connection checks, not scan time.
 - Added `POST /api/status/refresh` to repopulate remote scan snapshots after controller restarts.
+- Added `POST /api/self-update` for safe agent self-updates.
 
 ## Bug fixes
 - Offline servers no longer block the initial Servers view render.
