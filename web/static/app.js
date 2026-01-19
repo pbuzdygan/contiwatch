@@ -1,6 +1,6 @@
 const statusEl = document.getElementById("status");
 const scanBtn = document.getElementById("scan-btn");
-const scanScopeSelect = document.getElementById("scan-scope");
+const statusSelectiveToggleBtn = document.getElementById("status-selective-toggle");
 const refreshStatusBtn = document.getElementById("refresh-status");
 const schedulerStateEl = document.getElementById("scheduler-state");
 const schedulerNextRunEl = document.getElementById("scheduler-next-run");
@@ -21,17 +21,14 @@ const discordUpdateDetectedInput = document.getElementById("discord-update-detec
 const discordContainerUpdatedInput = document.getElementById("discord-container-updated");
 const updateStoppedInput = document.getElementById("update-stopped");
 const pruneDanglingInput = document.getElementById("prune-dangling");
-const addLocalBtn = document.getElementById("add-local");
-const addRemoteBtn = document.getElementById("add-remote");
+const addServerBtn = document.getElementById("add-server");
 const refreshServersBtn = document.getElementById("refresh-servers");
 const serversTableWrap = document.getElementById("servers-table-wrap");
 const serversTableBody = document.getElementById("servers-table-body");
 const serversCardsEl = document.getElementById("servers-cards");
-const serversViewButtons = Array.from(document.querySelectorAll(".servers-view-toggle [data-view]"));
-const serversFilterButtons = Array.from(document.querySelectorAll(".servers-filters [data-filter]"));
-const localModal = document.getElementById("local-modal");
-const localModalTitle = document.getElementById("local-modal-title");
-const localModalClose = document.getElementById("local-modal-close");
+const serversViewToggleBtn = document.getElementById("servers-view-toggle");
+const serversFilterSelect = document.getElementById("servers-filter");
+const serversFilterResetBtn = document.getElementById("servers-filter-reset");
 const localModalForm = document.getElementById("local-modal-form");
 const localModalNameInput = document.getElementById("local-modal-name");
 const localModalSocketInput = document.getElementById("local-modal-socket");
@@ -40,6 +37,10 @@ const localModalCancel = document.getElementById("local-modal-cancel");
 const remoteModal = document.getElementById("remote-modal");
 const remoteModalTitle = document.getElementById("remote-modal-title");
 const remoteModalClose = document.getElementById("remote-modal-close");
+const serverTabRemote = document.getElementById("server-tab-remote");
+const serverTabLocal = document.getElementById("server-tab-local");
+const serverPanelRemote = document.getElementById("server-panel-remote");
+const serverPanelLocal = document.getElementById("server-panel-local");
 const remoteModalNameInput = document.getElementById("remote-modal-name");
 const remoteModalHostInput = document.getElementById("remote-modal-host");
 const remoteModalPortInput = document.getElementById("remote-modal-port");
@@ -53,8 +54,10 @@ const sidebar = document.getElementById("sidebar");
 const sidebarSearch = document.getElementById("sidebar-search");
 const themeToggleBtn = document.getElementById("theme-toggle");
 const themeLabel = document.getElementById("theme-label");
+const topbarEl = document.querySelector(".topbar");
 const topbarStatusEl = document.getElementById("topbar-status");
 const topbarSettingsEl = document.getElementById("topbar-settings");
+const topbarServersEl = document.getElementById("topbar-servers");
 const topbarLogsEl = document.getElementById("topbar-logs");
 const viewStatusEl = document.getElementById("view-status");
 const viewSettingsEl = document.getElementById("view-settings");
@@ -288,12 +291,32 @@ function updateRemoteComposePreview() {
   remoteModalCompose.textContent = buildAgentCompose(token, port);
 }
 
+function setServerModalTab(tab) {
+  const next = tab === "local" ? "local" : "remote";
+  if (serverPanelLocal) {
+    serverPanelLocal.classList.toggle("hidden", next !== "local");
+  }
+  if (serverPanelRemote) {
+    serverPanelRemote.classList.toggle("hidden", next !== "remote");
+  }
+  if (serverTabLocal) {
+    serverTabLocal.classList.toggle("is-active", next === "local");
+    serverTabLocal.setAttribute("aria-selected", next === "local" ? "true" : "false");
+  }
+  if (serverTabRemote) {
+    serverTabRemote.classList.toggle("is-active", next === "remote");
+    serverTabRemote.setAttribute("aria-selected", next === "remote" ? "true" : "false");
+  }
+}
+
 function openLocalModal(mode, server) {
-  if (!localModal) return;
+  if (!remoteModal) return;
   const isEdit = mode === "edit";
   editingLocalServer = isEdit ? server : null;
-  if (localModalTitle) {
-    localModalTitle.textContent = isEdit ? "Edit local server" : "Add local server";
+  editingRemoteServer = null;
+  setServerModalTab("local");
+  if (remoteModalTitle) {
+    remoteModalTitle.textContent = isEdit ? "Edit local server" : "Add local server";
   }
   if (localModalNameInput) {
     localModalNameInput.value = server ? server.name || "" : "";
@@ -301,26 +324,21 @@ function openLocalModal(mode, server) {
   if (localModalSocketInput) {
     localModalSocketInput.value = server ? server.socket || "/var/run/docker.sock" : "/var/run/docker.sock";
   }
-  localModal.classList.remove("hidden");
-  localModal.setAttribute("aria-hidden", "false");
+  remoteModal.classList.remove("hidden");
+  remoteModal.setAttribute("aria-hidden", "false");
   if (localModalNameInput) {
     localModalNameInput.focus();
   }
-}
-
-function closeLocalModal() {
-  if (!localModal) return;
-  localModal.classList.add("hidden");
-  localModal.setAttribute("aria-hidden", "true");
-  editingLocalServer = null;
 }
 
 function openRemoteModal(mode, server) {
   if (!remoteModal) return;
   const isEdit = mode === "edit";
   editingRemoteServer = isEdit ? server : null;
+  editingLocalServer = null;
+  setServerModalTab("remote");
   if (remoteModalTitle) {
-    remoteModalTitle.textContent = isEdit ? "Edit remote agent" : "Add remote agent";
+    remoteModalTitle.textContent = isEdit ? "Edit remote server" : "Add remote server";
   }
   const parsed = server ? parseRemoteUrl(server.url) : { host: "", port: "8080" };
   if (remoteModalNameInput) {
@@ -352,6 +370,7 @@ function closeRemoteModal() {
   remoteModal.classList.add("hidden");
   remoteModal.setAttribute("aria-hidden", "true");
   editingRemoteServer = null;
+  editingLocalServer = null;
 }
 
 async function copyToClipboard(value, label) {
@@ -539,8 +558,8 @@ function buildContainerCard(container, result, canUpdateStopped, variant) {
     if (updateInProgress || currentScanController || updateBtn.disabled) return;
     updateInProgress = true;
     scanBtn.disabled = true;
-    if (scanScopeSelect) {
-      scanScopeSelect.disabled = true;
+    if (statusSelectiveToggleBtn) {
+      statusSelectiveToggleBtn.disabled = true;
     }
     updateBtn.disabled = true;
     updateState.classList.remove("hidden");
@@ -571,8 +590,8 @@ function buildContainerCard(container, result, canUpdateStopped, variant) {
         schedulePostSelfUpdateRefresh(serverKey, container.name);
       }
       scanBtn.disabled = Boolean(currentScanController);
-      if (scanScopeSelect) {
-        scanScopeSelect.disabled = Boolean(currentScanController);
+      if (statusSelectiveToggleBtn) {
+        statusSelectiveToggleBtn.disabled = Boolean(currentScanController);
       }
       const hideDelay = restartHint ? 30000 : 8000;
       setTimeout(() => updateState.classList.add("hidden"), hideDelay);
@@ -1303,11 +1322,13 @@ function renderServers(localServers, remoteServers) {
   const query = normalizeQuery(serversSearchQuery);
   const filtered = items.filter((item) => {
     const isMaintenance = Boolean(item.server && item.server.maintenance);
-    if (serversFilterMode === "maintenance" && !isMaintenance) return false;
-    if (serversFilterMode === "active" && isMaintenance) return false;
+    const infoKey = `${item.type}:${item.server.name}`;
+    const statusValue = String(cachedServerInfo[infoKey]?.status || "").toLowerCase();
+    if (serversFilterMode === "maintenance") return isMaintenance;
+    if (serversFilterMode === "active") return !isMaintenance;
+    if (serversFilterMode === "offline") return !isMaintenance && statusValue === "offline";
     if (!query) return true;
     const address = item.type === "local" ? item.server.socket : item.server.url;
-    const statusValue = String(cachedServerInfo[`${item.type}:${item.server.name}`]?.status || "");
     const haystack = normalizeQuery(`${item.server.name} ${address} ${item.type} ${statusValue}`);
     return haystack.includes(query);
   });
@@ -1554,21 +1575,33 @@ function applySidebarFilter(queryOverride) {
 }
 
 function updateServersFilterButtons() {
-  serversFilterButtons.forEach((btn) => {
-    const mode = btn.getAttribute("data-filter");
-    btn.classList.toggle("is-active", mode === serversFilterMode);
-  });
+  const mode = serversFilterMode || "all";
+  if (serversFilterSelect) {
+    serversFilterSelect.value = mode;
+  }
+  if (serversFilterResetBtn) {
+    const icon = serversFilterResetBtn.querySelector(".icon-action");
+    if (icon) {
+      const isAll = mode === "all";
+      icon.classList.toggle("icon-filter", isAll);
+      icon.classList.toggle("icon-filter-off", !isAll);
+    }
+  }
 }
 
 function updateServersViewButtons() {
-  serversViewButtons.forEach((btn) => {
-    const mode = btn.getAttribute("data-view");
-    btn.classList.toggle("is-active", mode === serversViewMode);
-  });
+  if (!serversViewToggleBtn) return;
+  const current = serversViewMode === "cards" ? "cards" : "table";
+  const next = current === "cards" ? "table" : "cards";
+  serversViewToggleBtn.dataset.mode = next;
+  const label = next === "cards" ? "Switch to cards view" : "Switch to table view";
+  serversViewToggleBtn.setAttribute("aria-label", label);
+  serversViewToggleBtn.setAttribute("data-tooltip", label);
 }
 
 function setServersFilterMode(mode) {
-  serversFilterMode = mode || "all";
+  const next = ["all", "active", "maintenance", "offline"].includes(mode) ? mode : "all";
+  serversFilterMode = next;
   updateServersFilterButtons();
   renderServers(cachedLocals, cachedRemotes);
 }
@@ -1580,6 +1613,33 @@ function setServersViewMode(mode, persist = true) {
   }
   updateServersViewButtons();
   renderServers(cachedLocals, cachedRemotes);
+}
+
+function isSelectiveScanEnabled() {
+  return selectedScanScope === "selective";
+}
+
+function updateSelectiveScanToggle() {
+  if (!statusSelectiveToggleBtn) return;
+  const enabled = isSelectiveScanEnabled();
+  const icon = statusSelectiveToggleBtn.querySelector(".icon-action");
+  if (icon) {
+    icon.classList.toggle("icon-filter", !enabled);
+    icon.classList.toggle("icon-filter-off", enabled);
+  }
+  const label = enabled ? "Clear selective scan" : "Selective scan";
+  statusSelectiveToggleBtn.setAttribute("aria-label", label);
+  statusSelectiveToggleBtn.setAttribute("data-tooltip", label);
+}
+
+function setSelectiveScanEnabled(enabled) {
+  if (enabled) {
+    selectedScanScope = "selective";
+  } else {
+    selectedScanScope = "all";
+    selectedScanServers.clear();
+  }
+  updateSelectiveScanToggle();
 }
 
 const themeModes = ["light", "dark"];
@@ -1660,48 +1720,7 @@ function initThemeToggle() {
   });
 }
 
-function updateScanScopeOptions() {
-  if (!scanScopeSelect) return;
-  const currentValue = scanScopeSelect.value || selectedScanScope || "all";
-  const options = [
-    { value: "selective", label: "Selective scan" },
-    { value: "all", label: "All servers" },
-  ];
-
-  cachedLocals.forEach((local) => {
-    if (local.maintenance) return;
-    options.push({ value: `local:${local.name}`, label: local.name });
-  });
-
-  cachedRemotes.forEach((remote) => {
-    if (remote.maintenance) return;
-    options.push({ value: `remote:${remote.name}`, label: remote.name });
-  });
-
-  scanScopeSelect.innerHTML = "";
-  options.forEach((option) => {
-    const el = document.createElement("option");
-    el.value = option.value;
-    el.textContent = option.label;
-    scanScopeSelect.appendChild(el);
-  });
-
-  if (options.some((option) => option.value === currentValue)) {
-    scanScopeSelect.value = currentValue;
-  } else {
-    const fallback = options.find((option) => option.value === "all") ? "all" : options[0].value;
-    scanScopeSelect.value = fallback;
-  }
-  selectedScanScope = scanScopeSelect.value;
-}
-
-if (scanScopeSelect) {
-  scanScopeSelect.addEventListener("change", () => {
-    selectedScanScope = scanScopeSelect.value || "all";
-    selectedScanServers.clear();
-    refreshStatus();
-  });
-}
+// Status server scope dropdown removed; selective scan is toggled via icon button.
 
 async function refreshConfig() {
   const cfg = await fetchJSON("/api/config");
@@ -1826,7 +1845,6 @@ async function refreshServers() {
   renderServers(cachedLocals, cachedRemotes);
   updateServersFilterButtons();
   updateServersViewButtons();
-  updateScanScopeOptions();
   statusHintEl.classList.add("hidden");
 }
 
@@ -2082,12 +2100,21 @@ function flashButton(btn, text, className, durationMs = 2000) {
 function setScanningUI(isScanning) {
   const isActive = isScanning || scanActive;
   scanBtn.disabled = updateInProgress;
-  if (scanScopeSelect) {
-    scanScopeSelect.disabled = isActive || updateInProgress;
+  if (statusSelectiveToggleBtn) {
+    statusSelectiveToggleBtn.disabled = isActive || updateInProgress;
   }
   scanBtn.classList.toggle("secondary", !isActive);
   scanBtn.classList.toggle("btn-warning", isActive);
-  scanBtn.textContent = isActive ? "Stop scan" : "Run scan";
+  if (scanBtn) {
+    const label = isActive ? "Stop scan" : "Check updates";
+    scanBtn.setAttribute("aria-label", label);
+    scanBtn.setAttribute("data-tooltip", label);
+    const icon = scanBtn.querySelector(".icon-action");
+    if (icon) {
+      icon.classList.toggle("icon-stop", isActive);
+      icon.classList.toggle("icon-refresh-dot", !isActive);
+    }
+  }
 }
 
 function updateScanPolling(results) {
@@ -2266,6 +2293,7 @@ window.addEventListener("resize", () => {
   if (tooltipTarget) {
     showTooltip(tooltipTarget);
   }
+  updateTopbarHeight();
 });
 
 function refreshViewData(view) {
@@ -2275,6 +2303,12 @@ function refreshViewData(view) {
     tasks.push(refreshLogs().catch(() => {}));
   }
   void Promise.all(tasks);
+}
+
+function updateTopbarHeight() {
+  if (!topbarEl) return;
+  const height = topbarEl.getBoundingClientRect().height;
+  document.documentElement.style.setProperty("--topbar-h", `${Math.ceil(height)}px`);
 }
 
 function setView(nextView) {
@@ -2289,9 +2323,13 @@ function setView(nextView) {
   if (topbarSettingsEl) {
     topbarSettingsEl.classList.toggle("hidden", nextView !== "settings");
   }
+  if (topbarServersEl) {
+    topbarServersEl.classList.toggle("hidden", nextView !== "servers");
+  }
   if (topbarLogsEl) {
     topbarLogsEl.classList.toggle("hidden", nextView !== "logs");
   }
+  updateTopbarHeight();
 
   sidebar.querySelectorAll("[data-view]").forEach((btn) => {
     btn.classList.toggle("active", btn.getAttribute("data-view") === nextView);
@@ -2309,6 +2347,7 @@ function setView(nextView) {
     renderStatusPlaceholders();
   }
   if (nextView === "servers") {
+    setServersFilterMode("all");
     refreshServers()
       .then(() => triggerServersRefresh())
       .catch(() => {});
@@ -2344,8 +2383,7 @@ scanBtn.addEventListener("click", async () => {
     return;
   }
   currentScanController = new AbortController();
-  selectedScanScope = scanScopeSelect ? scanScopeSelect.value : "all";
-  if (selectedScanScope === "selective" && selectedScanServers.size === 0) {
+  if (isSelectiveScanEnabled() && selectedScanServers.size === 0) {
     showToast("Select at least one server to scan.");
     currentScanController = null;
     scanActive = false;
@@ -2355,23 +2393,19 @@ scanBtn.addEventListener("click", async () => {
   scanRequestActive = true;
   setScanningUI(true);
   startScanPolling();
-  const scanTargets = selectedScanScope === "selective"
+  const scanTargets = isSelectiveScanEnabled()
     ? Array.from(selectedScanServers)
-    : selectedScanScope;
+    : "all";
   applyOptimisticScanState(scanTargets);
   refreshStatus().catch(() => {});
   try {
-    if (selectedScanScope === "selective") {
+    if (isSelectiveScanEnabled()) {
       for (const scope of scanTargets) {
         const url = `/api/scan?server=${encodeURIComponent(scope)}`;
         await fetchJSON(url, { method: "POST", signal: currentScanController.signal });
       }
     } else {
-      const scope = scanScopeSelect ? scanScopeSelect.value : "all";
-      const url = scope && scope !== "all"
-        ? `/api/scan?server=${encodeURIComponent(scope)}`
-        : "/api/scan?server=all";
-      await fetchJSON(url, { method: "POST", signal: currentScanController.signal });
+      await fetchJSON("/api/scan?server=all", { method: "POST", signal: currentScanController.signal });
     }
   } catch (err) {
     if (err.name === "AbortError" || /aborted|canceled|cancelled/i.test(err.message)) {
@@ -2382,13 +2416,6 @@ scanBtn.addEventListener("click", async () => {
   } finally {
     currentScanController = null;
     scanRequestActive = false;
-    if (selectedScanScope === "selective") {
-      selectedScanServers.clear();
-      selectedScanScope = "all";
-      if (scanScopeSelect) {
-        scanScopeSelect.value = "all";
-      }
-    }
     setScanningUI(false);
     await refreshStatus();
     await refreshLogs();
@@ -2498,7 +2525,7 @@ if (localModalForm) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      closeLocalModal();
+      closeRemoteModal();
       await refreshServers();
       await refreshStatus();
     } catch (err) {
@@ -2509,13 +2536,7 @@ if (localModalForm) {
 
 if (localModalCancel) {
   localModalCancel.addEventListener("click", () => {
-    closeLocalModal();
-  });
-}
-
-if (localModalClose) {
-  localModalClose.addEventListener("click", () => {
-    closeLocalModal();
+    closeRemoteModal();
   });
 }
 
@@ -2577,6 +2598,37 @@ if (remoteModalPortInput) {
   });
 }
 
+if (serverTabLocal) {
+  serverTabLocal.addEventListener("click", () => {
+    setServerModalTab("local");
+    if (remoteModalTitle) {
+      remoteModalTitle.textContent = editingLocalServer ? "Edit local server" : "Add local server";
+    }
+    if (!editingLocalServer && localModalSocketInput && !localModalSocketInput.value.trim()) {
+      localModalSocketInput.value = "/var/run/docker.sock";
+    }
+    if (localModalNameInput) {
+      localModalNameInput.focus();
+    }
+  });
+}
+
+if (serverTabRemote) {
+  serverTabRemote.addEventListener("click", () => {
+    setServerModalTab("remote");
+    if (remoteModalTitle) {
+      remoteModalTitle.textContent = editingRemoteServer ? "Edit remote server" : "Add remote server";
+    }
+    if (!editingRemoteServer && remoteModalTokenInput && !remoteModalTokenInput.value.trim()) {
+      remoteModalTokenInput.value = generateToken(32);
+      updateRemoteComposePreview();
+    }
+    if (remoteModalNameInput) {
+      remoteModalNameInput.focus();
+    }
+  });
+}
+
 async function init() {
   sidebar.setAttribute("aria-hidden", "false");
 
@@ -2586,49 +2638,58 @@ async function init() {
     });
   }
 
-  serversFilterButtons.forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const mode = btn.getAttribute("data-filter") || "all";
-      setServersFilterMode(mode);
+  if (statusSelectiveToggleBtn) {
+    statusSelectiveToggleBtn.addEventListener("click", () => {
+      setSelectiveScanEnabled(!isSelectiveScanEnabled());
+      refreshStatus();
     });
-  });
+    updateSelectiveScanToggle();
+  }
 
-  serversViewButtons.forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const mode = btn.getAttribute("data-view") || "table";
-      setServersViewMode(mode);
+  if (serversFilterSelect) {
+    serversFilterSelect.addEventListener("change", () => {
+      setServersFilterMode(serversFilterSelect.value);
     });
-  });
-
-  if (addLocalBtn) {
-    addLocalBtn.addEventListener("click", () => {
-      openLocalModal("add");
+  }
+  if (serversFilterResetBtn) {
+    serversFilterResetBtn.addEventListener("click", () => {
+      setServersFilterMode("all");
+      if (serversFilterSelect) {
+        serversFilterSelect.focus();
+      }
     });
   }
 
-  if (addRemoteBtn) {
-    addRemoteBtn.addEventListener("click", () => {
+  if (serversViewToggleBtn) {
+    serversViewToggleBtn.addEventListener("click", () => {
+      const next = serversViewMode === "cards" ? "table" : "cards";
+      setServersViewMode(next);
+    });
+  }
+
+  if (addServerBtn) {
+    addServerBtn.addEventListener("click", () => {
       openRemoteModal("add");
     });
   }
 
   if (refreshStatusBtn) {
     refreshStatusBtn.addEventListener("click", async () => {
-      showToast("Refreshing status…", 2000);
+      showToast("Checking connection…", 2000);
       await refreshServers();
       await triggerServersRefresh();
       await triggerStatusRefresh();
       await refreshStatus();
-      showToast("Status refreshed.", 2000);
+      showToast("Connection checked", 2000);
     });
   }
 
   if (refreshServersBtn) {
     refreshServersBtn.addEventListener("click", async () => {
-      showToast("Refreshing servers…", 2000);
+      showToast("Checking connection…", 2000);
       await refreshServers();
       await triggerServersRefresh();
-      showToast("Servers refreshed.", 2000);
+      showToast("Connection checked", 2000);
     });
   }
 
@@ -2648,13 +2709,6 @@ async function init() {
     detailsModal.addEventListener("click", (event) => {
       if (event.target && event.target.dataset && event.target.dataset.close) {
         closeDetailsModal();
-      }
-    });
-  }
-  if (localModal) {
-    localModal.addEventListener("click", (event) => {
-      if (event.target && event.target.dataset && event.target.dataset.close) {
-        closeLocalModal();
       }
     });
   }
@@ -2685,15 +2739,13 @@ async function init() {
     if (event.key === "Escape" && policyModal && !policyModal.classList.contains("hidden")) {
       closePolicyModal();
     }
-    if (event.key === "Escape" && localModal && !localModal.classList.contains("hidden")) {
-      closeLocalModal();
-    }
     if (event.key === "Escape" && remoteModal && !remoteModal.classList.contains("hidden")) {
       closeRemoteModal();
     }
   });
 
   initThemeToggle();
+  updateTopbarHeight();
   const storedServersView = localStorage.getItem(serversViewStorageKey);
   if (storedServersView === "cards" || storedServersView === "table") {
     serversViewMode = storedServersView;

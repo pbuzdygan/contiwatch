@@ -16,13 +16,33 @@
         <div id="topbar-status" class="topbar-status hidden">
           <h2>Status</h2>
           <div class="actions">
-            <button id="scan-btn" class="scan-btn">Run scan</button>
-            <button id="refresh-status" class="secondary" type="button">Refresh status</button>
-            <label class="scan-scope">
-              <select id="scan-scope">
-                <option value="all">All servers</option>
-              </select>
-            </label>
+            <button
+              id="scan-btn"
+              class="scan-btn icon-action-btn has-tooltip"
+              type="button"
+              aria-label="Check updates"
+              data-tooltip="Check updates"
+            >
+              <span class="icon-action icon-refresh-dot" aria-hidden="true"></span>
+            </button>
+            <button
+              id="refresh-status"
+              class="secondary icon-action-btn has-tooltip"
+              type="button"
+              aria-label="Check connection"
+              data-tooltip="Check connection"
+            >
+              <span class="icon-action icon-activity" aria-hidden="true"></span>
+            </button>
+            <button
+              id="status-selective-toggle"
+              class="secondary icon-action-btn has-tooltip"
+              type="button"
+              aria-label="Selective scan"
+              data-tooltip="Selective scan"
+            >
+              <span class="icon-action icon-filter" aria-hidden="true"></span>
+            </button>
             <span id="scheduler-state" class="scheduler-state has-tooltip" data-enabled="false" aria-label="Scheduler disabled">
               <svg xmlns="http://www.w3.org/2000/svg" class="scheduler-icon scheduler-icon-off icon icon-tabler icons-tabler-outline icon-tabler-calendar-cancel" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M12.5 21h-6.5a2 2 0 0 1 -2 -2v-12a2 2 0 0 1 2 -2h12a2 2 0 0 1 2 2v5" /><path d="M16 3v4" /><path d="M8 3v4" /><path d="M4 11h12" /><path d="M22 22l-5 -5" /><path d="M17 22l5 -5" /></svg>
               <svg xmlns="http://www.w3.org/2000/svg" class="scheduler-icon scheduler-icon-on icon icon-tabler icons-tabler-outline icon-tabler-calendar-check" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M11 19h-6a2 2 0 0 1 -2 -2v-11a2 2 0 0 1 2 -2h11a2 2 0 0 1 2 2v5" /><path d="M16 3v4" /><path d="M8 3v4" /><path d="M4 11h12" /><path d="M15 19l2 2l4 -4" /></svg>
@@ -31,6 +51,52 @@
         </div>
         <div id="topbar-settings" class="topbar-status hidden">
           <h2>Settings</h2>
+        </div>
+        <div id="topbar-servers" class="topbar-status hidden">
+          <h2>Servers</h2>
+          <div class="actions servers-topbar-actions">
+            <button
+              id="refresh-servers"
+              class="secondary icon-action-btn has-tooltip"
+              type="button"
+              aria-label="Check connection"
+              data-tooltip="Check connection"
+            >
+              <span class="icon-action icon-activity" aria-hidden="true"></span>
+            </button>
+            <div class="servers-filter" aria-label="Server filter">
+              <button
+                id="servers-filter-reset"
+                class="secondary icon-action-btn has-tooltip"
+                type="button"
+                aria-label="Filter by status"
+                data-tooltip="Filter by status"
+              >
+                <span class="icon-action icon-filter" aria-hidden="true"></span>
+              </button>
+              <span class="servers-filter-select has-tooltip" aria-label="Filter by status" data-tooltip="Filter by status">
+                <select id="servers-filter" aria-label="Filter by status">
+                  <option value="all">All</option>
+                  <option value="active">Active</option>
+                  <option value="maintenance">Maintenance</option>
+                  <option value="offline">Offline</option>
+                </select>
+              </span>
+            </div>
+            <button id="add-server" type="button">Add server</button>
+            <div class="servers-view-toggle" role="group" aria-label="Servers view">
+              <button
+                class="secondary servers-view-toggle-btn has-tooltip"
+                id="servers-view-toggle"
+                type="button"
+                data-mode="table"
+                aria-label="Table view"
+                data-tooltip="Table view"
+              >
+                <span class="servers-view-icon" aria-hidden="true"></span>
+              </button>
+            </div>
+          </div>
         </div>
         <div id="topbar-logs" class="topbar-status hidden">
           <h2>Logs</h2>
@@ -202,27 +268,6 @@
       </section>
 
       <section id="view-servers" class="hidden">
-        <div class="view-header servers-header">
-          <h2>Servers</h2>
-          <div class="servers-actions">
-            <button id="add-local" class="secondary" type="button">Add local</button>
-            <button id="add-remote" type="button">Add remote</button>
-          </div>
-        </div>
-
-        <div class="servers-toolbar">
-          <button id="refresh-servers" class="secondary" type="button">Refresh servers</button>
-          <div class="servers-filters" role="group" aria-label="Server filters">
-            <button class="secondary" type="button" data-filter="all">All</button>
-            <button class="secondary" type="button" data-filter="active">Active</button>
-            <button class="secondary" type="button" data-filter="maintenance">Maintenance</button>
-          </div>
-          <div class="servers-view-toggle" role="group" aria-label="Servers view">
-            <button class="secondary" id="servers-view-table" type="button" data-view="table">Table</button>
-            <button class="secondary" id="servers-view-cards" type="button" data-view="cards">Cards</button>
-          </div>
-        </div>
-
         <div id="servers-table-wrap" class="servers-table-wrap">
           <table class="servers-table">
             <thead>
@@ -293,70 +338,70 @@
       </div>
     </div>
 
-    <div id="local-modal" class="modal hidden" aria-hidden="true" role="dialog" aria-modal="true">
-      <div class="modal-backdrop" data-close="true"></div>
-      <div class="modal-card" role="document">
-        <div class="modal-header">
-          <h3 id="local-modal-title">Add local server</h3>
-          <button id="local-modal-close" class="secondary btn-small" type="button">Close</button>
-        </div>
-        <form id="local-modal-form" class="modal-body">
-          <label>
-            Name
-            <input type="text" id="local-modal-name" placeholder="local">
-          </label>
-          <label>
-            Docker socket
-            <input type="text" id="local-modal-socket" placeholder="/var/run/docker.sock">
-          </label>
-          <div class="settings-actions">
-            <button id="local-modal-save" type="submit">Save</button>
-            <button id="local-modal-cancel" class="secondary" type="button">Cancel</button>
-          </div>
-        </form>
-      </div>
-    </div>
-
     <div id="remote-modal" class="modal hidden" aria-hidden="true" role="dialog" aria-modal="true">
       <div class="modal-backdrop" data-close="true"></div>
       <div class="modal-card" role="document">
         <div class="modal-header">
-          <h3 id="remote-modal-title">Add remote agent</h3>
+          <h3 id="remote-modal-title">Add server</h3>
           <button id="remote-modal-close" class="secondary btn-small" type="button">Close</button>
         </div>
         <div class="modal-body">
-          <div class="server-wizard-grid">
-            <label>
-              Name
-              <input type="text" id="remote-modal-name" placeholder="prod-01">
-            </label>
-            <label>
-              Host / IP
-              <input type="text" id="remote-modal-host" placeholder="10.0.0.10">
-            </label>
-            <label>
-              Port (host exposed)
-              <input type="text" id="remote-modal-port" placeholder="8080">
-            </label>
-            <label>
-              Generated API token
-              <div class="input-row">
-                <input type="text" id="remote-modal-token" readonly>
-                <button id="remote-modal-token-copy" class="secondary" type="button">Copy</button>
-              </div>
-            </label>
+          <div class="modal-tabs" role="tablist" aria-label="Server type">
+            <button id="server-tab-remote" class="secondary is-active" type="button" role="tab" aria-selected="true" aria-controls="server-panel-remote">Remote server</button>
+            <button id="server-tab-local" class="secondary" type="button" role="tab" aria-selected="false" aria-controls="server-panel-local">Local server</button>
           </div>
-          <p class="settings-hint"><strong>Save this API key securely.</strong> It will not be shown again.</p>
-          <label>
-            docker compose.yml
-            <div class="server-compose-actions">
-              <button id="remote-modal-compose-copy" class="secondary" type="button">Copy compose</button>
+
+          <div id="server-panel-remote" class="server-modal-panel" role="tabpanel">
+            <div class="server-wizard-grid">
+              <label>
+                Name
+                <input type="text" id="remote-modal-name" placeholder="prod-01">
+              </label>
+              <label>
+                Host / IP
+                <input type="text" id="remote-modal-host" placeholder="10.0.0.10">
+              </label>
+              <label>
+                Port (host exposed)
+                <input type="text" id="remote-modal-port" placeholder="8080">
+              </label>
+              <label>
+                Generated API token
+                <div class="input-row">
+                  <input type="text" id="remote-modal-token" readonly>
+                  <button id="remote-modal-token-copy" class="secondary" type="button">Copy</button>
+                </div>
+              </label>
             </div>
-            <pre id="remote-modal-compose" class="server-compose"></pre>
-          </label>
-          <div class="settings-actions">
-            <button id="remote-modal-save" type="button">Save</button>
-            <button id="remote-modal-cancel" class="secondary" type="button">Cancel</button>
+            <p class="settings-hint"><strong>Save this API key securely.</strong> It will not be shown again.</p>
+            <label>
+              docker compose.yml
+              <div class="server-compose-actions">
+                <button id="remote-modal-compose-copy" class="secondary" type="button">Copy compose</button>
+              </div>
+              <pre id="remote-modal-compose" class="server-compose"></pre>
+            </label>
+            <div class="settings-actions">
+              <button id="remote-modal-save" type="button">Save</button>
+              <button id="remote-modal-cancel" class="secondary" type="button">Cancel</button>
+            </div>
+          </div>
+
+          <div id="server-panel-local" class="server-modal-panel hidden" role="tabpanel">
+            <form id="local-modal-form" class="server-modal-local-form">
+              <label>
+                Name
+                <input type="text" id="local-modal-name" placeholder="local">
+              </label>
+              <label>
+                Docker socket
+                <input type="text" id="local-modal-socket" placeholder="/var/run/docker.sock">
+              </label>
+              <div class="settings-actions">
+                <button id="local-modal-save" type="submit">Save</button>
+                <button id="local-modal-cancel" class="secondary" type="button">Cancel</button>
+              </div>
+            </form>
           </div>
         </div>
       </div>

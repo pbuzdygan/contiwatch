@@ -14,6 +14,10 @@
 - Server list renders immediately; health/status updates arrive asynchronously.
 - Server name rows now use consistent status/type icons.
 - Status, Settings, and Logs headers/actions moved into the top bar.
+- Servers header and actions moved into the top bar for consistency.
+- Servers filter controls consolidated into a dropdown (All/Active/Maintenance/Offline) with a one-click reset icon.
+- Add server flow unified into a single modal with Local/Remote tabs.
+- Servers view toggle consolidated into a single icon switch (table/cards).
 - Manual refresh buttons for Servers and Status (reachability checks are on-demand).
 - Reachability checks now use `/api/version`; `Last checked` reflects connection checks, not scan time.
 - Added `POST /api/status/refresh` to repopulate remote scan snapshots after controller restarts.
