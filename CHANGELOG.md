@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.1.1
+
+## New features
+- Update API now returns `old_image_id`, `new_image_id`, and `applied_image_id` for troubleshooting.
+
+## Improvements
+- Status cards: Details action now uses an icon button.
+- Update logs now include the old/new/applied image IDs.
+
+## Bug fixes
+- Update action now verifies the recreated container uses the pulled image and retries once using the resolved image ID if needed.
+
 ## v1.1.0
 
 ## New features

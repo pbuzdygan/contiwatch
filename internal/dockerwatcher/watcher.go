@@ -41,13 +41,16 @@ type ContainerStatus struct {
 }
 
 type UpdateResult struct {
-	ID            string `json:"id"`
-	Name          string `json:"name"`
-	Image         string `json:"image"`
-	Updated       bool   `json:"updated"`
-	PreviousState string `json:"previous_state"`
-	CurrentState  string `json:"current_state"`
-	Message       string `json:"message,omitempty"`
+	ID             string `json:"id"`
+	Name           string `json:"name"`
+	Image          string `json:"image"`
+	OldImageID     string `json:"old_image_id,omitempty"`
+	NewImageID     string `json:"new_image_id,omitempty"`
+	AppliedImageID string `json:"applied_image_id,omitempty"`
+	Updated        bool   `json:"updated"`
+	PreviousState  string `json:"previous_state"`
+	CurrentState   string `json:"current_state"`
+	Message        string `json:"message,omitempty"`
 }
 
 // ScanResult describes a full scan for a single server.
@@ -199,9 +202,28 @@ func (w *Watcher) scanContainer(ctx context.Context, item types.Container, cfg c
 			return status
 		}
 
-		if _, err := w.recreateContainer(ctx, inspect, imageRef, wasRunning); err != nil {
+		newContainerID, err := w.recreateContainer(ctx, inspect, imageRef, wasRunning)
+		if err != nil {
 			status.Error = err.Error()
 			return status
+		}
+		if newContainerID != "" && status.NewImageID != "" {
+			if newInspect, err := w.client.ContainerInspect(ctx, newContainerID); err == nil {
+				if newInspect.Image != "" && newInspect.Image != status.NewImageID {
+					// Retry once using the resolved image ID to avoid tag-resolution edge cases.
+					if retryID, retryErr := w.recreateContainer(ctx, newInspect, status.NewImageID, wasRunning); retryErr == nil {
+						if retryInspect, err := w.client.ContainerInspect(ctx, retryID); err == nil && retryInspect.Image == status.NewImageID {
+							newContainerID = retryID
+						} else if retryErr == nil {
+							status.Error = fmt.Sprintf("update applied unexpected image: expected %s got %s", status.NewImageID, retryInspect.Image)
+							return status
+						}
+					} else {
+						status.Error = fmt.Sprintf("update applied unexpected image (expected %s got %s); retry failed: %v", status.NewImageID, newInspect.Image, retryErr)
+						return status
+					}
+				}
+			}
 		}
 		status.Updated = true
 	}
@@ -343,16 +365,21 @@ func (w *Watcher) updateContainer(ctx context.Context, containerID string, cfg c
 		return UpdateResult{}, err
 	}
 
+	oldImageID := inspect.Image
+	newImageID := newImage.ID
 	updateAvailable := newImage.ID != "" && newImage.ID != inspect.Image
 	if !updateAvailable {
 		return UpdateResult{
-			ID:            containerID,
-			Name:          name,
-			Image:         imageRef,
-			Updated:       false,
-			PreviousState: previousState,
-			CurrentState:  previousState,
-			Message:       "no update available",
+			ID:             containerID,
+			Name:           name,
+			Image:          imageRef,
+			OldImageID:     oldImageID,
+			NewImageID:     newImageID,
+			AppliedImageID: oldImageID,
+			Updated:        false,
+			PreviousState:  previousState,
+			CurrentState:   previousState,
+			Message:        "no update available",
 		}, nil
 	}
 
@@ -360,19 +387,45 @@ func (w *Watcher) updateContainer(ctx context.Context, containerID string, cfg c
 	startAfter := wasRunning || forceStart
 	if !wasRunning && !forceStart && !cfg.UpdateStoppedContainers {
 		return UpdateResult{
-			ID:            containerID,
-			Name:          name,
-			Image:         imageRef,
-			Updated:       false,
-			PreviousState: previousState,
-			CurrentState:  previousState,
-			Message:       "skipped: container not running",
+			ID:             containerID,
+			Name:           name,
+			Image:          imageRef,
+			OldImageID:     oldImageID,
+			NewImageID:     newImageID,
+			AppliedImageID: oldImageID,
+			Updated:        false,
+			PreviousState:  previousState,
+			CurrentState:   previousState,
+			Message:        "skipped: container not running",
 		}, nil
 	}
 
 	newContainerID, err := w.recreateContainer(ctx, inspect, imageRef, startAfter)
 	if err != nil {
 		return UpdateResult{}, err
+	}
+
+	appliedImageID := ""
+	if newContainerID != "" {
+		if newInspect, err := w.client.ContainerInspect(ctx, newContainerID); err == nil {
+			appliedImageID = newInspect.Image
+			if newImageID != "" && appliedImageID != "" && appliedImageID != newImageID {
+				// Retry once using the resolved image ID to avoid tag-resolution edge cases.
+				retryID, retryErr := w.recreateContainer(ctx, newInspect, newImageID, startAfter)
+				if retryErr != nil {
+					return UpdateResult{}, fmt.Errorf("updated unexpected image (expected %s got %s); retry failed: %w", newImageID, appliedImageID, retryErr)
+				}
+				retryInspect, err := w.client.ContainerInspect(ctx, retryID)
+				if err != nil {
+					return UpdateResult{}, fmt.Errorf("updated unexpected image (expected %s got %s); retry inspect failed: %w", newImageID, appliedImageID, err)
+				}
+				if retryInspect.Image != newImageID {
+					return UpdateResult{}, fmt.Errorf("updated unexpected image (expected %s got %s); retry still on %s", newImageID, appliedImageID, retryInspect.Image)
+				}
+				newContainerID = retryID
+				appliedImageID = retryInspect.Image
+			}
+		}
 	}
 
 	currentState := "stopped"
@@ -402,13 +455,16 @@ func (w *Watcher) updateContainer(ctx context.Context, containerID string, cfg c
 	}
 
 	return UpdateResult{
-		ID:            newContainerID,
-		Name:          name,
-		Image:         imageRef,
-		Updated:       true,
-		PreviousState: previousState,
-		CurrentState:  currentState,
-		Message:       message,
+		ID:             newContainerID,
+		Name:           name,
+		Image:          imageRef,
+		OldImageID:     oldImageID,
+		NewImageID:     newImageID,
+		AppliedImageID: appliedImageID,
+		Updated:        true,
+		PreviousState:  previousState,
+		CurrentState:   currentState,
+		Message:        message,
 	}, nil
 }
 

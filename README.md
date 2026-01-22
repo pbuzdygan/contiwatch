@@ -112,6 +112,7 @@ docker pull ghcr.io/<owner>/<repo>:dev_<version>
 
 Notes:
 - `POST /api/scan` is a one-off trigger; if a scan is already running it returns `409`.
+- `POST /api/update/{container_id}` returns `old_image_id`, `new_image_id`, and `applied_image_id` to help debug tag/image mismatches.
 - Periodic scans are disabled by default; enable via `scheduler_enabled` in the config (UI).
 - Agent mode exposes a limited API surface (token required).
 
