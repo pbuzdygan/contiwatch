@@ -4,17 +4,22 @@
   <img src="branding/contiwatch_banner.png" alt="CONTIWATCH Banner" width="50%">
 </p>
 
-Minimal Docker image watcher inspired by Watchtower. Scans local containers, checks for new images, optionally recreates containers, and sends Discord webhook notifications.
+**Contiwatch** is minimal Docker image watcher inspired by Watchtower. Scans local containers, checks for new images, optionally recreates containers, and sends Discord webhook notifications.
 
 ## Features
-- Scan local Docker daemon for running containers
-- Remote agent support (token-authenticated)
-- Pull image tags and detect updates
-- Global and per-container policy (`contiwatch.policy` label)
-- Optional update (recreate container) or notify-only
-- Simple HTML UI for status, servers, logs, and settings
-- Server maintenance mode to pause scans and updates per server
-- Discord webhook notifications
+- ✅ Scan local Docker daemon for running containers
+- ✅ Remote agent support (token-authenticated)
+- ✅ Pull image tags and detect updates
+- ✅ Global and per-container policy (`contiwatch.policy` label)
+- ✅ Optional update (recreate container) or notify-only
+- ✅ Simple HTML UI for status, servers, logs, and settings
+- ✅ Server maintenance mode to pause scans and updates per server
+- ✅ Discord webhook notifications
+
+---
+## Demo / Screenshots
+
+### Main UI
 
 ## Policies
 Set on containers via label:
@@ -140,6 +145,14 @@ environment:
   PUID: "${PUID}"
   PGID: "${PGID}"
 ```
+
+## Buy Me a Coffee
+If You like results of my efforts, feel free to show that by supporting me.
+
+[!["Buy Me A Coffee"](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://www.buymeacoffee.com/pbuzdygan)
+<p align="left">
+  <img src="branding/bmc_qr.png" width="25%" alt="BMC QR code">
+</p>
 Use your host user IDs (from `id`).
 
 If you see `permission denied while trying to connect to the Docker daemon socket at unix:///var/run/docker.sock`, ensure the socket is mounted and the container user can access it. Contiwatch tries to detect the socket group ID automatically; if your setup needs it explicitly, set `DOCKER_GID` to the group id of `/var/run/docker.sock` on the host (e.g. from `stat -c '%g' /var/run/docker.sock`).
