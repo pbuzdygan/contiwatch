@@ -145,6 +145,9 @@ environment:
   PUID: "${PUID}"
   PGID: "${PGID}"
 ```
+Use your host user IDs (from `id`).
+
+If you see `permission denied while trying to connect to the Docker daemon socket at unix:///var/run/docker.sock`, ensure the socket is mounted and the container user can access it. Contiwatch tries to detect the socket group ID automatically; if your setup needs it explicitly, set `DOCKER_GID` to the group id of `/var/run/docker.sock` on the host (e.g. from `stat -c '%g' /var/run/docker.sock`).
 
 ## Buy Me a Coffee
 If You like results of my efforts, feel free to show that by supporting me.
@@ -153,6 +156,3 @@ If You like results of my efforts, feel free to show that by supporting me.
 <p align="left">
   <img src="branding/bmc_qr.png" width="25%" alt="BMC QR code">
 </p>
-Use your host user IDs (from `id`).
-
-If you see `permission denied while trying to connect to the Docker daemon socket at unix:///var/run/docker.sock`, ensure the socket is mounted and the container user can access it. Contiwatch tries to detect the socket group ID automatically; if your setup needs it explicitly, set `DOCKER_GID` to the group id of `/var/run/docker.sock` on the host (e.g. from `stat -c '%g' /var/run/docker.sock`).
