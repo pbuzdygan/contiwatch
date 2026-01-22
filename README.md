@@ -1,7 +1,7 @@
 # Contiwatch
 
 <p align="center">
-  <img src="branding/contiwatch_banner.png" alt="CONTIWATCH Banner" width="25%">
+  <img src="branding/contiwatch_banner.png" alt="CONTIWATCH Banner" width="50%">
 </p>
 
 Minimal Docker image watcher inspired by Watchtower. Scans local containers, checks for new images, optionally recreates containers, and sends Discord webhook notifications.
