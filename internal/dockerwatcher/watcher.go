@@ -170,19 +170,23 @@ func (w *Watcher) scanContainer(ctx context.Context, item types.Container, cfg c
 		return status
 	}
 
-	if err := w.pullImage(ctx, imageRef); err != nil {
-		status.Error = err.Error()
+	if digest := digestFromRef(imageRef); digest != "" {
+		status.ImageID = digest
+		status.NewImageID = digest
+		status.UpdateAvailable = false
 		return status
 	}
 
-	newImage, _, err := w.client.ImageInspectWithRaw(ctx, imageRef)
-	if err != nil {
-		status.Error = err.Error()
+	localDigest := w.localImageDigest(ctx, inspect.Image, imageRef)
+	if localDigest != "" {
+		status.ImageID = localDigest
+	}
+	remoteDigest, err := w.remoteImageDigest(ctx, imageRef)
+	if err != nil || remoteDigest == "" || localDigest == "" {
 		return status
 	}
-
-	status.NewImageID = newImage.ID
-	status.UpdateAvailable = newImage.ID != "" && newImage.ID != inspect.Image
+	status.NewImageID = remoteDigest
+	status.UpdateAvailable = remoteDigest != "" && localDigest != "" && remoteDigest != localDigest
 	if !status.UpdateAvailable {
 		return status
 	}
@@ -239,6 +243,53 @@ func (w *Watcher) pullImage(ctx context.Context, imageRef string) error {
 	defer reader.Close()
 	_, _ = io.Copy(io.Discard, reader)
 	return nil
+}
+
+func (w *Watcher) remoteImageDigest(ctx context.Context, imageRef string) (string, error) {
+	inspect, err := w.client.DistributionInspect(ctx, imageRef, "")
+	if err != nil {
+		return "", err
+	}
+	digest := inspect.Descriptor.Digest.String()
+	return digest, nil
+}
+
+func (w *Watcher) localImageDigest(ctx context.Context, imageID, imageRef string) string {
+	inspect, _, err := w.client.ImageInspectWithRaw(ctx, imageID)
+	if err != nil {
+		return ""
+	}
+	repo := imageRepo(imageRef)
+	for _, digestRef := range inspect.RepoDigests {
+		if repo == "" || strings.HasPrefix(digestRef, repo+"@") {
+			if digest := digestFromRef(digestRef); digest != "" {
+				return digest
+			}
+		}
+	}
+	if len(inspect.RepoDigests) > 0 {
+		return digestFromRef(inspect.RepoDigests[0])
+	}
+	return ""
+}
+
+func imageRepo(imageRef string) string {
+	if at := strings.Index(imageRef, "@"); at != -1 {
+		return imageRef[:at]
+	}
+	lastSlash := strings.LastIndex(imageRef, "/")
+	lastColon := strings.LastIndex(imageRef, ":")
+	if lastColon > lastSlash {
+		return imageRef[:lastColon]
+	}
+	return imageRef
+}
+
+func digestFromRef(ref string) string {
+	if at := strings.Index(ref, "@"); at != -1 && at+1 < len(ref) {
+		return ref[at+1:]
+	}
+	return ""
 }
 
 func (w *Watcher) recreateContainer(ctx context.Context, inspect types.ContainerJSON, imageRef string, startAfter bool) (string, error) {
