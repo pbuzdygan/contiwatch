@@ -513,6 +513,7 @@ function buildContainerCard(container, result, canUpdateStopped, variant) {
   const serverKey = serverScopeKey(result);
   const pendingKey = pendingSelfUpdateKey(serverKey, container.name);
   const isPendingSelfUpdate = Boolean(pendingSelfUpdates[pendingKey] && pendingSelfUpdates[pendingKey] > Date.now());
+  const updateStoppedEnabled = Boolean(currentConfig && currentConfig.update_stopped_containers);
   const canUpdate =
     container.update_available &&
     !container.updated &&
@@ -520,6 +521,16 @@ function buildContainerCard(container, result, canUpdateStopped, variant) {
     !currentScanController &&
     !updateInProgress &&
     (container.running || canUpdateStopped) &&
+    !isSelfContainer &&
+    !isPendingSelfUpdate;
+  const blockedByStoppedSetting =
+    container.update_available &&
+    !container.updated &&
+    !container.paused &&
+    !currentScanController &&
+    !updateInProgress &&
+    !container.running &&
+    !updateStoppedEnabled &&
     !isSelfContainer &&
     !isPendingSelfUpdate;
 
@@ -530,7 +541,7 @@ function buildContainerCard(container, result, canUpdateStopped, variant) {
   updateBtn.type = "button";
   updateBtn.className = "btn-small";
   updateBtn.textContent = container.updated ? "Updated" : "Update";
-  updateBtn.disabled = container.updated || !canUpdate;
+  updateBtn.disabled = container.updated || (!canUpdate && !blockedByStoppedSetting);
 
   const infoBtn = document.createElement("button");
   infoBtn.type = "button";
@@ -559,6 +570,12 @@ function buildContainerCard(container, result, canUpdateStopped, variant) {
   infoPanel.textContent = `Current image: ${currentImageID}\nNew image: ${newImageID}`;
 
   updateBtn.addEventListener("click", async () => {
+    if (blockedByStoppedSetting) {
+      showToast(
+        "Cannot update: container is stopped. Enable “Update stopped containers (keep them stopped)” in Settings to update stopped containers."
+      );
+      return;
+    }
     if (updateInProgress || currentScanController || updateBtn.disabled) return;
     updateInProgress = true;
     scanBtn.disabled = true;
@@ -1193,16 +1210,20 @@ function buildServerActions(item) {
   const isMaintenance = Boolean(item.server.maintenance);
   const confirmKey = `${item.type}:${item.server.name}`;
 
-  let isConfirming = false;
+  function makeActionIcon(className) {
+    const icon = document.createElement("span");
+    icon.className = `icon-action ${className}`;
+    icon.setAttribute("aria-hidden", "true");
+    return icon;
+  }
+
   const editBtn = document.createElement("button");
   editBtn.type = "button";
-  editBtn.className = "secondary";
-  editBtn.textContent = "Edit";
+  editBtn.className = "secondary icon-action-btn has-tooltip";
+  editBtn.setAttribute("aria-label", "Edit server");
+  editBtn.setAttribute("data-tooltip", "Edit server");
+  editBtn.appendChild(makeActionIcon("icon-edit"));
   editBtn.addEventListener("click", () => {
-    if (isConfirming) {
-      setConfirming(false);
-      return;
-    }
     if (item.type === "local") {
       openLocalModal("edit", item.server);
     } else {
@@ -1212,33 +1233,37 @@ function buildServerActions(item) {
 
   const maintenanceBtn = document.createElement("button");
   maintenanceBtn.type = "button";
-  maintenanceBtn.className = "secondary";
-  maintenanceBtn.textContent = isMaintenance ? "Resume" : "Maintenance";
+  maintenanceBtn.className = "secondary icon-action-btn has-tooltip";
+  maintenanceBtn.setAttribute("aria-label", isMaintenance ? "End Maintenance" : "Maintenance");
+  maintenanceBtn.setAttribute("data-tooltip", isMaintenance ? "End Maintenance" : "Maintenance");
+  maintenanceBtn.appendChild(makeActionIcon(isMaintenance ? "icon-barrier-block-off" : "icon-barrier-block"));
   maintenanceBtn.addEventListener("click", async () => {
     await toggleMaintenance(item.type, item.server);
   });
 
   const removeBtn = document.createElement("button");
   removeBtn.type = "button";
-  removeBtn.textContent = "Remove";
+  removeBtn.className = "secondary icon-action-btn has-tooltip servers-remove-btn";
+  removeBtn.setAttribute("aria-label", "Remove server");
+  removeBtn.setAttribute("data-tooltip", "Remove server");
+  removeBtn.appendChild(makeActionIcon("icon-trash"));
 
   const confirmBtn = document.createElement("button");
   confirmBtn.type = "button";
-  confirmBtn.textContent = "Confirm";
-  confirmBtn.className = "btn-danger hidden";
+  confirmBtn.className = "btn-danger icon-action-btn has-tooltip hidden servers-confirm-btn";
+  confirmBtn.setAttribute("aria-label", "Confirm remove");
+  confirmBtn.setAttribute("data-tooltip", "Confirm remove");
+  confirmBtn.appendChild(makeActionIcon("icon-trash-x"));
 
   function setConfirming(next) {
-    isConfirming = next;
     if (next) {
       serversRemoveConfirming.add(confirmKey);
       removeBtn.classList.add("hidden");
       confirmBtn.classList.remove("hidden");
-      editBtn.textContent = "Cancel";
     } else {
       serversRemoveConfirming.delete(confirmKey);
       removeBtn.classList.remove("hidden");
       confirmBtn.classList.add("hidden");
-      editBtn.textContent = "Edit";
     }
   }
 
@@ -1248,7 +1273,7 @@ function buildServerActions(item) {
 
   confirmBtn.addEventListener("click", async () => {
     const path = item.type === "local" ? "/api/locals/" : "/api/servers/";
-    serversRemoveConfirming.delete(confirmKey);
+    setConfirming(false);
     await fetchJSON(`${path}${encodeURIComponent(item.server.name)}`, { method: "DELETE" });
     await refreshServers();
     await refreshStatus();
@@ -1593,9 +1618,12 @@ function updateServersFilterButtons() {
     serversFilterSelect.value = mode;
   }
   if (serversFilterResetBtn) {
+    const isAll = mode === "all";
+    serversFilterResetBtn.disabled = isAll;
+    serversFilterResetBtn.setAttribute("aria-label", "Clear filter");
+    serversFilterResetBtn.setAttribute("data-tooltip", "Clear filter");
     const icon = serversFilterResetBtn.querySelector(".icon-action");
     if (icon) {
-      const isAll = mode === "all";
       icon.classList.toggle("icon-filter", isAll);
       icon.classList.toggle("icon-filter-off", !isAll);
     }
@@ -2395,8 +2423,9 @@ scanBtn.addEventListener("click", async () => {
     await refreshStatus();
     return;
   }
+  const wasSelectiveScan = isSelectiveScanEnabled();
   currentScanController = new AbortController();
-  if (isSelectiveScanEnabled() && selectedScanServers.size === 0) {
+  if (wasSelectiveScan && selectedScanServers.size === 0) {
     showToast("Select at least one server to scan.");
     currentScanController = null;
     scanActive = false;
@@ -2406,13 +2435,13 @@ scanBtn.addEventListener("click", async () => {
   scanRequestActive = true;
   setScanningUI(true);
   startScanPolling();
-  const scanTargets = isSelectiveScanEnabled()
+  const scanTargets = wasSelectiveScan
     ? Array.from(selectedScanServers)
     : "all";
   applyOptimisticScanState(scanTargets);
   refreshStatus().catch(() => {});
   try {
-    if (isSelectiveScanEnabled()) {
+    if (wasSelectiveScan) {
       for (const scope of scanTargets) {
         const url = `/api/scan?server=${encodeURIComponent(scope)}`;
         await fetchJSON(url, { method: "POST", signal: currentScanController.signal });
@@ -2430,6 +2459,9 @@ scanBtn.addEventListener("click", async () => {
     currentScanController = null;
     scanRequestActive = false;
     setScanningUI(false);
+    if (wasSelectiveScan) {
+      setSelectiveScanEnabled(false);
+    }
     await refreshStatus();
     await refreshLogs();
   }
@@ -2688,12 +2720,19 @@ async function init() {
 
   if (refreshStatusBtn) {
     refreshStatusBtn.addEventListener("click", async () => {
+      const wasSelectiveScan = isSelectiveScanEnabled();
       showToast("Checking connection…", 2000);
-      await refreshServers();
-      await triggerServersRefresh();
-      await triggerStatusRefresh();
-      await refreshStatus();
-      showToast("Connection checked", 2000);
+      try {
+        await refreshServers();
+        await triggerServersRefresh();
+        await triggerStatusRefresh();
+        await refreshStatus();
+        showToast("Connection checked", 2000);
+      } finally {
+        if (wasSelectiveScan) {
+          setSelectiveScanEnabled(false);
+        }
+      }
     });
   }
 
@@ -2756,6 +2795,23 @@ async function init() {
       closeRemoteModal();
     }
   });
+  document.addEventListener(
+    "click",
+    (event) => {
+      if (serversRemoveConfirming.size === 0) return;
+      const target = event.target;
+      if (target && target.closest && target.closest(".servers-confirm-btn")) return;
+
+      serversRemoveConfirming.clear();
+      document.querySelectorAll(".servers-confirm-btn:not(.hidden)").forEach((btn) => {
+        btn.classList.add("hidden");
+        const actions = btn.closest(".servers-row-actions");
+        const removeBtn = actions ? actions.querySelector(".servers-remove-btn") : null;
+        if (removeBtn) removeBtn.classList.remove("hidden");
+      });
+    },
+    true
+  );
 
   initThemeToggle();
   updateTopbarHeight();

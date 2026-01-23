@@ -7,10 +7,17 @@
 
 ## Improvements
 - Status cards: Details action now uses an icon button.
+- Settings: Renamed “Global policy” to “Global update policy”.
 - Update logs now include the old/new/applied image IDs.
+- Servers: Server actions now use icon buttons (Edit, Maintenance/End Maintenance, Remove/Confirm remove).
+- Servers: Status filter reset icon is disabled when the filter is set to All and shows “Clear filter” tooltip.
+- Servers (table view): Column sizing improved (Address narrower, Status wider) and row content vertically centered.
 
 ## Bug fixes
 - Update action now verifies the recreated container uses the pulled image and retries once using the resolved image ID if needed.
+- Servers: Remove flow no longer changes Edit into Cancel; clicking outside Confirm now cancels the remove confirmation.
+- Status: Selective scan mode now auto-clears after a scan completes or after “Check connection”.
+- Status: When updating a stopped container with “Update stopped containers (keep them stopped)” disabled, UI now shows a clear message explaining how to enable updates.
 
 ## v1.1.0
 
