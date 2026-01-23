@@ -828,10 +828,10 @@ func (s *Server) handleScan(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleUpdateContainer(w http.ResponseWriter, r *http.Request) {
-  if r.Method != http.MethodPost {
-    w.WriteHeader(http.StatusMethodNotAllowed)
-    return
-  }
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
 	containerID := strings.TrimPrefix(r.URL.Path, "/api/update/")
 	if containerID == "" {
 		writeError(w, http.StatusBadRequest, errors.New("container id required"))
@@ -861,11 +861,11 @@ func (s *Server) handleUpdateContainer(w http.ResponseWriter, r *http.Request) {
 			cfg.PruneDanglingImages = false
 		}
 	}
-  serverParam := strings.TrimSpace(r.URL.Query().Get("server"))
-  selfUpdateParam := strings.TrimSpace(r.URL.Query().Get("self_update"))
-  selfUpdate := selfUpdateParam == "1" || strings.EqualFold(selfUpdateParam, "true") || strings.EqualFold(selfUpdateParam, "yes")
-  isRemote := false
-  serverName := serverParam
+	serverParam := strings.TrimSpace(r.URL.Query().Get("server"))
+	selfUpdateParam := strings.TrimSpace(r.URL.Query().Get("self_update"))
+	selfUpdate := selfUpdateParam == "1" || strings.EqualFold(selfUpdateParam, "true") || strings.EqualFold(selfUpdateParam, "yes")
+	isRemote := false
+	serverName := serverParam
 	switch {
 	case strings.HasPrefix(serverParam, "remote:"):
 		isRemote = true
@@ -915,35 +915,35 @@ func (s *Server) handleUpdateContainer(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, result)
 		return
 	}
-  if isRemote {
-    remote, ok := findRemoteServer(cfg.RemoteServers, serverName)
-    if !ok {
-      writeError(w, http.StatusNotFound, errors.New("remote server not found"))
-      return
-    }
+	if isRemote {
+		remote, ok := findRemoteServer(cfg.RemoteServers, serverName)
+		if !ok {
+			writeError(w, http.StatusNotFound, errors.New("remote server not found"))
+			return
+		}
 		if remote.Maintenance {
 			writeError(w, http.StatusConflict, errors.New("server in maintenance"))
 			return
 		}
-    if selfUpdate {
-      result, err = s.updateRemoteSelfUpdate(updateCtx, remote, containerID)
-    } else {
-      result, err = s.updateRemoteContainer(updateCtx, remote, containerID, cfg.PruneDanglingImages)
-    }
-    if err != nil {
-      if isRemoteUpdateDisconnect(err) {
-        msg := "update triggered; agent restarting"
-        if selfUpdate {
-          msg = "self update scheduled; agent restarting"
-        }
-        result = dockerwatcher.UpdateResult{
-          ID:      containerID,
-          Name:    shortID(containerID),
-          Updated: false,
-          Message: msg,
-        }
-        s.addLog("warn", fmt.Sprintf("update connection closed: %s (agent restarting)", containerID))
-      } else {
+		if selfUpdate {
+			result, err = s.updateRemoteSelfUpdate(updateCtx, remote, containerID)
+		} else {
+			result, err = s.updateRemoteContainer(updateCtx, remote, containerID, cfg.PruneDanglingImages)
+		}
+		if err != nil {
+			if isRemoteUpdateDisconnect(err) {
+				msg := "update triggered; agent restarting"
+				if selfUpdate {
+					msg = "self update scheduled; agent restarting"
+				}
+				result = dockerwatcher.UpdateResult{
+					ID:      containerID,
+					Name:    shortID(containerID),
+					Updated: false,
+					Message: msg,
+				}
+				s.addLog("warn", fmt.Sprintf("update connection closed: %s (agent restarting)", containerID))
+			} else {
 				s.addLog("error", fmt.Sprintf("update failed: %s: %v", containerID, err))
 				writeError(w, http.StatusBadGateway, err)
 				return
@@ -981,7 +981,19 @@ func (s *Server) handleUpdateContainer(w http.ResponseWriter, r *http.Request) {
 	if isRemote {
 		serverScope = "remote"
 	}
-	log.Printf("manual update: server=%s (%s) container=%s updated=%t previous=%s current=%s msg=%s", serverLabel, serverScope, result.Name, result.Updated, result.PreviousState, result.CurrentState, result.Message)
+	log.Printf(
+		"manual update: server=%s (%s) container=%s updated=%t previous=%s current=%s image_old=%s image_new=%s image_applied=%s msg=%s",
+		serverLabel,
+		serverScope,
+		result.Name,
+		result.Updated,
+		result.PreviousState,
+		result.CurrentState,
+		shortID(result.OldImageID),
+		shortID(result.NewImageID),
+		shortID(result.AppliedImageID),
+		result.Message,
+	)
 	s.logUpdateResult(cfg, serverLabel, serverScope, result, isRemote)
 
 	s.lastScanMutex.Lock()
@@ -1006,58 +1018,58 @@ func (s *Server) handleUpdateContainer(w http.ResponseWriter, r *http.Request) {
 	s.lastScanMutex.Unlock()
 	go s.saveScanState()
 
-  writeJSON(w, http.StatusOK, result)
+	writeJSON(w, http.StatusOK, result)
 }
 
 func (s *Server) handleSelfUpdate(w http.ResponseWriter, r *http.Request) {
-  if r.Method != http.MethodPost {
-    w.WriteHeader(http.StatusMethodNotAllowed)
-    return
-  }
-  if !s.agentMode {
-    writeError(w, http.StatusBadRequest, errors.New("self update is only supported in agent mode"))
-    return
-  }
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.agentMode {
+		writeError(w, http.StatusBadRequest, errors.New("self update is only supported in agent mode"))
+		return
+	}
 
-  containerID := strings.TrimSpace(r.URL.Query().Get("container"))
-  if containerID == "" && r.Body != nil {
-    var payload struct {
-      ContainerID string `json:"container_id"`
-    }
-    if err := json.NewDecoder(r.Body).Decode(&payload); err == nil {
-      containerID = strings.TrimSpace(payload.ContainerID)
-    }
-  }
-  if containerID == "" {
-    writeError(w, http.StatusBadRequest, errors.New("container id required"))
-    return
-  }
+	containerID := strings.TrimSpace(r.URL.Query().Get("container"))
+	if containerID == "" && r.Body != nil {
+		var payload struct {
+			ContainerID string `json:"container_id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&payload); err == nil {
+			containerID = strings.TrimSpace(payload.ContainerID)
+		}
+	}
+	if containerID == "" {
+		writeError(w, http.StatusBadRequest, errors.New("container id required"))
+		return
+	}
 
-  s.scanMutex.Lock()
-  if s.scanRunning || s.updateRunning {
-    s.scanMutex.Unlock()
-    writeError(w, http.StatusConflict, errors.New("another operation is in progress"))
-    return
-  }
-  s.updateRunning = true
-  s.scanMutex.Unlock()
-  defer func() {
-    s.scanMutex.Lock()
-    s.updateRunning = false
-    s.scanMutex.Unlock()
-  }()
+	s.scanMutex.Lock()
+	if s.scanRunning || s.updateRunning {
+		s.scanMutex.Unlock()
+		writeError(w, http.StatusConflict, errors.New("another operation is in progress"))
+		return
+	}
+	s.updateRunning = true
+	s.scanMutex.Unlock()
+	defer func() {
+		s.scanMutex.Lock()
+		s.updateRunning = false
+		s.scanMutex.Unlock()
+	}()
 
-  updateCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-  defer cancel()
-  if err := s.watcher.TriggerSelfUpdateWithLogs(updateCtx, containerID, func(level, message string) {
-    s.addLog(level, fmt.Sprintf("self-update helper: %s", message))
-  }); err != nil {
-    s.addLog("error", fmt.Sprintf("self update failed: %v", err))
-    writeError(w, http.StatusInternalServerError, err)
-    return
-  }
-  s.addLog("info", fmt.Sprintf("self update scheduled: %s", containerID))
-  writeJSON(w, http.StatusOK, map[string]string{"status": "scheduled"})
+	updateCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	if err := s.watcher.TriggerSelfUpdateWithLogs(updateCtx, containerID, func(level, message string) {
+		s.addLog(level, fmt.Sprintf("self-update helper: %s", message))
+	}); err != nil {
+		s.addLog("error", fmt.Sprintf("self update failed: %v", err))
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	s.addLog("info", fmt.Sprintf("self update scheduled: %s", containerID))
+	writeJSON(w, http.StatusOK, map[string]string{"status": "scheduled"})
 }
 
 func (s *Server) handleAggregate(w http.ResponseWriter, r *http.Request) {
@@ -1358,10 +1370,10 @@ func (s *Server) scanRemoteServer(ctx context.Context, remote config.RemoteServe
 }
 
 func (s *Server) updateRemoteContainer(ctx context.Context, remote config.RemoteServer, containerID string, prune bool) (dockerwatcher.UpdateResult, error) {
-  if remote.URL == "" {
-    return dockerwatcher.UpdateResult{}, errors.New("missing url")
-  }
-  updateURL := strings.TrimSuffix(remote.URL, "/") + "/api/update/" + url.PathEscape(containerID)
+	if remote.URL == "" {
+		return dockerwatcher.UpdateResult{}, errors.New("missing url")
+	}
+	updateURL := strings.TrimSuffix(remote.URL, "/") + "/api/update/" + url.PathEscape(containerID)
 	if prune {
 		updateURL += "?prune=1"
 	}
@@ -1388,49 +1400,49 @@ func (s *Server) updateRemoteContainer(ctx context.Context, remote config.Remote
 		return dockerwatcher.UpdateResult{}, fmt.Errorf("status %d", resp.StatusCode)
 	}
 	var result dockerwatcher.UpdateResult
-  if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-    return dockerwatcher.UpdateResult{}, err
-  }
-  return result, nil
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return dockerwatcher.UpdateResult{}, err
+	}
+	return result, nil
 }
 
 func (s *Server) updateRemoteSelfUpdate(ctx context.Context, remote config.RemoteServer, containerID string) (dockerwatcher.UpdateResult, error) {
-  if remote.URL == "" {
-    return dockerwatcher.UpdateResult{}, errors.New("missing url")
-  }
-  updateURL := strings.TrimSuffix(remote.URL, "/") + "/api/self-update?container=" + url.QueryEscape(containerID)
-  req, err := http.NewRequestWithContext(ctx, http.MethodPost, updateURL, nil)
-  if err != nil {
-    return dockerwatcher.UpdateResult{}, err
-  }
-  if remote.Token != "" {
-    req.Header.Set("Authorization", "Bearer "+remote.Token)
-  }
-  client := &http.Client{Timeout: 60 * time.Second}
-  resp, err := client.Do(req)
-  if err != nil {
-    return dockerwatcher.UpdateResult{}, err
-  }
-  defer resp.Body.Close()
-  if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-    var payload struct {
-      Error string `json:"error"`
-    }
-    if err := json.NewDecoder(resp.Body).Decode(&payload); err == nil && payload.Error != "" {
-      return dockerwatcher.UpdateResult{}, errors.New(payload.Error)
-    }
-    return dockerwatcher.UpdateResult{}, fmt.Errorf("status %d", resp.StatusCode)
-  }
-  return dockerwatcher.UpdateResult{
-    ID:      containerID,
-    Name:    shortID(containerID),
-    Updated: false,
-    Message: "self update scheduled; agent restarting",
-  }, nil
+	if remote.URL == "" {
+		return dockerwatcher.UpdateResult{}, errors.New("missing url")
+	}
+	updateURL := strings.TrimSuffix(remote.URL, "/") + "/api/self-update?container=" + url.QueryEscape(containerID)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, updateURL, nil)
+	if err != nil {
+		return dockerwatcher.UpdateResult{}, err
+	}
+	if remote.Token != "" {
+		req.Header.Set("Authorization", "Bearer "+remote.Token)
+	}
+	client := &http.Client{Timeout: 60 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return dockerwatcher.UpdateResult{}, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		var payload struct {
+			Error string `json:"error"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&payload); err == nil && payload.Error != "" {
+			return dockerwatcher.UpdateResult{}, errors.New(payload.Error)
+		}
+		return dockerwatcher.UpdateResult{}, fmt.Errorf("status %d", resp.StatusCode)
+	}
+	return dockerwatcher.UpdateResult{
+		ID:      containerID,
+		Name:    shortID(containerID),
+		Updated: false,
+		Message: "self update scheduled; agent restarting",
+	}, nil
 }
 
 func isContiwatchImage(image string) bool {
-  return strings.Contains(strings.ToLower(image), "contiwatch")
+	return strings.Contains(strings.ToLower(image), "contiwatch")
 }
 
 func (s *Server) triggerRemoteScans(ctx context.Context, remotes []config.RemoteServer) {
@@ -1623,8 +1635,12 @@ func (s *Server) sendUpdateNotification(cfg config.Config, serverName string, re
 }
 
 func (s *Server) logUpdateResult(cfg config.Config, serverLabel, serverScope string, result dockerwatcher.UpdateResult, isRemote bool) {
+	imageInfo := ""
+	if result.OldImageID != "" || result.NewImageID != "" || result.AppliedImageID != "" {
+		imageInfo = fmt.Sprintf(" [old=%s new=%s applied=%s]", shortID(result.OldImageID), shortID(result.NewImageID), shortID(result.AppliedImageID))
+	}
 	if result.Updated {
-		s.addLog("info", fmt.Sprintf("updated %s (%s → %s) on %s (%s)", result.Name, result.PreviousState, result.CurrentState, serverLabel, serverScope))
+		s.addLog("info", fmt.Sprintf("updated %s (%s → %s) on %s (%s)%s", result.Name, result.PreviousState, result.CurrentState, serverLabel, serverScope, imageInfo))
 		if strings.Contains(result.Message, "prune") {
 			if strings.Contains(result.Message, "prune failed") {
 				s.addLog("error", fmt.Sprintf("prune dangling images failed after update: %s on %s (%s)", result.Name, serverLabel, serverScope))
@@ -1635,7 +1651,7 @@ func (s *Server) logUpdateResult(cfg config.Config, serverLabel, serverScope str
 			s.addLog("warn", fmt.Sprintf("prune not reported by agent: %s on %s (%s)", result.Name, serverLabel, serverScope))
 		}
 	} else {
-		s.addLog("info", fmt.Sprintf("update skipped %s on %s (%s): %s", result.Name, serverLabel, serverScope, result.Message))
+		s.addLog("info", fmt.Sprintf("update skipped %s on %s (%s)%s: %s", result.Name, serverLabel, serverScope, imageInfo, result.Message))
 	}
 	s.sendUpdateNotification(cfg, serverLabel, result)
 }

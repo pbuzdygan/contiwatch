@@ -1110,24 +1110,24 @@ function renderStatus(results) {
     headLeft.appendChild(summary);
     headLeft.appendChild(meta);
 
-    const headRight = document.createElement("div");
-    headRight.className = "status-card-actions";
-    const detailsBtn = document.createElement("button");
-    detailsBtn.type = "button";
-    detailsBtn.className = "secondary btn-small";
-    const serverKey = serverScopeKey(result);
-    if (selectedScanScope === "selective") {
-      detailsBtn.classList.add("server-select-toggle");
-      detailsBtn.setAttribute("aria-pressed", selectedScanServers.has(serverKey) ? "true" : "false");
-      const checkbox = document.createElement("input");
+	    const headRight = document.createElement("div");
+	    headRight.className = "status-card-actions";
+	    const detailsBtn = document.createElement("button");
+	    detailsBtn.type = "button";
+	    detailsBtn.className = "secondary btn-small icon-action-btn has-tooltip";
+	    const serverKey = serverScopeKey(result);
+	    if (selectedScanScope === "selective") {
+	      detailsBtn.classList.add("server-select-toggle");
+	      detailsBtn.setAttribute("aria-pressed", selectedScanServers.has(serverKey) ? "true" : "false");
+	      const checkbox = document.createElement("input");
       checkbox.type = "checkbox";
       checkbox.className = "server-select-checkbox";
       checkbox.checked = selectedScanServers.has(serverKey);
-      checkbox.setAttribute("aria-label", `Select ${result.server_name || "server"}`);
-      const label = document.createElement("span");
-      label.className = "server-select-label";
-      label.textContent = "Details";
-      detailsBtn.append(checkbox, label);
+	      checkbox.setAttribute("aria-label", `Select ${result.server_name || "server"}`);
+	      const label = document.createElement("span");
+	      label.className = "server-select-label";
+	      label.textContent = "Details";
+	      detailsBtn.append(checkbox, label);
       const setChecked = (checked) => {
         if (checked) {
           selectedScanServers.add(serverKey);
@@ -1148,14 +1148,19 @@ function renderStatus(results) {
       checkbox.addEventListener("change", () => {
         setChecked(checkbox.checked);
       });
-      detailsBtn.disabled = updateInProgress || scanActive || isMaintenance;
-    } else {
-      detailsBtn.textContent = "Details";
-      detailsBtn.addEventListener("click", () => {
-        openDetailsModal(result, canUpdateStopped);
-      });
-      detailsBtn.disabled = updateInProgress || scanActive;
-    }
+	      detailsBtn.disabled = updateInProgress || scanActive || isMaintenance;
+	    } else {
+	      detailsBtn.setAttribute("aria-label", "Details");
+	      detailsBtn.setAttribute("data-tooltip", "Details");
+	      const icon = document.createElement("span");
+	      icon.className = "icon-action icon-details";
+	      icon.setAttribute("aria-hidden", "true");
+	      detailsBtn.appendChild(icon);
+	      detailsBtn.addEventListener("click", () => {
+	        openDetailsModal(result, canUpdateStopped);
+	      });
+	      detailsBtn.disabled = updateInProgress || scanActive;
+	    }
     headRight.appendChild(detailsBtn);
 
     head.appendChild(headLeft);

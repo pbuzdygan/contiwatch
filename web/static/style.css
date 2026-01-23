@@ -1613,6 +1613,11 @@ input::placeholder {
   mask-image: url("/icons/ui/plus.svg");
 }
 
+.icon-details {
+  -webkit-mask-image: url("/icons/ui/list-details.svg");
+  mask-image: url("/icons/ui/list-details.svg");
+}
+
 .servers-view-toggle-btn[data-mode="table"] .servers-view-icon {
   -webkit-mask-image: url("/icons/ui/table.svg");
   mask-image: url("/icons/ui/table.svg");
