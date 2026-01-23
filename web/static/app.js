@@ -572,7 +572,7 @@ function buildContainerCard(container, result, canUpdateStopped, variant) {
   updateBtn.addEventListener("click", async () => {
     if (blockedByStoppedSetting) {
       showToast(
-        "Cannot update: container is stopped. Enable “Update stopped containers (keep them stopped)” in Settings to update stopped containers."
+        "Cannot update: container is stopped. Change settings to update stopped containers."
       );
       return;
     }
