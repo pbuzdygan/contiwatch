@@ -567,7 +567,11 @@ function buildContainerCard(container, result, canUpdateStopped, variant) {
   infoPanel.className = "info-panel hidden";
   const currentImageID = container.image_id || "unknown";
   const newImageID = container.new_image_id || "unknown";
-  infoPanel.textContent = `Current image: ${currentImageID}\nNew image: ${newImageID}`;
+  let infoText = `Current image: ${currentImageID}\nNew image: ${newImageID}`;
+  if (container.error && String(container.error).startsWith("skipped: digest unknown")) {
+    infoText += "\nSkipped: digest unknown (registry/local digest unavailable).";
+  }
+  infoPanel.textContent = infoText;
 
   updateBtn.addEventListener("click", async () => {
     if (blockedByStoppedSetting) {
