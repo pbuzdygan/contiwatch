@@ -182,8 +182,16 @@ func (w *Watcher) scanContainer(ctx context.Context, item types.Container, cfg c
 		status.ImageID = localDigest
 	}
 	remoteDigest, err := w.remoteImageDigest(ctx, imageRef)
-	if err != nil || remoteDigest == "" || localDigest == "" {
-		status.Error = "skipped: digest unknown (registry or local digest unavailable)"
+	if err != nil {
+		status.Error = fmt.Sprintf("skipped: digest unknown (registry error: %v)", err)
+		return status
+	}
+	if localDigest == "" {
+		status.Error = "skipped: digest unknown (local digest unavailable)"
+		return status
+	}
+	if remoteDigest == "" {
+		status.Error = "skipped: digest unknown (registry digest unavailable)"
 		return status
 	}
 	status.NewImageID = remoteDigest

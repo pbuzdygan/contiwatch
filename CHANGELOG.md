@@ -12,12 +12,15 @@
 - Servers: Server actions now use icon buttons (Edit, Maintenance/End Maintenance, Remove/Confirm remove).
 - Servers: Status filter reset icon is disabled when the filter is set to All and shows “Clear filter” tooltip.
 - Servers (table view): Column sizing improved (Address narrower, Status wider) and row content vertically centered.
+- Status: Update checks no longer pull images; they compare registry vs local digest and keep pulls for updates only.
+- Logs: Scan now reports “digest unknown”/registry digest issues in API logs for easier troubleshooting.
 
 ## Bug fixes
 - Update action now verifies the recreated container uses the pulled image and retries once using the resolved image ID if needed.
 - Servers: Remove flow no longer changes Edit into Cancel; clicking outside Confirm now cancels the remove confirmation.
 - Status: Selective scan mode now auto-clears after a scan completes or after “Check connection”.
 - Status: When updating a stopped container with “Update stopped containers (keep them stopped)” disabled, UI now shows a clear message explaining how to enable updates.
+- Status: Unknown digest checks are marked as skipped with a short explanation in Details → Info.
 
 ## v1.1.0
 

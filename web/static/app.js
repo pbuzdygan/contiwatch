@@ -569,7 +569,16 @@ function buildContainerCard(container, result, canUpdateStopped, variant) {
   const newImageID = container.new_image_id || "unknown";
   let infoText = `Current image: ${currentImageID}\nNew image: ${newImageID}`;
   if (container.error && String(container.error).startsWith("skipped: digest unknown")) {
-    infoText += "\nSkipped: digest unknown (registry/local digest unavailable).";
+    const errText = String(container.error);
+    let reason = "registry/local digest unavailable";
+    if (errText.includes("local digest unavailable")) {
+      reason = "local digest unavailable";
+    } else if (errText.includes("registry digest unavailable")) {
+      reason = "registry digest unavailable";
+    } else if (errText.includes("registry error")) {
+      reason = "registry error";
+    }
+    infoText += `\nSkipped: digest unknown (${reason}).`;
   }
   infoPanel.textContent = infoText;
 

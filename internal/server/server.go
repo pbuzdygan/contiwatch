@@ -746,6 +746,7 @@ func (s *Server) handleScan(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.addLog("info", fmt.Sprintf("local scan finished: %s %s", local.Name, s.formatScanSummary(result)))
+		s.logDigestUnknown(result)
 		if !s.agentMode {
 			updatedResult, _, err := s.autoUpdateLocal(ctx, cfg, local, result)
 			if err != nil {
@@ -805,6 +806,7 @@ func (s *Server) handleScan(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		s.addLog("info", fmt.Sprintf("remote scan finished: %s %s", remote.Name, s.formatScanSummary(result)))
+		s.logDigestUnknown(result)
 		s.sendScanNotification(cfg, result)
 		if _, err := s.autoUpdateRemote(ctx, cfg, remote, result); err != nil {
 			if ctx.Err() != nil {
@@ -1154,6 +1156,7 @@ func (s *Server) runScan(ctx context.Context) (dockerwatcher.ScanResult, error) 
 				continue
 			}
 			s.addLog("info", fmt.Sprintf("local scan finished: %s %s", local.Name, s.formatScanSummary(result)))
+			s.logDigestUnknown(result)
 			if !s.agentMode {
 				updatedResult, _, err := s.autoUpdateLocal(ctx, cfg, local, result)
 				if err != nil {
@@ -1491,6 +1494,7 @@ func (s *Server) triggerRemoteScans(ctx context.Context, remotes []config.Remote
 			continue
 		}
 		s.addLog("info", fmt.Sprintf("remote scan finished: %s %s", remote.Name, s.formatScanSummary(result)))
+		s.logDigestUnknown(result)
 		s.updateLastScans(result)
 		s.sendScanNotification(cfg, result)
 		if _, err := s.autoUpdateRemote(ctx, cfg, remote, result); err != nil {
@@ -1524,6 +1528,27 @@ func (s *Server) formatScanSummary(result dockerwatcher.ScanResult) string {
 		summary.skipped,
 		summary.updated,
 	)
+}
+
+func (s *Server) logDigestUnknown(result dockerwatcher.ScanResult) {
+	for _, container := range result.Containers {
+		if !strings.HasPrefix(container.Error, "skipped: digest unknown") {
+			continue
+		}
+		serverLabel := result.ServerName
+		if serverLabel == "" {
+			if result.Local {
+				serverLabel = "local"
+			} else {
+				serverLabel = "remote"
+			}
+		}
+		scope := "remote"
+		if result.Local {
+			scope = "local"
+		}
+		s.addLog("warn", fmt.Sprintf("digest unknown: %s on %s (%s): %s", container.Name, serverLabel, scope, container.Error))
+	}
 }
 
 type scanSummary struct {
