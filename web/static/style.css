@@ -2271,19 +2271,34 @@ input::placeholder {
     align-items: stretch;
   }
 
+  .settings-row.policy-row {
+    flex-direction: row;
+    align-items: center;
+  }
+
+  .settings-row.policy-row select {
+    min-width: 0;
+  }
+
   .settings-row .info-icon-btn {
     margin-top: 0;
     align-self: flex-start;
   }
 
+  .settings-row.policy-row .info-icon-btn {
+    margin-top: 0;
+    align-self: center;
+  }
+
   .interval-actions {
     width: 100%;
-    flex-direction: column;
-    align-items: stretch;
+    flex-direction: row;
+    align-items: center;
   }
 
   .interval-actions input {
-    width: 100%;
+    width: auto;
+    flex: 1;
   }
 
   .settings-actions {
@@ -2443,6 +2458,30 @@ input::placeholder {
   gap: var(--s-2);
 }
 
+.settings-row.policy-row {
+  align-items: center;
+}
+
+.settings-row.policy-row .settings-row-label {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--s-2);
+}
+
+.settings-row.policy-row .settings-label-title {
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  font-size: inherit;
+  line-height: 1.2;
+}
+
+.settings-row.policy-row select {
+  width: 100%;
+  min-width: 0;
+}
+
 .settings-row-label {
   display: flex;
   flex-direction: column;
@@ -2452,6 +2491,18 @@ input::placeholder {
 
 .settings-row .info-icon-btn {
   margin-top: 4px;
+}
+
+.settings-row.policy-row .info-icon-btn {
+  width: 18px;
+  height: 18px;
+  margin-top: 0;
+  align-self: center;
+}
+
+.settings-row.policy-row .info-icon-btn svg {
+  width: 18px;
+  height: 18px;
 }
 
 .info-icon-btn {
