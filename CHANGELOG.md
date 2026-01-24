@@ -6,11 +6,7 @@
 
 ## Improvements
 - Mobile and responsive view: improvements and adjustments. Now mobile view is usable.
-- UI: further icons implementations and small fixes.
-- Settings: moved Default policy controls into General and aligned them inline with the info icon.
-- Settings: renamed “Default policy” to “Default update policy” and moved the dropdown below the label.
-- Mobile: scan interval input and save button are now on one line.
-- Settings: aligned info icon with “Default update policy” text and adjusted icon size for consistency.
+- UI: further icons implementations and UI ergonomy fixes.
 
 ## Bug fixes
 
