@@ -161,6 +161,17 @@ textarea {
   min-width: 0;
 }
 
+.topbar-brand {
+  display: none;
+  align-items: center;
+}
+
+.topbar-logo {
+  display: block;
+  width: 40px;
+  height: auto;
+}
+
 .topbar-right {
   display: inline-flex;
   align-items: center;
@@ -221,6 +232,11 @@ body {
 .sidebar-header {
   display: block;
   margin-bottom: var(--s-2);
+}
+
+.sidebar-brand {
+  display: block;
+  width: 100%;
 }
 
 .sidebar-banner {
@@ -290,6 +306,8 @@ body {
   height: var(--control-h);
   border-radius: var(--r-control);
   padding: 0 10px;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
 }
 
 .sidebar-link .sidebar-icon {
@@ -299,19 +317,53 @@ body {
   flex-shrink: 0;
 }
 
+.sidebar-label {
+  display: inline-flex;
+  align-items: center;
+}
+
 .sidebar-link:hover {
   background: var(--row-hover);
   border-color: color-mix(in srgb, var(--color-primary), transparent 75%);
 }
 
-.sidebar-link:focus-visible {
-  outline: none;
-  box-shadow: var(--focus-ring);
+.sidebar-link:active {
+  background: color-mix(in srgb, var(--color-primary), transparent 86%);
+  border-color: color-mix(in srgb, var(--color-primary), transparent 70%);
+}
+
+.sidebar-link.active:active {
+  background: color-mix(in srgb, var(--color-primary), transparent 82%);
+  border-color: color-mix(in srgb, var(--color-primary), transparent 55%);
 }
 
 .sidebar-link.active {
   background: color-mix(in srgb, var(--color-primary), transparent 88%);
   border-color: color-mix(in srgb, var(--color-primary), transparent 60%);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .sidebar-link:focus-visible {
+    outline: none;
+    box-shadow: var(--focus-ring);
+  }
+}
+
+@media (hover: none) {
+  .sidebar-link {
+    transition: none;
+  }
+
+  .sidebar-link:hover {
+    background: transparent;
+    border-color: transparent;
+  }
+
+  /* Touch devices: rely on the persistent "active" state instead of hover/focus visuals. */
+  .sidebar-link.active {
+    background: color-mix(in srgb, var(--color-primary), transparent 82%);
+    border-color: color-mix(in srgb, var(--color-primary), transparent 45%);
+  }
 }
 
 section {
@@ -1483,7 +1535,7 @@ input::placeholder {
   box-shadow: var(--shadow-card);
   font-size: 0.9rem;
   max-width: 420px;
-  min-width: 420px;
+  min-width: 0;
 }
 
 .toast-top {
@@ -1591,6 +1643,16 @@ input::placeholder {
 .icon-refresh-dot {
   -webkit-mask-image: url("/icons/ui/refresh-dot.svg");
   mask-image: url("/icons/ui/refresh-dot.svg");
+}
+
+.icon-reload {
+  -webkit-mask-image: url("/icons/ui/reload.svg");
+  mask-image: url("/icons/ui/reload.svg");
+}
+
+.icon-clear-all {
+  -webkit-mask-image: url("/icons/ui/clear-all.svg");
+  mask-image: url("/icons/ui/clear-all.svg");
 }
 
 .icon-stop {
@@ -1945,17 +2007,123 @@ input::placeholder {
 }
 
 @media (max-width: 720px) {
+  body {
+    overflow: hidden;
+    /* Prevent scroll anchoring from keeping the old scroll position between views. */
+    overflow-anchor: none;
+  }
+
+  .topbar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 80;
+    transition: transform 180ms ease;
+  }
+
   #status {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  #status > * {
+    min-width: 0;
+  }
+
+  .server-card {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .status-card-name,
+  .status-card-title,
+  .status-card-meta {
+    min-width: 0;
+  }
+
+  .status-card-title {
+    flex-wrap: wrap;
+  }
+
+  .status-card-meta {
+    word-break: break-word;
   }
 
   .servers-grid {
     grid-template-columns: 1fr;
   }
 
+  .servers-cards {
+    grid-template-columns: 1fr;
+  }
+
+  .topbar-left,
+  .topbar-right {
+    width: 100%;
+  }
+
   .topbar {
-    flex-direction: column;
-    align-items: flex-start;
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    grid-template-areas:
+      "logo title right"
+      "actions actions actions";
+    align-items: center;
+    padding: var(--s-3);
+    gap: var(--s-2);
+  }
+
+  .topbar-left {
+    display: contents;
+  }
+
+  .topbar-brand {
+    display: flex;
+    grid-area: logo;
+  }
+
+  .topbar-status {
+    display: contents;
+  }
+
+  .topbar-status h2 {
+    grid-area: title;
+    margin: 0;
+  }
+
+  .topbar-status .actions,
+  .topbar-status .logs-toolbar {
+    grid-area: actions;
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .topbar-right {
+    grid-area: right;
+    justify-self: end;
+    align-self: center;
+    width: auto;
+  }
+
+  .topbar-right {
+    position: relative;
+  }
+
+  /* Toasts should not reflow the header on mobile. */
+  #toast.toast-top {
+    position: absolute;
+    right: calc(var(--control-h) + var(--s-2));
+    top: 50%;
+    transform: translateY(-50%);
+    margin: 0;
+    padding: 6px 10px;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    max-width: min(320px, calc(100vw - 2 * var(--s-3) - var(--control-h) - var(--s-2)));
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    pointer-events: none;
   }
 
   .settings-grid {
@@ -1976,16 +2144,200 @@ input::placeholder {
   }
 
   .sidebar {
-    position: static;
+    position: fixed;
+    top: var(--topbar-h, 0px);
+    left: 0;
+    right: 0;
     width: auto;
     height: auto;
     border-right: none;
     border-bottom: 1px solid var(--color-border);
+    padding: var(--s-2);
+    gap: var(--s-1);
+    z-index: 70;
+    transition: transform 180ms ease;
+  }
+
+  .sidebar-header {
+    display: none;
+  }
+
+  .sidebar-banner {
+    width: auto;
+    max-height: 64px;
+  }
+
+  .sidebar-nav {
+    flex-direction: row;
+    gap: var(--s-1);
+  }
+
+  .sidebar-link {
+    flex: 1 1 0;
+    justify-content: center;
+    padding: 0;
+    position: relative;
+  }
+
+  .sidebar-icon {
+    width: 20px;
+    height: 20px;
+  }
+
+  .sidebar-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  .servers-topbar-actions {
+    gap: var(--s-2);
+  }
+
+  .servers-filter-select select {
+    min-width: 110px;
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+
+  .servers-table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    width: 100%;
+    max-width: 100%;
+    display: block;
+    overscroll-behavior-x: contain;
+  }
+
+  .servers-table {
+    min-width: 600px;
+    table-layout: auto;
+  }
+
+  .servers-table th,
+  .servers-table td {
+    padding: var(--s-2);
+    font-size: 0.78rem;
+  }
+
+  .servers-table th {
+    font-size: 0.68rem;
+  }
+
+  .servers-table td {
+    font-size: 0.8rem;
+  }
+
+  .servers-table th:nth-child(2),
+  .servers-table td:nth-child(2),
+  .servers-table th:nth-child(3),
+  .servers-table td:nth-child(3),
+  .servers-table th:nth-child(4),
+  .servers-table td:nth-child(4),
+  .servers-table th:nth-child(5),
+  .servers-table td:nth-child(5) {
+    width: auto;
+  }
+
+  .settings-grid {
+    gap: var(--s-3);
+    grid-template-columns: 1fr;
+    width: 100%;
+  }
+
+  .settings-card {
+    padding: var(--s-3);
+    gap: var(--s-2);
+    width: 100%;
+    grid-column: 1 / -1;
+  }
+
+  .settings-title {
+    font-size: 0.95rem;
+  }
+
+  .settings-card label {
+    font-size: 0.85rem;
+  }
+
+  .settings-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .settings-row .info-icon-btn {
+    margin-top: 0;
+    align-self: flex-start;
+  }
+
+  .interval-actions {
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .interval-actions input {
+    width: 100%;
+  }
+
+  .settings-actions {
+    width: 100%;
+  }
+
+  .settings-actions button {
+    width: 100%;
   }
 
   main {
-    padding-top: var(--s-3);
+    height: 100dvh;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding-top: calc(var(--mobile-nav-h, 0px) + var(--s-3));
+    padding-bottom: var(--s-4);
+    overscroll-behavior: contain;
+    overflow-anchor: none;
   }
+
+  /* Modals: make Add/Edit Server usable on small screens. */
+  .modal {
+    align-items: stretch;
+    justify-content: stretch;
+    padding: 0;
+  }
+
+  .modal-card {
+    width: 100%;
+    height: 100dvh;
+    max-height: 100dvh;
+    border-radius: 0;
+    padding: var(--s-3);
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+  }
+
+  .modal-header {
+    flex-wrap: wrap;
+  }
+
+  .modal-tabs {
+    width: 100%;
+  }
+
+  .server-wizard-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .server-compose {
+    max-height: 180px;
+    font-size: 0.75rem;
+  }
+
 }
 .toggle-row {
   display: grid;

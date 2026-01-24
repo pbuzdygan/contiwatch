@@ -1,5 +1,15 @@
 # Changelog
 
+## v1.1.2
+
+## New features
+
+## Improvements
+- Mobile and responsive view: improvements and adjustments. Now mobile view is usable.
+- UI: further icons implementations and small fixes.
+
+## Bug fixes
+
 ## v1.1.1
 
 ## New features
