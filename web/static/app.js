@@ -1246,7 +1246,9 @@ function buildServerActions(item) {
 
   const maintenanceBtn = document.createElement("button");
   maintenanceBtn.type = "button";
-  maintenanceBtn.className = "secondary icon-action-btn has-tooltip";
+  maintenanceBtn.className = isMaintenance
+    ? "btn-warning icon-action-btn has-tooltip"
+    : "secondary icon-action-btn has-tooltip";
   maintenanceBtn.setAttribute("aria-label", isMaintenance ? "End Maintenance" : "Maintenance");
   maintenanceBtn.setAttribute("data-tooltip", isMaintenance ? "End Maintenance" : "Maintenance");
   maintenanceBtn.appendChild(makeActionIcon(isMaintenance ? "icon-barrier-block-off" : "icon-barrier-block"));
@@ -2266,6 +2268,8 @@ function showToast(message, timeoutMs = 8000) {
 }
 
 let tooltipTarget = null;
+const tooltipHoverQuery = window.matchMedia("(hover: hover) and (pointer: fine)");
+const coarsePointerQuery = window.matchMedia("(pointer: coarse)");
 
 function showTooltip(target) {
   if (target && target.dataset && target.dataset.tooltipScheduler === "true") {
@@ -2324,6 +2328,7 @@ function hideTooltip() {
 }
 
 document.addEventListener("mouseover", (event) => {
+  if (!tooltipHoverQuery.matches) return;
   const target = event.target.closest?.(".has-tooltip");
   if (!target) return;
   if (tooltipTarget === target) return;
@@ -2332,22 +2337,28 @@ document.addEventListener("mouseover", (event) => {
 });
 
 document.addEventListener("mouseout", (event) => {
+  if (!tooltipHoverQuery.matches) return;
   if (!tooltipTarget) return;
   if (event.relatedTarget && tooltipTarget.contains(event.relatedTarget)) return;
   hideTooltip();
 });
 
-window.addEventListener("scroll", () => {
-  if (tooltipTarget) {
-    showTooltip(tooltipTarget);
-  }
-}, { passive: true });
+window.addEventListener(
+  "scroll",
+  () => {
+    if (tooltipTarget && tooltipHoverQuery.matches) {
+      showTooltip(tooltipTarget);
+    }
+  },
+  { passive: true }
+);
 
 window.addEventListener("resize", () => {
-  if (tooltipTarget) {
+  if (tooltipTarget && tooltipHoverQuery.matches) {
     showTooltip(tooltipTarget);
   }
   updateTopbarHeight();
+  updateMobileNavHeight();
 });
 
 function refreshViewData(view) {
@@ -2364,6 +2375,26 @@ function updateTopbarHeight() {
   const height = topbarEl.getBoundingClientRect().height;
   document.documentElement.style.setProperty("--topbar-h", `${Math.ceil(height)}px`);
 }
+
+const mobileNavQuery = window.matchMedia("(max-width: 720px)");
+let mobileNavHeight = 0;
+
+function updateMobileNavHeight() {
+  if (!topbarEl || !sidebar) return;
+  if (!mobileNavQuery.matches) {
+    document.documentElement.style.removeProperty("--mobile-nav-h");
+    return;
+  }
+  const topbarHeight = topbarEl.getBoundingClientRect().height;
+  const sidebarHeight = sidebar.getBoundingClientRect().height;
+  mobileNavHeight = Math.ceil(topbarHeight + sidebarHeight);
+  document.documentElement.style.setProperty("--mobile-nav-h", `${mobileNavHeight}px`);
+  updateTopbarHeight();
+}
+
+mobileNavQuery.addEventListener("change", () => {
+  updateMobileNavHeight();
+});
 
 function setView(nextView) {
   currentView = nextView;
@@ -2384,6 +2415,28 @@ function setView(nextView) {
     topbarLogsEl.classList.toggle("hidden", nextView !== "logs");
   }
   updateTopbarHeight();
+  updateMobileNavHeight();
+
+  // Mobile UX: each view should start at the top instead of carrying over the
+  // scroll position from the previous view.
+  if (mobileNavQuery.matches) {
+    hideTooltip();
+    // Depending on the browser, the scroll container can be the window or `main`,
+    // and scroll anchoring can nudge the viewport after content visibility changes.
+    // Reset both to ensure we always start from the top.
+    const resetScroll = () => {
+      const mainEl = document.querySelector("main");
+      if (mainEl) {
+        mainEl.scrollTop = 0;
+      } else {
+        window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+        document.documentElement.scrollTop = 0;
+        document.body.scrollTop = 0;
+      }
+    };
+    resetScroll();
+    requestAnimationFrame(resetScroll);
+  }
 
   sidebar.querySelectorAll("[data-view]").forEach((btn) => {
     btn.classList.toggle("active", btn.getAttribute("data-view") === nextView);
@@ -2764,6 +2817,11 @@ async function init() {
       if (nextView) {
         setView(nextView);
       }
+      // On touch devices, keep taps from leaving a "stuck" focused nav button,
+      // which can look like a hover/active highlight.
+      if (coarsePointerQuery.matches && btn && typeof btn.blur === "function") {
+        btn.blur();
+      }
     });
   });
 
@@ -2828,6 +2886,7 @@ async function init() {
 
   initThemeToggle();
   updateTopbarHeight();
+  updateMobileNavHeight();
   const storedServersView = localStorage.getItem(serversViewStorageKey);
   if (storedServersView === "cards" || storedServersView === "table") {
     serversViewMode = storedServersView;
