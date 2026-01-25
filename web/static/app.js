@@ -21,6 +21,10 @@ const discordUpdateDetectedInput = document.getElementById("discord-update-detec
 const discordContainerUpdatedInput = document.getElementById("discord-container-updated");
 const updateStoppedInput = document.getElementById("update-stopped");
 const pruneDanglingInput = document.getElementById("prune-dangling");
+const expContainersInput = document.getElementById("exp-containers");
+const expStacksInput = document.getElementById("exp-stacks");
+const expImagesInput = document.getElementById("exp-images");
+const expOperationsInput = document.getElementById("exp-operations");
 const addServerBtn = document.getElementById("add-server");
 const refreshServersBtn = document.getElementById("refresh-servers");
 const serversTableWrap = document.getElementById("servers-table-wrap");
@@ -57,12 +61,24 @@ const themeLabel = document.getElementById("theme-label");
 const topbarEl = document.querySelector(".topbar");
 const topbarStatusEl = document.getElementById("topbar-status");
 const topbarSettingsEl = document.getElementById("topbar-settings");
+const topbarContainersEl = document.getElementById("topbar-containers");
 const topbarServersEl = document.getElementById("topbar-servers");
 const topbarLogsEl = document.getElementById("topbar-logs");
 const viewStatusEl = document.getElementById("view-status");
 const viewSettingsEl = document.getElementById("view-settings");
+const viewContainersEl = document.getElementById("view-containers");
+const viewStacksEl = document.getElementById("view-stacks");
+const viewImagesEl = document.getElementById("view-images");
+const viewOperationsEl = document.getElementById("view-operations");
 const viewServersEl = document.getElementById("view-servers");
 const viewLogsEl = document.getElementById("view-logs");
+const containersServerSelect = document.getElementById("containers-server-select");
+const containersSortSelect = document.getElementById("containers-sort");
+const containersRefreshBtn = document.getElementById("containers-refresh");
+const containersTableBody = document.getElementById("containers-body");
+const containersStatusEl = document.getElementById("containers-status");
+const containersEmptyEl = document.getElementById("containers-empty");
+const containersCountEl = document.getElementById("containers-count");
 const refreshLogsBtn = document.getElementById("refresh-logs");
 const clearLogsBtn = document.getElementById("clear-logs");
 const logsLevelSelect = document.getElementById("logs-level");
@@ -111,6 +127,11 @@ let checkingStartMsByServerKey = {};
 let checkingDebounceTimersByServerKey = {};
 let pendingSelfUpdates = {};
 let pendingSelfUpdateTimers = {};
+let containersSelectedScope = "";
+let containersSortMode = "name:asc";
+let containersRefreshTimer = null;
+let containersUpdateInProgress = false;
+let containersCache = new Map();
 
 function pendingSelfUpdateKey(serverKey, containerName) {
   return `${serverKey}::${containerName}`;
@@ -1612,6 +1633,17 @@ function normalizeQuery(value) {
 function applySidebarFilter(queryOverride) {
   if (!sidebarSearch) return;
   const query = normalizeQuery(queryOverride ?? sidebarSearch.value);
+  if (currentView === "containers") {
+    const rows = Array.from(containersTableBody ? containersTableBody.querySelectorAll("tr") : []);
+    rows.forEach((row) => {
+      const source = row.dataset && row.dataset.search ? row.dataset.search : row.textContent;
+      const haystack = normalizeQuery(source);
+      const match = !query || haystack.includes(query);
+      row.classList.toggle("filtered-out", !match);
+    });
+    updateContainersCount();
+    return;
+  }
   if (currentView === "servers") {
     serversSearchQuery = query;
     renderServers(cachedLocals, cachedRemotes);
@@ -1625,6 +1657,38 @@ function applySidebarFilter(queryOverride) {
     const match = !query || haystack.includes(query);
     el.classList.toggle("filtered-out", !match);
   });
+}
+
+function applyExperimentalFeatures(cfg) {
+  const exp = cfg && cfg.experimental_features ? cfg.experimental_features : {};
+  const flags = {
+    containers: Boolean(exp.containers),
+    stacks: Boolean(exp.stacks),
+    images: Boolean(exp.images),
+    operations: Boolean(exp.operations),
+  };
+  if (sidebar) {
+    sidebar.querySelectorAll(".experimental-link").forEach((btn) => {
+      const view = btn.getAttribute("data-view");
+      const enabled = Boolean(flags[view]);
+      btn.classList.toggle("hidden", !enabled);
+    });
+  }
+  if (flags.containers) {
+    updateContainersServerOptions();
+  }
+  if (viewContainersEl && !flags.containers) viewContainersEl.classList.add("hidden");
+  if (viewStacksEl && !flags.stacks) viewStacksEl.classList.add("hidden");
+  if (viewImagesEl && !flags.images) viewImagesEl.classList.add("hidden");
+  if (viewOperationsEl && !flags.operations) viewOperationsEl.classList.add("hidden");
+  if (currentView && !flags[currentView] && ["containers", "stacks", "images", "operations"].includes(currentView)) {
+    setView("status");
+  }
+}
+
+function isExperimentalEnabled(view) {
+  const exp = currentConfig && currentConfig.experimental_features ? currentConfig.experimental_features : {};
+  return Boolean(exp && exp[view]);
 }
 
 function updateServersFilterButtons() {
@@ -1797,6 +1861,12 @@ async function refreshConfig() {
   }
   updateStoppedInput.checked = Boolean(cfg.update_stopped_containers);
   pruneDanglingInput.checked = Boolean(cfg.prune_dangling_images);
+  const exp = cfg.experimental_features || {};
+  if (expContainersInput) expContainersInput.checked = Boolean(exp.containers);
+  if (expStacksInput) expStacksInput.checked = Boolean(exp.stacks);
+  if (expImagesInput) expImagesInput.checked = Boolean(exp.images);
+  if (expOperationsInput) expOperationsInput.checked = Boolean(exp.operations);
+  applyExperimentalFeatures(cfg);
   const enabled = Boolean(cfg.scheduler_enabled);
   const intervalSec = Number(cfg.scan_interval_sec);
   const enableChanged = lastSchedulerEnabled === null ? false : enabled !== lastSchedulerEnabled;
@@ -1869,6 +1939,12 @@ function buildConfigPayload(options = {}) {
     discord_notify_on_container_updated: discordContainerUpdatedInput ? discordContainerUpdatedInput.checked : true,
     update_stopped_containers: updateStoppedInput.checked,
     prune_dangling_images: pruneDanglingInput.checked,
+    experimental_features: {
+      containers: expContainersInput ? expContainersInput.checked : false,
+      stacks: expStacksInput ? expStacksInput.checked : false,
+      images: expImagesInput ? expImagesInput.checked : false,
+      operations: expOperationsInput ? expOperationsInput.checked : false,
+    },
   };
 }
 
@@ -1901,6 +1977,7 @@ async function refreshServers() {
   renderServers(cachedLocals, cachedRemotes);
   updateServersFilterButtons();
   updateServersViewButtons();
+  updateContainersServerOptions();
   statusHintEl.classList.add("hidden");
 }
 
@@ -1915,6 +1992,320 @@ async function triggerServersRefresh() {
 
 async function triggerStatusRefresh() {
   await fetchJSON("/api/status/refresh", { method: "POST" });
+}
+
+function formatUptime(seconds) {
+  const total = Number(seconds);
+  if (!Number.isFinite(total) || total <= 0) return "—";
+  const days = Math.floor(total / 86400);
+  const hours = Math.floor((total % 86400) / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const parts = [];
+  if (days > 0) parts.push(`${days}d`);
+  if (hours > 0 || days > 0) parts.push(`${hours}h`);
+  parts.push(`${minutes}m`);
+  return parts.join(" ");
+}
+
+function normalizeContainerState(state) {
+  return String(state || "").toLowerCase();
+}
+
+function containersSort(list, mode) {
+  const [field, order] = String(mode || "name:asc").split(":");
+  const dir = order === "desc" ? -1 : 1;
+  return list.slice().sort((a, b) => {
+    const aVal = field === "state" ? normalizeContainerState(a.state) : String(a.name || "");
+    const bVal = field === "state" ? normalizeContainerState(b.state) : String(b.name || "");
+    if (aVal === bVal) return 0;
+    return aVal > bVal ? dir : -dir;
+  });
+}
+
+function getScopeInfo(scope) {
+  const [type, name] = String(scope || "").split(":");
+  if (!type || !name) return null;
+  const server = type === "local"
+    ? cachedLocals.find((item) => item.name === name)
+    : cachedRemotes.find((item) => item.name === name);
+  const infoKey = `${type}:${name}`;
+  const info = cachedServerInfo[infoKey] || {};
+  const status = String(info.status || "").toLowerCase();
+  const maintenance = Boolean(server && server.maintenance);
+  return { type, name, server, status, maintenance };
+}
+
+function updateContainersStatus(scope, errorMessage) {
+  if (!containersStatusEl) return;
+  if (!scope) {
+    containersStatusEl.innerHTML = "";
+    return;
+  }
+  const info = getScopeInfo(scope);
+  let message = "";
+  let variant = "online";
+  if (info && info.maintenance) {
+    message = "Maintenance mode — operations may be limited.";
+    variant = "maintenance";
+  }
+  if (info && info.status === "offline") {
+    message = "Offline — data unavailable.";
+    variant = "offline";
+  }
+  if (errorMessage) {
+    message = `Error: ${errorMessage}`;
+    variant = "offline";
+  }
+  if (!message) {
+    containersStatusEl.innerHTML = "";
+    return;
+  }
+  containersStatusEl.innerHTML = "";
+  const pill = document.createElement("span");
+  pill.className = "status-pill";
+  pill.dataset.variant = variant;
+  pill.textContent = message;
+  containersStatusEl.appendChild(pill);
+}
+
+function updateContainersCount() {
+  if (!containersCountEl || !containersTableBody) return;
+  const rows = Array.from(containersTableBody.querySelectorAll("tr"));
+  if (rows.length === 0) {
+    containersCountEl.textContent = "0";
+    return;
+  }
+  const visible = rows.filter((row) => !row.classList.contains("filtered-out")).length;
+  containersCountEl.textContent = `${visible}/${rows.length}`;
+}
+
+function updateContainersServerOptions() {
+  if (!containersServerSelect) return;
+  const options = [
+    ...cachedLocals.map((server) => ({
+      scope: `local:${server.name}`,
+      label: `${server.name} (local)`,
+    })),
+    ...cachedRemotes.map((server) => ({
+      scope: `remote:${server.name}`,
+      label: `${server.name} (remote)`,
+    })),
+  ];
+  const previous = containersServerSelect.value;
+  containersServerSelect.innerHTML = "";
+  options.forEach((item) => {
+    const option = document.createElement("option");
+    option.value = item.scope;
+    option.textContent = item.label;
+    containersServerSelect.appendChild(option);
+  });
+  const fallback = options.length > 0 ? options[0].scope : "";
+  const next = options.find((item) => item.scope === previous) ? previous : fallback;
+  containersServerSelect.value = next;
+  containersSelectedScope = next;
+}
+
+function buildContainerActionButton(iconClass, label, onClick) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "secondary icon-action-btn has-tooltip";
+  button.setAttribute("aria-label", label);
+  button.setAttribute("data-tooltip", label);
+  const icon = document.createElement("span");
+  icon.className = `icon-action ${iconClass}`;
+  icon.setAttribute("aria-hidden", "true");
+  button.appendChild(icon);
+  button.addEventListener("click", onClick);
+  return button;
+}
+
+function updateContainerRow(row, container, scope) {
+  row.dataset.id = container.id;
+  row.dataset.search = `${container.name || ""} ${container.image || ""} ${container.stack || ""} ${container.state || ""}`;
+  const cells = row.querySelectorAll("td");
+  if (cells.length < 6) return;
+  cells[0].textContent = container.name || container.id.slice(0, 12);
+  cells[1].textContent = container.image || "";
+  cells[2].textContent = container.state || "unknown";
+  cells[3].textContent = formatUptime(container.uptime_sec);
+  cells[4].textContent = container.stack || "-";
+  row.dataset.state = normalizeContainerState(container.state);
+  const actionsCell = cells[5];
+  let actionsWrap = actionsCell.querySelector(".containers-actions");
+  if (!actionsWrap) {
+    actionsWrap = document.createElement("div");
+    actionsWrap.className = "containers-actions";
+    actionsCell.innerHTML = "";
+    actionsCell.appendChild(actionsWrap);
+  } else {
+    actionsWrap.innerHTML = "";
+  }
+  const state = normalizeContainerState(container.state);
+  const isRunning = state === "running";
+  const isPaused = state === "paused";
+  const isRestarting = state === "restarting";
+  const canStart = !(isRunning || isPaused || isRestarting);
+  const canStop = isRunning || isPaused || isRestarting;
+  const canRestart = isRunning || isPaused || isRestarting;
+  const canPause = isRunning || isPaused;
+  const canKill = isRunning || isPaused || isRestarting;
+
+  const startBtn = buildContainerActionButton("icon-play", "Start", async () => {
+    await runContainerAction(scope, container.id, "start");
+  });
+  startBtn.disabled = !canStart;
+
+  const stopBtn = buildContainerActionButton("icon-stop", "Stop", async () => {
+    await runContainerAction(scope, container.id, "stop");
+  });
+  stopBtn.disabled = !canStop;
+
+  const restartBtn = buildContainerActionButton("icon-reload", "Restart", async () => {
+    await runContainerAction(scope, container.id, "restart");
+  });
+  restartBtn.disabled = !canRestart;
+
+  const pauseLabel = isPaused ? "Unpause" : "Pause";
+  const pauseIcon = isPaused ? "icon-play" : "icon-pause";
+  const pauseAction = isPaused ? "unpause" : "pause";
+  const pauseBtn = buildContainerActionButton(pauseIcon, pauseLabel, async () => {
+    await runContainerAction(scope, container.id, pauseAction);
+  });
+  pauseBtn.disabled = !canPause;
+
+  const killBtn = buildContainerActionButton("icon-skull", "Kill", async () => {
+    const label = container.name || container.id.slice(0, 12);
+    if (!confirm(`Kill container "${label}"?`)) return;
+    await runContainerAction(scope, container.id, "kill");
+  });
+  killBtn.classList.add("btn-danger");
+  killBtn.disabled = !canKill;
+
+  actionsWrap.append(startBtn, stopBtn, restartBtn, pauseBtn, killBtn);
+}
+
+function clearContainersTable(message) {
+  if (containersTableBody) {
+    containersTableBody.innerHTML = "";
+  }
+  containersCache = new Map();
+  if (containersEmptyEl) {
+    if (message) {
+      containersEmptyEl.textContent = message;
+      containersEmptyEl.classList.remove("hidden");
+    } else {
+      containersEmptyEl.classList.add("hidden");
+    }
+  }
+  updateContainersCount();
+}
+
+function renderContainers(list, scope) {
+  if (!containersTableBody) return;
+  if (!Array.isArray(list) || list.length === 0) {
+    clearContainersTable("No containers found.");
+    return;
+  }
+  if (containersEmptyEl) {
+    containersEmptyEl.classList.add("hidden");
+  }
+  const previous = containersCache;
+  const next = new Map();
+  list.forEach((container) => {
+    if (!container || !container.id) return;
+    let entry = previous.get(container.id);
+    let row = entry ? entry.row : null;
+    if (!row) {
+      row = document.createElement("tr");
+      for (let i = 0; i < 6; i += 1) {
+        row.appendChild(document.createElement("td"));
+      }
+    }
+    updateContainerRow(row, container, scope);
+    next.set(container.id, { row, data: container });
+  });
+  previous.forEach((entry, id) => {
+    if (!next.has(id)) {
+      entry.row.remove();
+    }
+  });
+  containersCache = next;
+  const sorted = containersSort(Array.from(next.values()).map((entry) => entry.data), containersSortMode);
+  const fragment = document.createDocumentFragment();
+  sorted.forEach((container) => {
+    const entry = containersCache.get(container.id);
+    if (entry) {
+      fragment.appendChild(entry.row);
+    }
+  });
+  containersTableBody.appendChild(fragment);
+  updateContainersCount();
+}
+
+async function refreshContainers(options = {}) {
+  if (!containersServerSelect || !containersTableBody) return;
+  if (containersUpdateInProgress) return;
+  containersUpdateInProgress = true;
+  const scope = containersSelectedScope || containersServerSelect.value;
+  if (!scope) {
+    clearContainersTable("No servers configured. Add one in Servers.");
+    updateContainersStatus("", "");
+    containersUpdateInProgress = false;
+    return;
+  }
+  containersSelectedScope = scope;
+  updateContainersStatus(scope, "");
+  try {
+    const payload = await fetchJSON(`/api/containers?scope=${encodeURIComponent(scope)}`);
+    if (!payload || payload.error) {
+      const errorMessage = payload && payload.error ? payload.error : "Unable to load containers.";
+      clearContainersTable("No containers data available.");
+      updateContainersStatus(scope, errorMessage);
+      return;
+    }
+    const list = Array.isArray(payload.containers) ? payload.containers : [];
+    renderContainers(list, scope);
+    updateContainersStatus(scope, "");
+  } catch (err) {
+    clearContainersTable("No containers data available.");
+    updateContainersStatus(scope, err.message);
+  } finally {
+    containersUpdateInProgress = false;
+  }
+}
+
+async function runContainerAction(scope, containerID, action) {
+  if (!scope || !containerID || !action) return;
+  try {
+    const payload = await fetchJSON("/api/containers/action", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ scope, container_id: containerID, action }),
+    });
+    if (payload && payload.container) {
+      const entry = containersCache.get(payload.container.id);
+      const row = entry ? entry.row : null;
+      if (row) {
+        updateContainerRow(row, payload.container, scope);
+      }
+    }
+    await refreshContainers({ silent: true });
+  } catch (err) {
+    showToast(err.message || "Container action failed.");
+  }
+}
+
+function startContainersAutoRefresh() {
+  if (containersRefreshTimer) return;
+  containersRefreshTimer = window.setInterval(() => {
+    refreshContainers({ silent: true });
+  }, 5000);
+}
+
+function stopContainersAutoRefresh() {
+  if (!containersRefreshTimer) return;
+  window.clearInterval(containersRefreshTimer);
+  containersRefreshTimer = null;
 }
 
 function applyStatusResults(results) {
@@ -2364,6 +2755,9 @@ window.addEventListener("resize", () => {
 function refreshViewData(view) {
   const tasks = [];
   tasks.push(refreshConfig().catch(() => {}));
+  if (view === "containers") {
+    tasks.push(refreshContainers({ silent: true }).catch(() => {}));
+  }
   if (view === "logs") {
     tasks.push(refreshLogs().catch(() => {}));
   }
@@ -2397,9 +2791,17 @@ mobileNavQuery.addEventListener("change", () => {
 });
 
 function setView(nextView) {
+  const prevView = currentView;
+  if (["containers", "stacks", "images", "operations"].includes(nextView) && !isExperimentalEnabled(nextView)) {
+    nextView = "status";
+  }
   currentView = nextView;
   viewStatusEl.classList.toggle("hidden", nextView !== "status");
   viewSettingsEl.classList.toggle("hidden", nextView !== "settings");
+  if (viewContainersEl) viewContainersEl.classList.toggle("hidden", nextView !== "containers");
+  if (viewStacksEl) viewStacksEl.classList.toggle("hidden", nextView !== "stacks");
+  if (viewImagesEl) viewImagesEl.classList.toggle("hidden", nextView !== "images");
+  if (viewOperationsEl) viewOperationsEl.classList.toggle("hidden", nextView !== "operations");
   viewServersEl.classList.toggle("hidden", nextView !== "servers");
   viewLogsEl.classList.toggle("hidden", nextView !== "logs");
   if (topbarStatusEl) {
@@ -2408,11 +2810,18 @@ function setView(nextView) {
   if (topbarSettingsEl) {
     topbarSettingsEl.classList.toggle("hidden", nextView !== "settings");
   }
+  if (topbarContainersEl) {
+    topbarContainersEl.classList.toggle("hidden", nextView !== "containers");
+  }
   if (topbarServersEl) {
     topbarServersEl.classList.toggle("hidden", nextView !== "servers");
   }
   if (topbarLogsEl) {
     topbarLogsEl.classList.toggle("hidden", nextView !== "logs");
+  }
+  if (sidebarSearch && prevView !== nextView) {
+    sidebarSearch.value = "";
+    applySidebarFilter("");
   }
   updateTopbarHeight();
   updateMobileNavHeight();
@@ -2446,6 +2855,12 @@ function setView(nextView) {
     startLogsAutoRefresh();
   } else {
     stopLogsAutoRefresh();
+  }
+  if (nextView === "containers") {
+    startContainersAutoRefresh();
+    refreshContainers({ silent: true }).catch(() => {});
+  } else {
+    stopContainersAutoRefresh();
   }
   if (nextView === "servers" && sidebarSearch) {
     serversSearchQuery = normalizeQuery(sidebarSearch.value);
@@ -2578,6 +2993,10 @@ attachImmediateSave(discordEnabledInput);
 attachImmediateSave(discordStartupNotifyInput);
 attachImmediateSave(discordUpdateDetectedInput);
 attachImmediateSave(discordContainerUpdatedInput);
+attachImmediateSave(expContainersInput);
+attachImmediateSave(expStacksInput);
+attachImmediateSave(expImagesInput);
+attachImmediateSave(expOperationsInput);
 globalPolicySelect.addEventListener("change", async () => {
   try {
     await saveConfig({ useWebhookInput: false });
@@ -2748,6 +3167,9 @@ async function init() {
       applySidebarFilter(event.target.value);
     });
   }
+  if (containersSortSelect) {
+    containersSortMode = containersSortSelect.value || "name:asc";
+  }
 
   if (statusSelectiveToggleBtn) {
     statusSelectiveToggleBtn.addEventListener("click", () => {
@@ -2808,6 +3230,27 @@ async function init() {
       await refreshServers();
       await triggerServersRefresh();
       showToast("Connection checked", 2000);
+    });
+  }
+
+  if (containersServerSelect) {
+    containersServerSelect.addEventListener("change", async (event) => {
+      containersSelectedScope = event.target.value;
+      await refreshContainers({ silent: true });
+    });
+  }
+  if (containersSortSelect) {
+    containersSortSelect.addEventListener("change", () => {
+      containersSortMode = containersSortSelect.value || "name:asc";
+      const list = Array.from(containersCache.values()).map((entry) => entry.data);
+      if (list.length > 0 && containersSelectedScope) {
+        renderContainers(list, containersSelectedScope);
+      }
+    });
+  }
+  if (containersRefreshBtn) {
+    containersRefreshBtn.addEventListener("click", async () => {
+      await refreshContainers({ silent: true });
     });
   }
 
