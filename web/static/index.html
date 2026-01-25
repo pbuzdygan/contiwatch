@@ -61,6 +61,24 @@
         </div>
         <div id="topbar-containers" class="topbar-status hidden">
           <h2>Containers</h2>
+          <div class="actions containers-topbar-actions">
+            <div class="containers-server-picker">
+              <button id="topbar-containers-server-btn" class="secondary containers-server-btn" type="button" aria-haspopup="listbox" aria-expanded="false">
+                <span class="containers-server-btn-content"></span>
+              </button>
+              <div id="topbar-containers-server-menu" class="containers-server-menu hidden" role="listbox" tabindex="-1"></div>
+            </div>
+            <button
+              id="topbar-containers-refresh"
+              class="secondary icon-action-btn has-tooltip"
+              type="button"
+              aria-label="Refresh containers"
+              data-tooltip="Refresh containers"
+            >
+              <span class="icon-action icon-reload" aria-hidden="true"></span>
+            </button>
+            <div id="topbar-containers-status" class="containers-status"></div>
+          </div>
         </div>
         <div id="topbar-servers" class="topbar-status hidden">
           <h2>Servers</h2>
@@ -84,14 +102,20 @@
               >
                 <span class="icon-action icon-filter" aria-hidden="true"></span>
               </button>
-              <span class="servers-filter-select has-tooltip" aria-label="Filter by status" data-tooltip="Filter by status">
-                <select id="servers-filter" aria-label="Filter by status">
-                  <option value="all">All</option>
-                  <option value="active">Active</option>
-                  <option value="maintenance">Maintenance</option>
-                  <option value="offline">Offline</option>
-                </select>
-              </span>
+              <div class="servers-filter-picker">
+                <button
+                  id="servers-filter-btn"
+                  class="secondary containers-server-btn servers-filter-btn has-tooltip"
+                  type="button"
+                  aria-label="Filter by status"
+                  data-tooltip="Filter by status"
+                  aria-haspopup="listbox"
+                  aria-expanded="false"
+                >
+                  <span class="servers-filter-btn-content"></span>
+                </button>
+                <div id="servers-filter-menu" class="containers-server-menu servers-filter-menu hidden" role="listbox" tabindex="-1"></div>
+              </div>
             </div>
             <button
               id="add-server"
@@ -190,6 +214,7 @@
           <svg xmlns="http://www.w3.org/2000/svg" class="search-icon icon icon-tabler icons-tabler-outline icon-tabler-search" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M3 10a7 7 0 1 0 14 0a7 7 0 1 0 -14 0" /><path d="M21 21l-6 -6" /></svg>
           <input type="search" id="sidebar-search" placeholder="Servers / containers">
         </span>
+        <span id="sidebar-search-count" class="search-count hidden" aria-hidden="true"></span>
       </label>
       <nav class="sidebar-nav">
         <button type="button" class="sidebar-link" data-view="status">
@@ -349,37 +374,27 @@
       </section>
 
       <section id="view-containers" class="hidden">
-        <div class="containers-toolbar">
-          <div class="containers-toolbar-left">
-            <label class="containers-select">
-              <span>Server</span>
-              <select id="containers-server-select"></select>
-            </label>
-            <div id="containers-status" class="containers-status"></div>
-            <div id="containers-count" class="containers-count"></div>
-          </div>
-          <div class="containers-toolbar-right">
-            <label class="containers-sort">
-              <span>Sort</span>
-              <select id="containers-sort">
-                <option value="name:asc">Name (A → Z)</option>
-                <option value="name:desc">Name (Z → A)</option>
-                <option value="state:asc">State (A → Z)</option>
-                <option value="state:desc">State (Z → A)</option>
-              </select>
-            </label>
-            <button id="containers-refresh" class="secondary icon-action-btn has-tooltip" type="button" aria-label="Refresh containers" data-tooltip="Refresh containers">
-              <span class="icon-action icon-refresh-dot" aria-hidden="true"></span>
-            </button>
-          </div>
-        </div>
         <div class="containers-table-wrap">
           <table class="containers-table">
             <thead>
               <tr>
-                <th>Name</th>
+                <th class="containers-th-name">
+                  <span class="containers-th-name-inner">
+                    <span>Name</span>
+                    <button id="containers-name-sort" class="containers-sort-btn" type="button" aria-label="Sort by name">
+                      <span class="icon-sort icon-sort-neutral" aria-hidden="true"></span>
+                    </button>
+                  </span>
+                </th>
                 <th>Image</th>
-                <th>State</th>
+                <th class="containers-th-state">
+                  <span class="containers-th-name-inner">
+                    <span>State</span>
+                    <button id="containers-state-sort" class="containers-sort-btn" type="button" aria-label="Sort by state">
+                      <span class="icon-sort icon-sort-neutral" aria-hidden="true"></span>
+                    </button>
+                  </span>
+                </th>
                 <th>Uptime</th>
                 <th>Stack</th>
                 <th>Actions</th>

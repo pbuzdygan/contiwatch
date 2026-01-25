@@ -5,9 +5,12 @@
 ## New features
 - Settings: Experimental features toggle section (Containers/Stacks/Images/Operations).
 - Containers (experimental): new view with server picker and container table (Name, Image, State, Uptime, Stack) plus actions (start/stop/restart/pause/kill).
+- Containers: per-column sort icons for Name and State; inline confirmation for Kill.
+- Servers: status filter now uses the same custom dropdown style as Containers.
 
 ## Improvements
 - Containers: auto-refresh every 5s with in-place row updates (no list reset), manual refresh, and sort by name/state.
+- Containers: action button colors (start/stop/restart/pause) and state color accents (running/paused/restarting/exited).
 
 ## Bug fixes
 
