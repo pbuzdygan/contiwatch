@@ -1807,6 +1807,16 @@ input::placeholder {
   mask-image: url("/icons/ui/logs.svg");
 }
 
+.icon-stack-3 {
+  -webkit-mask-image: url("/icons/ui/stack-3.svg");
+  mask-image: url("/icons/ui/stack-3.svg");
+}
+
+.icon-polaroid {
+  -webkit-mask-image: url("/icons/ui/polaroid.svg");
+  mask-image: url("/icons/ui/polaroid.svg");
+}
+
 .icon-clock {
   -webkit-mask-image: url("/icons/ui/clock.svg");
   mask-image: url("/icons/ui/clock.svg");
@@ -1928,7 +1938,7 @@ input::placeholder {
 
 .servers-table th,
 .servers-table td {
-  padding: var(--s-3);
+  padding: var(--s-2) var(--s-3);
   border-bottom: 1px solid var(--color-border);
   text-align: left;
   vertical-align: top;
@@ -2204,26 +2214,49 @@ input::placeholder {
   text-transform: lowercase;
 }
 
+.containers-state-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border-radius: 999px;
+  padding: 4px 10px;
+  border: 1px solid transparent;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
 .containers-state-running {
+  background: rgba(60, 177, 121, 0.12);
   color: var(--status-success);
+  border-color: rgba(60, 177, 121, 0.28);
 }
 
 .containers-state-paused {
+  background: rgba(230, 181, 102, 0.12);
   color: var(--status-warning);
+  border-color: rgba(230, 181, 102, 0.28);
 }
 
 .containers-state-restarting {
+  background: rgba(75, 163, 217, 0.12);
   color: var(--status-info);
+  border-color: rgba(75, 163, 217, 0.3);
 }
 
 .containers-state-exited,
 .containers-state-dead {
+  background: rgba(224, 88, 88, 0.12);
   color: var(--status-error);
+  border-color: rgba(224, 88, 88, 0.28);
 }
 
 .containers-state-created,
 .containers-state-unknown {
+  background: rgba(148, 163, 184, 0.12);
   color: var(--color-text-muted);
+  border-color: rgba(148, 163, 184, 0.28);
 }
 
 .containers-th-name-inner {
@@ -2355,6 +2388,73 @@ input::placeholder {
 .containers-table .icon-action {
   width: 16px;
   height: 16px;
+}
+
+.containers-table .icon-action-btn.btn-success {
+  background: transparent;
+  border-color: transparent;
+  color: var(--status-success);
+}
+
+.containers-table .icon-action-btn.btn-success:hover {
+  background: color-mix(in srgb, var(--status-success), transparent 86%);
+  border-color: color-mix(in srgb, var(--status-success), transparent 55%);
+}
+
+.containers-table .icon-action-btn.btn-success:active {
+  background: color-mix(in srgb, var(--status-success), transparent 78%);
+  border-color: color-mix(in srgb, var(--status-success), transparent 45%);
+}
+
+.containers-table .icon-action-btn.btn-info {
+  background: transparent;
+  border-color: transparent;
+  color: var(--status-info);
+}
+
+.containers-table .icon-action-btn.btn-info:hover {
+  background: color-mix(in srgb, var(--status-info), transparent 86%);
+  border-color: color-mix(in srgb, var(--status-info), transparent 55%);
+}
+
+.containers-table .icon-action-btn.btn-info:active {
+  background: color-mix(in srgb, var(--status-info), transparent 78%);
+  border-color: color-mix(in srgb, var(--status-info), transparent 45%);
+}
+
+.containers-table .icon-action-btn.btn-warning {
+  background: transparent;
+  border-color: transparent;
+  color: var(--status-warning);
+}
+
+.containers-table .icon-action-btn.btn-warning:hover {
+  background: color-mix(in srgb, var(--status-warning), transparent 86%);
+  border-color: color-mix(in srgb, var(--status-warning), transparent 55%);
+}
+
+.containers-table .icon-action-btn.btn-warning:active {
+  background: color-mix(in srgb, var(--status-warning), transparent 78%);
+  border-color: color-mix(in srgb, var(--status-warning), transparent 45%);
+}
+
+.containers-table .icon-action-btn.btn-danger:not(.containers-kill-btn),
+.containers-table .icon-action-btn.btn-danger.containers-kill-btn:not(.is-confirming) {
+  background: transparent;
+  border-color: transparent;
+  color: var(--status-error);
+}
+
+.containers-table .icon-action-btn.btn-danger:not(.containers-kill-btn):hover,
+.containers-table .icon-action-btn.btn-danger.containers-kill-btn:not(.is-confirming):hover {
+  background: color-mix(in srgb, var(--status-error), transparent 86%);
+  border-color: color-mix(in srgb, var(--status-error), transparent 55%);
+}
+
+.containers-table .icon-action-btn.btn-danger:not(.containers-kill-btn):active,
+.containers-table .icon-action-btn.btn-danger.containers-kill-btn:not(.is-confirming):active {
+  background: color-mix(in srgb, var(--status-error), transparent 78%);
+  border-color: color-mix(in srgb, var(--status-error), transparent 45%);
 }
 
 .empty-state {
@@ -2996,6 +3096,24 @@ input::placeholder {
   border-radius: 999px;
   background: var(--color-text-muted);
   transition: transform 120ms ease, background 120ms ease;
+}
+
+.toggle-row.toggle-disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.toggle-row.toggle-disabled .toggle-track {
+  border-color: var(--color-border);
+}
+
+.toggle-row.toggle-disabled .toggle-thumb {
+  background: var(--color-text-disabled);
+}
+
+.toggle-row.toggle-disabled input:checked + .toggle-track {
+  background: color-mix(in srgb, var(--color-primary), transparent 90%);
+  border-color: color-mix(in srgb, var(--color-primary), transparent 75%);
 }
 
 .toggle-row input:checked + .toggle-track {

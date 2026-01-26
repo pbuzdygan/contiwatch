@@ -42,7 +42,6 @@ type ExperimentalFeatures struct {
 	Containers     bool `json:"containers"`
 	Stacks         bool `json:"stacks"`
 	Images         bool `json:"images"`
-	Operations     bool `json:"operations"`
 	ContainerShell bool `json:"container_shell"`
 	ContainerLogs  bool `json:"container_logs"`
 }

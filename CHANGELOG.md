@@ -3,18 +3,25 @@
 ## v1.2.0
 
 ## New features
-- Settings: Experimental features toggle section (Containers/Stacks/Images/Operations).
+- Settings: Experimental features toggle section (Containers + Container shell/logs/stacks/images).
+- Updates: renamed the Status view label to Updates.
 - Containers (experimental): new view with server picker and container table (Name, Image, State, Uptime, Stack) plus actions (start/stop/restart/pause/kill).
-- Containers: per-column sort icons for Name and State; inline confirmation for Kill.
-- Containers (experimental): shell view with selectable container list and embedded terminal.
-- Containers (experimental): logs view with selectable container list and live log stream.
+- Containers (experimental): per-column sort icons for Name and State; inline confirmation for Kill.
+- Containers (experimental): shell view (top bar button) with selectable container list and embedded terminal.
+- Containers (experimental): logs view (top bar button) with selectable container list, live stream, pause/resume, and optional timestamps.
+- Logs: log level filter now uses the same custom dropdown style as Containers.
 - Servers: status filter now uses the same custom dropdown style as Containers.
 
 ## Improvements
 - Containers: auto-refresh every 5s with in-place row updates (no list reset), manual refresh, and sort by name/state.
-- Containers: action button colors (start/stop/restart/pause) and state color accents (running/paused/restarting/exited).
+- Containers: action buttons use colored icons with hover backgrounds; state column uses badge-style labels.
+- Container logs: default tail reduced to 100 lines for faster initial load.
+- Server reachability: checking state no longer overrides online/offline once known.
+- Remote shell/logs proxy: improved WebSocket close handling when switching sessions.
 
 ## Bug fixes
+- Settings: Containers-dependent experimental toggles are disabled when Containers is off.
+- Servers/Updates: fixed cases where remote servers could remain stuck in Checking in the UI.
 
 ## v1.1.2
 

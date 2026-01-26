@@ -26,7 +26,6 @@ const expContainerShellInput = document.getElementById("exp-container-shell");
 const expContainerLogsInput = document.getElementById("exp-container-logs");
 const expStacksInput = document.getElementById("exp-stacks");
 const expImagesInput = document.getElementById("exp-images");
-const expOperationsInput = document.getElementById("exp-operations");
 const addServerBtn = document.getElementById("add-server");
 const refreshServersBtn = document.getElementById("refresh-servers");
 const serversTableWrap = document.getElementById("servers-table-wrap");
@@ -71,9 +70,8 @@ const topbarLogsEl = document.getElementById("topbar-logs");
 const viewStatusEl = document.getElementById("view-status");
 const viewSettingsEl = document.getElementById("view-settings");
 const viewContainersEl = document.getElementById("view-containers");
-const viewStacksEl = document.getElementById("view-stacks");
-const viewImagesEl = document.getElementById("view-images");
-const viewOperationsEl = document.getElementById("view-operations");
+const topbarContainersStacksBtn = document.getElementById("topbar-containers-stacks");
+const topbarContainersImagesBtn = document.getElementById("topbar-containers-images");
 const viewServersEl = document.getElementById("view-servers");
 const viewLogsEl = document.getElementById("view-logs");
 const topbarContainersServerBtn = document.getElementById("topbar-containers-server-btn");
@@ -993,7 +991,7 @@ function renderStatus(results) {
       statusLabel = "restarting";
     } else if (isOfflineForStatus) {
       statusLabel = "offline";
-    } else if (infoChecking) {
+    } else if (infoChecking && (!infoStatus || infoStatus === "unknown")) {
       statusLabel = "checking";
     }
     if (!hasCheckedAt && !infoStatus && !result.error && !isMaintenance && !infoChecking) {
@@ -1022,7 +1020,7 @@ function renderStatus(results) {
         scanLabelClass = "error";
       }
     }
-    if (!scanLabelText && infoChecking) {
+    if (!scanLabelText && infoChecking && (!infoStatus || infoStatus === "unknown")) {
       scanLabelText = "checking";
       scanLabelClass = "checking";
     }
@@ -1476,7 +1474,7 @@ function renderServers(localServers, remoteServers) {
     const isMaintenance = Boolean(item.server.maintenance);
     const infoChecking = debouncedCheckingVisible(infoKey, info);
     let statusValue = String(info.status || "").toLowerCase();
-    if (infoChecking) statusValue = "checking";
+    if (infoChecking && (!statusValue || statusValue === "unknown")) statusValue = "checking";
     if (isMaintenance) statusValue = "maintenance";
     if (!statusValue) statusValue = "unknown";
     const statusClass = ["online", "offline", "maintenance", "restarting", "checking"].includes(statusValue)
@@ -1634,14 +1632,17 @@ function shouldReplaceServerInfo(existing, incoming) {
   if (incomingAddress && existingAddress && incomingAddress !== existingAddress) {
     return true;
   }
-  const incomingCheckedAt = serverInfoCheckedAtMs(incoming);
-  const existingCheckedAt = serverInfoCheckedAtMs(existing);
-  if (incomingCheckedAt > existingCheckedAt) return true;
-  if (incomingCheckedAt < existingCheckedAt) return false;
   const existingChecking = Boolean(existing.checking);
   const incomingChecking = Boolean(incoming.checking);
+  const incomingCheckedAt = serverInfoCheckedAtMs(incoming);
+  const existingCheckedAt = serverInfoCheckedAtMs(existing);
   if (existingChecking && !incomingChecking) return true;
-  if (!existingChecking && incomingChecking) return false;
+  if (!existingChecking && incomingChecking) {
+    if (incomingCheckedAt >= existingCheckedAt) return true;
+    return false;
+  }
+  if (incomingCheckedAt > existingCheckedAt) return true;
+  if (incomingCheckedAt < existingCheckedAt) return false;
   const existingStatus = String(existing.status || "");
   const incomingStatus = String(incoming.status || "");
   if (!existingStatus && incomingStatus) return true;
@@ -1732,7 +1733,6 @@ function applyExperimentalFeatures(cfg) {
     container_logs: Boolean(exp.container_logs),
     stacks: Boolean(exp.stacks),
     images: Boolean(exp.images),
-    operations: Boolean(exp.operations),
   };
   if (sidebar) {
     sidebar.querySelectorAll(".experimental-link").forEach((btn) => {
@@ -1750,6 +1750,12 @@ function applyExperimentalFeatures(cfg) {
   if (topbarContainersLogsBtn) {
     topbarContainersLogsBtn.classList.toggle("hidden", !(flags.container_logs && flags.containers));
   }
+  if (topbarContainersStacksBtn) {
+    topbarContainersStacksBtn.classList.toggle("hidden", !(flags.stacks && flags.containers));
+  }
+  if (topbarContainersImagesBtn) {
+    topbarContainersImagesBtn.classList.toggle("hidden", !(flags.images && flags.containers));
+  }
   if (!flags.container_shell && containersViewMode === "shell") {
     setContainersViewMode("table");
   }
@@ -1757,12 +1763,10 @@ function applyExperimentalFeatures(cfg) {
     setContainersViewMode("table");
   }
   if (viewContainersEl && !flags.containers) viewContainersEl.classList.add("hidden");
-  if (viewStacksEl && !flags.stacks) viewStacksEl.classList.add("hidden");
-  if (viewImagesEl && !flags.images) viewImagesEl.classList.add("hidden");
-  if (viewOperationsEl && !flags.operations) viewOperationsEl.classList.add("hidden");
-  if (currentView && !flags[currentView] && ["containers", "stacks", "images", "operations"].includes(currentView)) {
+  if (currentView === "containers" && !flags.containers) {
     setView("status");
   }
+  updateContainersExperimentalToggles();
 }
 
 function isExperimentalEnabled(view) {
@@ -1846,6 +1850,19 @@ function updateServersFilterMenu(mode = serversFilterMode) {
       closeServersFilterMenu();
     });
     serversFilterMenu.appendChild(button);
+  });
+}
+
+function updateContainersExperimentalToggles() {
+  const enabled = expContainersInput ? expContainersInput.checked : false;
+  const dependents = [expContainerShellInput, expContainerLogsInput, expStacksInput, expImagesInput];
+  dependents.forEach((input) => {
+    if (!input) return;
+    input.disabled = !enabled;
+    const row = input.closest(".toggle-row");
+    if (row) {
+      row.classList.toggle("toggle-disabled", !enabled);
+    }
   });
 }
 
@@ -2072,7 +2089,6 @@ async function refreshConfig() {
   if (expContainerLogsInput) expContainerLogsInput.checked = Boolean(exp.container_logs);
   if (expStacksInput) expStacksInput.checked = Boolean(exp.stacks);
   if (expImagesInput) expImagesInput.checked = Boolean(exp.images);
-  if (expOperationsInput) expOperationsInput.checked = Boolean(exp.operations);
   currentTimeZone = cfg.time_zone ? String(cfg.time_zone).trim() : "";
   setContainersLogsTimestamps(containersLogsTimestamps);
   applyExperimentalFeatures(cfg);
@@ -2154,7 +2170,6 @@ function buildConfigPayload(options = {}) {
       container_logs: expContainerLogsInput ? expContainerLogsInput.checked : false,
       stacks: expStacksInput ? expStacksInput.checked : false,
       images: expImagesInput ? expImagesInput.checked : false,
-      operations: expOperationsInput ? expOperationsInput.checked : false,
     },
   };
 }
@@ -2893,7 +2908,7 @@ function resolveServerStatusLabel(info) {
   if (info.maintenance) return "maintenance";
   if (info.status === "offline") return "offline";
   if (info.status === "restarting") return "restarting";
-  if (info.checking) return "checking";
+  if (info.checking && (!info.status || info.status === "unknown")) return "checking";
   if (!info.status) return "unknown";
   return "online";
 }
@@ -3078,8 +3093,13 @@ function updateContainerRow(row, container, scope) {
   cells[0].textContent = container.name || container.id.slice(0, 12);
   cells[1].textContent = container.image || "";
   const stateValue = normalizeContainerState(container.state);
-  cells[2].textContent = container.state || "unknown";
-  cells[2].className = `containers-state-cell ${stateValue ? `containers-state-${stateValue}` : "containers-state-unknown"}`;
+  const stateText = container.state || "unknown";
+  cells[2].textContent = "";
+  const stateBadge = document.createElement("span");
+  stateBadge.className = `containers-state-badge ${stateValue ? `containers-state-${stateValue}` : "containers-state-unknown"}`;
+  stateBadge.textContent = stateText;
+  cells[2].className = "containers-state-cell";
+  cells[2].appendChild(stateBadge);
   cells[3].textContent = formatUptime(container.uptime_sec);
   cells[4].textContent = container.stack || "-";
   row.dataset.state = stateValue;
@@ -3155,6 +3175,9 @@ function updateContainerRow(row, container, scope) {
   );
   killBtn.classList.add("btn-danger");
   killBtn.classList.add("containers-kill-btn");
+  if (isConfirmingKill) {
+    killBtn.classList.add("is-confirming");
+  }
   killBtn.disabled = !canKill;
 
   actionsWrap.append(startBtn, stopBtn, restartBtn, pauseBtn, killBtn);
@@ -3795,16 +3818,13 @@ mobileNavQuery.addEventListener("change", () => {
 
 function setView(nextView) {
   const prevView = currentView;
-  if (["containers", "stacks", "images", "operations"].includes(nextView) && !isExperimentalEnabled(nextView)) {
+  if (["containers", "stacks", "images"].includes(nextView) && !isExperimentalEnabled(nextView)) {
     nextView = "status";
   }
   currentView = nextView;
   viewStatusEl.classList.toggle("hidden", nextView !== "status");
   viewSettingsEl.classList.toggle("hidden", nextView !== "settings");
   if (viewContainersEl) viewContainersEl.classList.toggle("hidden", nextView !== "containers");
-  if (viewStacksEl) viewStacksEl.classList.toggle("hidden", nextView !== "stacks");
-  if (viewImagesEl) viewImagesEl.classList.toggle("hidden", nextView !== "images");
-  if (viewOperationsEl) viewOperationsEl.classList.toggle("hidden", nextView !== "operations");
   viewServersEl.classList.toggle("hidden", nextView !== "servers");
   viewLogsEl.classList.toggle("hidden", nextView !== "logs");
   if (topbarStatusEl) {
@@ -4016,7 +4036,6 @@ attachImmediateSave(expContainerShellInput);
 attachImmediateSave(expContainerLogsInput);
 attachImmediateSave(expStacksInput);
 attachImmediateSave(expImagesInput);
-attachImmediateSave(expOperationsInput);
 globalPolicySelect.addEventListener("change", async () => {
   try {
     await saveConfig({ useWebhookInput: false });
@@ -4262,6 +4281,11 @@ async function init() {
       toggleServersFilterMenu();
     });
   }
+  if (expContainersInput) {
+    expContainersInput.addEventListener("change", () => {
+      updateContainersExperimentalToggles();
+    });
+  }
   if (logsLevelBtn) {
     logsLevelBtn.addEventListener("click", () => {
       toggleLogsLevelMenu();
@@ -4324,6 +4348,30 @@ async function init() {
         return;
       }
       setContainersViewMode(containersViewMode === "logs" ? "table" : "logs");
+    });
+  }
+  if (topbarContainersStacksBtn) {
+    topbarContainersStacksBtn.addEventListener("click", () => {
+      const enabled = currentConfig && currentConfig.experimental_features
+        ? Boolean(currentConfig.experimental_features.stacks)
+        : false;
+      if (!enabled) {
+        showToast("Container stacks is disabled in Experimental features.");
+        return;
+      }
+      showToast("Container stacks view is not implemented yet.");
+    });
+  }
+  if (topbarContainersImagesBtn) {
+    topbarContainersImagesBtn.addEventListener("click", () => {
+      const enabled = currentConfig && currentConfig.experimental_features
+        ? Boolean(currentConfig.experimental_features.images)
+        : false;
+      if (!enabled) {
+        showToast("Container images is disabled in Experimental features.");
+        return;
+      }
+      showToast("Container images view is not implemented yet.");
     });
   }
 

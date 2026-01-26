@@ -192,7 +192,6 @@ func (s *Server) handleRemoteContainerShell(w http.ResponseWriter, r *http.Reque
 		wsURL.Scheme = "ws"
 	}
 	query := wsURL.Query()
-	query.Set("server", remote.Name)
 	query.Set("container_id", containerID)
 	wsURL.RawQuery = query.Encode()
 
@@ -209,23 +208,7 @@ func (s *Server) handleRemoteContainerShell(w http.ResponseWriter, r *http.Reque
 	}
 	defer remoteConn.Close()
 
-	errCh := make(chan error, 2)
-	proxyCopy := func(dst, src *websocket.Conn) {
-		for {
-			msgType, data, readErr := src.ReadMessage()
-			if readErr != nil {
-				errCh <- readErr
-				return
-			}
-			if writeErr := dst.WriteMessage(msgType, data); writeErr != nil {
-				errCh <- writeErr
-				return
-			}
-		}
-	}
-	go proxyCopy(remoteConn, clientConn)
-	go proxyCopy(clientConn, remoteConn)
-	<-errCh
+	proxyWebSockets(clientConn, remoteConn)
 }
 
 func openShellExec(ctx context.Context, watcher *dockerwatcher.Watcher, containerID string) (string, types.HijackedResponse, error) {
