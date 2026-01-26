@@ -9,31 +9,41 @@ import (
 )
 
 type RemoteServer struct {
-	Name  string `json:"name"`
-	URL   string `json:"url"`
-	Token string `json:"token"`
-	Maintenance bool `json:"maintenance"`
+	Name        string `json:"name"`
+	URL         string `json:"url"`
+	Token       string `json:"token"`
+	Maintenance bool   `json:"maintenance"`
 }
 
 type LocalServer struct {
-	Name   string `json:"name"`
-	Socket string `json:"socket"`
-	Maintenance bool `json:"maintenance"`
+	Name        string `json:"name"`
+	Socket      string `json:"socket"`
+	Maintenance bool   `json:"maintenance"`
 }
 
 type Config struct {
-	ScanIntervalSec                 int            `json:"scan_interval_sec"`
-	SchedulerEnabled                bool           `json:"scheduler_enabled"`
-	GlobalPolicy                    string         `json:"global_policy"`
-	DiscordWebhookURL               string         `json:"discord_webhook_url"`
-	DiscordNotificationsEnabled     *bool          `json:"discord_notifications_enabled"`
-	DiscordNotifyOnStart            *bool          `json:"discord_notify_on_start"`
-	DiscordNotifyOnUpdateDetected   *bool          `json:"discord_notify_on_update_detected"`
-	DiscordNotifyOnContainerUpdated *bool          `json:"discord_notify_on_container_updated"`
-	UpdateStoppedContainers         bool           `json:"update_stopped_containers"`
-	PruneDanglingImages             bool           `json:"prune_dangling_images"`
-	LocalServers                    []LocalServer  `json:"local_servers"`
-	RemoteServers                   []RemoteServer `json:"remote_servers"`
+	ScanIntervalSec                 int                  `json:"scan_interval_sec"`
+	SchedulerEnabled                bool                 `json:"scheduler_enabled"`
+	GlobalPolicy                    string               `json:"global_policy"`
+	DiscordWebhookURL               string               `json:"discord_webhook_url"`
+	DiscordNotificationsEnabled     *bool                `json:"discord_notifications_enabled"`
+	DiscordNotifyOnStart            *bool                `json:"discord_notify_on_start"`
+	DiscordNotifyOnUpdateDetected   *bool                `json:"discord_notify_on_update_detected"`
+	DiscordNotifyOnContainerUpdated *bool                `json:"discord_notify_on_container_updated"`
+	UpdateStoppedContainers         bool                 `json:"update_stopped_containers"`
+	PruneDanglingImages             bool                 `json:"prune_dangling_images"`
+	TimeZone                        string               `json:"time_zone,omitempty"`
+	ExperimentalFeatures            ExperimentalFeatures `json:"experimental_features"`
+	LocalServers                    []LocalServer        `json:"local_servers"`
+	RemoteServers                   []RemoteServer       `json:"remote_servers"`
+}
+
+type ExperimentalFeatures struct {
+	Containers     bool `json:"containers"`
+	Stacks         bool `json:"stacks"`
+	Images         bool `json:"images"`
+	ContainerShell bool `json:"container_shell"`
+	ContainerLogs  bool `json:"container_logs"`
 }
 
 const (
@@ -54,6 +64,7 @@ func DefaultConfig() Config {
 		DiscordNotifyOnContainerUpdated: boolPtr(false),
 		UpdateStoppedContainers:         false,
 		PruneDanglingImages:             false,
+		ExperimentalFeatures:            ExperimentalFeatures{},
 		LocalServers:                    []LocalServer{},
 		RemoteServers:                   []RemoteServer{},
 	}
@@ -127,6 +138,9 @@ func (s *Store) load() error {
 	if cfg.DiscordNotifyOnContainerUpdated == nil {
 		cfg.DiscordNotifyOnContainerUpdated = boolPtr(false)
 	}
+	if cfg.ExperimentalFeatures == (ExperimentalFeatures{}) {
+		cfg.ExperimentalFeatures = DefaultConfig().ExperimentalFeatures
+	}
 	s.config = cfg
 	return nil
 }
@@ -160,6 +174,9 @@ func (s *Store) Update(update func(*Config)) (Config, error) {
 	}
 	if s.config.DiscordNotifyOnStart == nil {
 		s.config.DiscordNotifyOnStart = boolPtr(false)
+	}
+	if s.config.ExperimentalFeatures == (ExperimentalFeatures{}) {
+		s.config.ExperimentalFeatures = DefaultConfig().ExperimentalFeatures
 	}
 	return s.config, s.saveLocked()
 }

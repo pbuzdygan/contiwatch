@@ -40,6 +40,15 @@ type ContainerStatus struct {
 	Error           string    `json:"error,omitempty"`
 }
 
+type ContainerInfo struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Image     string `json:"image"`
+	State     string `json:"state"`
+	UptimeSec int64  `json:"uptime_sec"`
+	Stack     string `json:"stack"`
+}
+
 type UpdateResult struct {
 	ID             string `json:"id"`
 	Name           string `json:"name"`
@@ -129,6 +138,114 @@ func (w *Watcher) scan(ctx context.Context, cfg config.Config, scanOnly bool) (S
 	}
 
 	return result, nil
+}
+
+func (w *Watcher) Containers(ctx context.Context) ([]ContainerInfo, error) {
+	items, err := w.client.ContainerList(ctx, types.ContainerListOptions{All: true})
+	if err != nil {
+		return nil, err
+	}
+	containers := make([]ContainerInfo, 0, len(items))
+	for _, item := range items {
+		if ctx.Err() != nil {
+			return containers, ctx.Err()
+		}
+		info, err := w.containerInfo(ctx, item)
+		if err != nil {
+			return containers, err
+		}
+		containers = append(containers, info)
+	}
+	return containers, nil
+}
+
+func (w *Watcher) containerInfo(ctx context.Context, item types.Container) (ContainerInfo, error) {
+	name := strings.TrimPrefix(firstOrEmpty(item.Names), "/")
+	inspect, err := w.client.ContainerInspect(ctx, item.ID)
+	if err != nil {
+		return ContainerInfo{}, err
+	}
+	imageRef := item.Image
+	if inspect.Config != nil && inspect.Config.Image != "" {
+		imageRef = inspect.Config.Image
+	}
+	state := "unknown"
+	uptimeSec := int64(0)
+	if inspect.State != nil {
+		state = normalizeContainerState(inspect.State)
+		uptimeSec = uptimeFromState(inspect.State)
+	}
+	stack := stackFromLabels(nil)
+	if inspect.Config != nil {
+		stack = stackFromLabels(inspect.Config.Labels)
+	}
+	return ContainerInfo{
+		ID:        item.ID,
+		Name:      name,
+		Image:     imageRef,
+		State:     state,
+		UptimeSec: uptimeSec,
+		Stack:     stack,
+	}, nil
+}
+
+func normalizeContainerState(state *types.ContainerState) string {
+	if state == nil {
+		return "unknown"
+	}
+	if state.Paused {
+		return "paused"
+	}
+	if state.Restarting {
+		return "restarting"
+	}
+	if state.OOMKilled {
+		return "oomkilled"
+	}
+	if state.Dead {
+		return "dead"
+	}
+	if state.Status != "" {
+		return state.Status
+	}
+	return "unknown"
+}
+
+func uptimeFromState(state *types.ContainerState) int64 {
+	if state == nil {
+		return 0
+	}
+	if !(state.Running || state.Paused || state.Restarting) {
+		return 0
+	}
+	if state.StartedAt == "" {
+		return 0
+	}
+	started, err := time.Parse(time.RFC3339Nano, state.StartedAt)
+	if err != nil {
+		return 0
+	}
+	seconds := int64(time.Since(started).Seconds())
+	if seconds < 0 {
+		return 0
+	}
+	return seconds
+}
+
+func stackFromLabels(labels map[string]string) string {
+	if labels == nil {
+		return "-"
+	}
+	if value := strings.TrimSpace(labels["com.docker.stack.namespace"]); value != "" {
+		return value
+	}
+	if value := strings.TrimSpace(labels["com.docker.compose.project"]); value != "" {
+		return value
+	}
+	if value := strings.TrimSpace(labels["io.portainer.stack.name"]); value != "" {
+		return value
+	}
+	return "-"
 }
 
 func (w *Watcher) scanContainer(ctx context.Context, item types.Container, cfg config.Config, scanOnly bool) ContainerStatus {
@@ -367,6 +484,96 @@ func (w *Watcher) UpdateContainer(ctx context.Context, containerID string, cfg c
 
 func (w *Watcher) UpdateContainerForceStart(ctx context.Context, containerID string, cfg config.Config) (UpdateResult, error) {
 	return w.updateContainer(ctx, containerID, cfg, true)
+}
+
+func (w *Watcher) StartContainer(ctx context.Context, containerID string) error {
+	return w.client.ContainerStart(ctx, strings.TrimSpace(containerID), types.ContainerStartOptions{})
+}
+
+func (w *Watcher) StopContainer(ctx context.Context, containerID string, timeoutSec int) error {
+	timeout := timeoutSec
+	return w.client.ContainerStop(ctx, strings.TrimSpace(containerID), container.StopOptions{Timeout: &timeout})
+}
+
+func (w *Watcher) RestartContainer(ctx context.Context, containerID string, timeoutSec int) error {
+	timeout := timeoutSec
+	return w.client.ContainerRestart(ctx, strings.TrimSpace(containerID), container.StopOptions{Timeout: &timeout})
+}
+
+func (w *Watcher) PauseContainer(ctx context.Context, containerID string) error {
+	return w.client.ContainerPause(ctx, strings.TrimSpace(containerID))
+}
+
+func (w *Watcher) UnpauseContainer(ctx context.Context, containerID string) error {
+	return w.client.ContainerUnpause(ctx, strings.TrimSpace(containerID))
+}
+
+func (w *Watcher) KillContainer(ctx context.Context, containerID string) error {
+	return w.client.ContainerKill(ctx, strings.TrimSpace(containerID), "SIGKILL")
+}
+
+func (w *Watcher) ExecShell(ctx context.Context, containerID string, cmd []string) (string, types.HijackedResponse, error) {
+	containerID = strings.TrimSpace(containerID)
+	if containerID == "" {
+		return "", types.HijackedResponse{}, errors.New("container id is required")
+	}
+	if len(cmd) == 0 {
+		cmd = []string{"/bin/sh"}
+	}
+	execResp, err := w.client.ContainerExecCreate(ctx, containerID, types.ExecConfig{
+		Tty:          true,
+		AttachStdin:  true,
+		AttachStdout: true,
+		AttachStderr: true,
+		Cmd:          cmd,
+	})
+	if err != nil {
+		return "", types.HijackedResponse{}, err
+	}
+	attach, err := w.client.ContainerExecAttach(ctx, execResp.ID, types.ExecStartCheck{Tty: true})
+	if err != nil {
+		return "", types.HijackedResponse{}, err
+	}
+	return execResp.ID, attach, nil
+}
+
+func (w *Watcher) ResizeExec(ctx context.Context, execID string, cols, rows uint) error {
+	execID = strings.TrimSpace(execID)
+	if execID == "" {
+		return errors.New("exec id is required")
+	}
+	return w.client.ContainerExecResize(ctx, execID, types.ResizeOptions{
+		Height: rows,
+		Width:  cols,
+	})
+}
+
+func (w *Watcher) InspectExec(ctx context.Context, execID string) (types.ContainerExecInspect, error) {
+	execID = strings.TrimSpace(execID)
+	if execID == "" {
+		return types.ContainerExecInspect{}, errors.New("exec id is required")
+	}
+	return w.client.ContainerExecInspect(ctx, execID)
+}
+
+func (w *Watcher) ContainerLogs(ctx context.Context, containerID string, opts types.ContainerLogsOptions) (io.ReadCloser, bool, error) {
+	containerID = strings.TrimSpace(containerID)
+	if containerID == "" {
+		return nil, false, errors.New("container id is required")
+	}
+	inspect, err := w.client.ContainerInspect(ctx, containerID)
+	if err != nil {
+		return nil, false, err
+	}
+	reader, err := w.client.ContainerLogs(ctx, containerID, opts)
+	if err != nil {
+		return nil, false, err
+	}
+	tty := false
+	if inspect.Config != nil {
+		tty = inspect.Config.Tty
+	}
+	return reader, tty, nil
 }
 
 func (w *Watcher) updateContainer(ctx context.Context, containerID string, cfg config.Config, forceStart bool) (UpdateResult, error) {

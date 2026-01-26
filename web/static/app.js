@@ -21,14 +21,20 @@ const discordUpdateDetectedInput = document.getElementById("discord-update-detec
 const discordContainerUpdatedInput = document.getElementById("discord-container-updated");
 const updateStoppedInput = document.getElementById("update-stopped");
 const pruneDanglingInput = document.getElementById("prune-dangling");
+const expContainersInput = document.getElementById("exp-containers");
+const expContainerShellInput = document.getElementById("exp-container-shell");
+const expContainerLogsInput = document.getElementById("exp-container-logs");
+const expStacksInput = document.getElementById("exp-stacks");
+const expImagesInput = document.getElementById("exp-images");
 const addServerBtn = document.getElementById("add-server");
 const refreshServersBtn = document.getElementById("refresh-servers");
 const serversTableWrap = document.getElementById("servers-table-wrap");
 const serversTableBody = document.getElementById("servers-table-body");
 const serversCardsEl = document.getElementById("servers-cards");
 const serversViewToggleBtn = document.getElementById("servers-view-toggle");
-const serversFilterSelect = document.getElementById("servers-filter");
 const serversFilterResetBtn = document.getElementById("servers-filter-reset");
+const serversFilterBtn = document.getElementById("servers-filter-btn");
+const serversFilterMenu = document.getElementById("servers-filter-menu");
 const localModalForm = document.getElementById("local-modal-form");
 const localModalNameInput = document.getElementById("local-modal-name");
 const localModalSocketInput = document.getElementById("local-modal-socket");
@@ -52,20 +58,51 @@ const remoteModalSave = document.getElementById("remote-modal-save");
 const remoteModalCancel = document.getElementById("remote-modal-cancel");
 const sidebar = document.getElementById("sidebar");
 const sidebarSearch = document.getElementById("sidebar-search");
+const sidebarSearchCountEl = document.getElementById("sidebar-search-count");
 const themeToggleBtn = document.getElementById("theme-toggle");
 const themeLabel = document.getElementById("theme-label");
 const topbarEl = document.querySelector(".topbar");
 const topbarStatusEl = document.getElementById("topbar-status");
 const topbarSettingsEl = document.getElementById("topbar-settings");
+const topbarContainersEl = document.getElementById("topbar-containers");
 const topbarServersEl = document.getElementById("topbar-servers");
 const topbarLogsEl = document.getElementById("topbar-logs");
 const viewStatusEl = document.getElementById("view-status");
 const viewSettingsEl = document.getElementById("view-settings");
+const viewContainersEl = document.getElementById("view-containers");
+const topbarContainersStacksBtn = document.getElementById("topbar-containers-stacks");
+const topbarContainersImagesBtn = document.getElementById("topbar-containers-images");
 const viewServersEl = document.getElementById("view-servers");
 const viewLogsEl = document.getElementById("view-logs");
+const topbarContainersServerBtn = document.getElementById("topbar-containers-server-btn");
+const topbarContainersServerMenu = document.getElementById("topbar-containers-server-menu");
+const topbarContainersRefreshBtn = document.getElementById("topbar-containers-refresh");
+const topbarContainersShellBtn = document.getElementById("topbar-containers-shell");
+const topbarContainersLogsBtn = document.getElementById("topbar-containers-logs");
+const topbarContainersStatusEl = document.getElementById("topbar-containers-status");
+const containersNameSortBtn = document.getElementById("containers-name-sort");
+const containersStateSortBtn = document.getElementById("containers-state-sort");
+const containersTableBody = document.getElementById("containers-body");
+const containersEmptyEl = document.getElementById("containers-empty");
+const containersTableView = document.getElementById("containers-table-view");
+const containersShellLayout = document.getElementById("containers-shell-layout");
+const containersShellList = document.getElementById("containers-shell-list");
+const containersShellPlaceholder = document.getElementById("containers-shell-placeholder");
+const containersTerminalEl = document.getElementById("containers-terminal");
+const containersShellTerminalEl = document.getElementById("containers-shell-terminal");
+const containersLogsLayout = document.getElementById("containers-logs-layout");
+const containersLogsList = document.getElementById("containers-logs-list");
+const containersLogsPlaceholder = document.getElementById("containers-logs-placeholder");
+const containersLogsView = document.getElementById("containers-logs-view");
+const containersLogsOutput = document.getElementById("containers-logs-output");
+const containersLogsStreamEl = document.getElementById("containers-logs-stream");
+const containersLogsPauseBtn = document.getElementById("containers-logs-pause");
+const containersLogsTimestampsBtn = document.getElementById("containers-logs-timestamps");
+const containersLogsClearBtn = document.getElementById("containers-logs-clear");
 const refreshLogsBtn = document.getElementById("refresh-logs");
 const clearLogsBtn = document.getElementById("clear-logs");
-const logsLevelSelect = document.getElementById("logs-level");
+const logsLevelBtn = document.getElementById("logs-level-btn");
+const logsLevelMenu = document.getElementById("logs-level-menu");
 const logsAutoToggle = document.getElementById("logs-auto");
 const logsListEl = document.getElementById("logs-list");
 const appVersionEl = document.getElementById("app-version");
@@ -111,6 +148,35 @@ let checkingStartMsByServerKey = {};
 let checkingDebounceTimersByServerKey = {};
 let pendingSelfUpdates = {};
 let pendingSelfUpdateTimers = {};
+let logsLevelMode = "all";
+let containersSelectedScope = "";
+let containersSortMode = "name:asc";
+let containersRefreshTimer = null;
+let containersUpdateInProgress = false;
+let containersCache = new Map();
+let containersKillConfirming = new Set();
+let containersViewMode = "table";
+let containersShellSelectedId = "";
+let containersShellSocket = null;
+let containersShellTerm = null;
+let containersShellFitAddon = null;
+let containersShellDataListener = null;
+const containersShellEncoder = new TextEncoder();
+let containersShellResizeTimer = null;
+let containersShellResizeHandler = null;
+let containersLogsSelectedId = "";
+let containersLogsSocket = null;
+let containersLogsBuffer = "";
+let containersLogsPending = "";
+let containersLogsLineBuffer = "";
+let containersLogsBytes = 0;
+let containersLogsAutoScroll = true;
+let containersLogsPaused = false;
+let containersLogsTimestamps = false;
+const containersLogsMaxBytes = 300000;
+let containersLogsSilentClose = false;
+let containersLogsStreamActive = false;
+let currentTimeZone = "";
 
 function pendingSelfUpdateKey(serverKey, containerName) {
   return `${serverKey}::${containerName}`;
@@ -925,7 +991,7 @@ function renderStatus(results) {
       statusLabel = "restarting";
     } else if (isOfflineForStatus) {
       statusLabel = "offline";
-    } else if (infoChecking) {
+    } else if (infoChecking && (!infoStatus || infoStatus === "unknown")) {
       statusLabel = "checking";
     }
     if (!hasCheckedAt && !infoStatus && !result.error && !isMaintenance && !infoChecking) {
@@ -954,7 +1020,7 @@ function renderStatus(results) {
         scanLabelClass = "error";
       }
     }
-    if (!scanLabelText && infoChecking) {
+    if (!scanLabelText && infoChecking && (!infoStatus || infoStatus === "unknown")) {
       scanLabelText = "checking";
       scanLabelClass = "checking";
     }
@@ -976,7 +1042,7 @@ function renderStatus(results) {
     const nameWrap = document.createElement("div");
     nameWrap.className = "status-card-title";
     const nameIcon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-    nameIcon.setAttribute("class", `status-card-icon status-icon status-icon-${statusLabel} icon icon-tabler icons-tabler-outline icon-tabler-server-bolt`);
+    nameIcon.setAttribute("class", "status-card-icon icon icon-tabler icons-tabler-outline icon-tabler-server-bolt");
     nameIcon.setAttribute("width", "24");
     nameIcon.setAttribute("height", "24");
     nameIcon.setAttribute("viewBox", "0 0 24 24");
@@ -988,12 +1054,7 @@ function renderStatus(results) {
     nameIcon.setAttribute("aria-hidden", "true");
     nameIcon.innerHTML = '<path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M3 7a3 3 0 0 1 3 -3h12a3 3 0 0 1 3 3v2a3 3 0 0 1 -3 3h-12a3 3 0 0 1 -3 -3" /><path d="M15 20h-9a3 3 0 0 1 -3 -3v-2a3 3 0 0 1 3 -3h12" /><path d="M7 8v.01" /><path d="M7 16v.01" /><path d="M20 15l-2 3h3l-2 3" />';
     const nameIconWrap = document.createElement("span");
-    nameIconWrap.className = "status-card-icon-wrap has-tooltip";
-    nameIconWrap.dataset.tooltipServerStatus = "true";
-    nameIconWrap.dataset.statusLabel = statusLabel;
-    nameIconWrap.dataset.checkedAt = infoCheckedAt || "";
-    nameIconWrap.setAttribute("data-tooltip", `Status: ${statusLabel}`);
-    nameIconWrap.setAttribute("aria-label", `Status: ${statusLabel}`);
+    nameIconWrap.className = "status-card-icon-wrap";
     nameIconWrap.appendChild(nameIcon);
     const name = document.createElement("strong");
     name.textContent = result.server_name || "unknown";
@@ -1004,7 +1065,7 @@ function renderStatus(results) {
     const typeIcon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
     typeIcon.setAttribute(
       "class",
-      `status-card-type-icon icon icon-tabler icons-tabler-outline icon-tabler-${result.local ? "plug-connected" : "network"}`
+      `status-card-type-icon status-icon status-icon-${statusLabel} icon icon-tabler icons-tabler-outline icon-tabler-${result.local ? "plug-connected" : "network"}`
     );
     typeIcon.setAttribute("width", "24");
     typeIcon.setAttribute("height", "24");
@@ -1017,13 +1078,13 @@ function renderStatus(results) {
     typeIcon.setAttribute("aria-hidden", "true");
     const typeWrap = document.createElement("span");
     typeWrap.className = "status-card-type has-tooltip";
+    typeWrap.dataset.tooltipServerStatus = "true";
+    typeWrap.dataset.statusLabel = statusLabel;
+    typeWrap.dataset.checkedAt = infoCheckedAt || "";
+    typeWrap.dataset.serverType = result.local ? "local" : "remote";
     if (result.local) {
-      typeWrap.setAttribute("data-tooltip", "Local socket");
-      typeWrap.setAttribute("aria-label", "Local socket");
       typeIcon.innerHTML = '<path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M7 12l5 5l-1.5 1.5a3.536 3.536 0 1 1 -5 -5l1.5 -1.5" /><path d="M17 12l-5 -5l1.5 -1.5a3.536 3.536 0 1 1 5 5l-1.5 1.5" /><path d="M3 21l2.5 -2.5" /><path d="M18.5 5.5l2.5 -2.5" /><path d="M10 11l-2 2" /><path d="M13 14l-2 2" />';
     } else {
-      typeWrap.setAttribute("data-tooltip", "Remote agent");
-      typeWrap.setAttribute("aria-label", "Remote agent");
       typeIcon.innerHTML = '<path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M6 9a6 6 0 1 0 12 0a6 6 0 0 0 -12 0" /><path d="M12 3c1.333 .333 2 2.333 2 6s-.667 5.667 -2 6" /><path d="M12 3c-1.333 .333 -2 2.333 -2 6s.667 5.667 2 6" /><path d="M6 9h12" /><path d="M3 20h7" /><path d="M14 20h7" /><path d="M10 20a2 2 0 1 0 4 0a2 2 0 0 0 -4 0" /><path d="M12 15v3" />';
     }
     typeWrap.appendChild(typeIcon);
@@ -1310,7 +1371,7 @@ function buildServersNameRow(item, statusLabel) {
   const nameIcon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   nameIcon.setAttribute(
     "class",
-    `status-card-icon status-icon status-icon-${statusLabel} icon icon-tabler icons-tabler-outline icon-tabler-server-bolt`
+    "status-card-icon icon icon-tabler icons-tabler-outline icon-tabler-server-bolt"
   );
   nameIcon.setAttribute("width", "24");
   nameIcon.setAttribute("height", "24");
@@ -1324,12 +1385,7 @@ function buildServersNameRow(item, statusLabel) {
   nameIcon.innerHTML = '<path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M3 7a3 3 0 0 1 3 -3h12a3 3 0 0 1 3 3v2a3 3 0 0 1 -3 3h-12a3 3 0 0 1 -3 -3" /><path d="M15 20h-9a3 3 0 0 1 -3 -3v-2a3 3 0 0 1 3 -3h12" /><path d="M7 8v.01" /><path d="M7 16v.01" /><path d="M20 15l-2 3h3l-2 3" />';
 
   const nameIconWrap = document.createElement("span");
-  nameIconWrap.className = "status-card-icon-wrap has-tooltip";
-  nameIconWrap.dataset.tooltipServerStatus = "true";
-  nameIconWrap.dataset.statusLabel = statusLabel;
-  nameIconWrap.dataset.checkedAt = info.checked_at || "";
-  nameIconWrap.setAttribute("data-tooltip", `Status: ${statusLabel}`);
-  nameIconWrap.setAttribute("aria-label", `Status: ${statusLabel}`);
+  nameIconWrap.className = "status-card-icon-wrap";
   nameIconWrap.appendChild(nameIcon);
 
   const nameEl = document.createElement("strong");
@@ -1338,7 +1394,7 @@ function buildServersNameRow(item, statusLabel) {
   const typeIcon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
   typeIcon.setAttribute(
     "class",
-    `status-card-type-icon icon icon-tabler icons-tabler-outline icon-tabler-${item.type === "local" ? "plug-connected" : "network"}`
+    `status-card-type-icon status-icon status-icon-${statusLabel} icon icon-tabler icons-tabler-outline icon-tabler-${item.type === "local" ? "plug-connected" : "network"}`
   );
   typeIcon.setAttribute("width", "24");
   typeIcon.setAttribute("height", "24");
@@ -1351,13 +1407,13 @@ function buildServersNameRow(item, statusLabel) {
   typeIcon.setAttribute("aria-hidden", "true");
   const typeWrap = document.createElement("span");
   typeWrap.className = "status-card-type has-tooltip";
+  typeWrap.dataset.tooltipServerStatus = "true";
+  typeWrap.dataset.statusLabel = statusLabel;
+  typeWrap.dataset.checkedAt = info.checked_at || "";
+  typeWrap.dataset.serverType = item.type;
   if (item.type === "local") {
-    typeWrap.setAttribute("data-tooltip", "Local socket");
-    typeWrap.setAttribute("aria-label", "Local socket");
     typeIcon.innerHTML = '<path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M7 12l5 5l-1.5 1.5a3.536 3.536 0 1 1 -5 -5l1.5 -1.5" /><path d="M17 12l-5 -5l1.5 -1.5a3.536 3.536 0 1 1 5 5l-1.5 1.5" /><path d="M3 21l2.5 -2.5" /><path d="M18.5 5.5l2.5 -2.5" /><path d="M10 11l-2 2" /><path d="M13 14l-2 2" />';
   } else {
-    typeWrap.setAttribute("data-tooltip", "Remote agent");
-    typeWrap.setAttribute("aria-label", "Remote agent");
     typeIcon.innerHTML = '<path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M6 9a6 6 0 1 0 12 0a6 6 0 0 0 -12 0" /><path d="M12 3c1.333 .333 2 2.333 2 6s-.667 5.667 -2 6" /><path d="M12 3c-1.333 .333 -2 2.333 -2 6s.667 5.667 2 6" /><path d="M6 9h12" /><path d="M3 20h7" /><path d="M14 20h7" /><path d="M10 20a2 2 0 1 0 4 0a2 2 0 0 0 -4 0" /><path d="M12 15v3" />';
   }
   typeWrap.appendChild(typeIcon);
@@ -1418,7 +1474,7 @@ function renderServers(localServers, remoteServers) {
     const isMaintenance = Boolean(item.server.maintenance);
     const infoChecking = debouncedCheckingVisible(infoKey, info);
     let statusValue = String(info.status || "").toLowerCase();
-    if (infoChecking) statusValue = "checking";
+    if (infoChecking && (!statusValue || statusValue === "unknown")) statusValue = "checking";
     if (isMaintenance) statusValue = "maintenance";
     if (!statusValue) statusValue = "unknown";
     const statusClass = ["online", "offline", "maintenance", "restarting", "checking"].includes(statusValue)
@@ -1576,14 +1632,17 @@ function shouldReplaceServerInfo(existing, incoming) {
   if (incomingAddress && existingAddress && incomingAddress !== existingAddress) {
     return true;
   }
-  const incomingCheckedAt = serverInfoCheckedAtMs(incoming);
-  const existingCheckedAt = serverInfoCheckedAtMs(existing);
-  if (incomingCheckedAt > existingCheckedAt) return true;
-  if (incomingCheckedAt < existingCheckedAt) return false;
   const existingChecking = Boolean(existing.checking);
   const incomingChecking = Boolean(incoming.checking);
+  const incomingCheckedAt = serverInfoCheckedAtMs(incoming);
+  const existingCheckedAt = serverInfoCheckedAtMs(existing);
   if (existingChecking && !incomingChecking) return true;
-  if (!existingChecking && incomingChecking) return false;
+  if (!existingChecking && incomingChecking) {
+    if (incomingCheckedAt >= existingCheckedAt) return true;
+    return false;
+  }
+  if (incomingCheckedAt > existingCheckedAt) return true;
+  if (incomingCheckedAt < existingCheckedAt) return false;
   const existingStatus = String(existing.status || "");
   const incomingStatus = String(incoming.status || "");
   if (!existingStatus && incomingStatus) return true;
@@ -1609,9 +1668,48 @@ function normalizeQuery(value) {
   return String(value || "").trim().toLowerCase();
 }
 
+function updateSidebarSearchUI() {
+  if (!sidebarSearch) return;
+  if (currentView === "containers") {
+    updateContainersSearchCount();
+  } else if (sidebarSearchCountEl) {
+    sidebarSearchCountEl.classList.add("hidden");
+  }
+}
+
 function applySidebarFilter(queryOverride) {
   if (!sidebarSearch) return;
+  updateSidebarSearchUI();
   const query = normalizeQuery(queryOverride ?? sidebarSearch.value);
+  if (currentView === "containers") {
+    if (containersViewMode === "shell" && containersShellList) {
+      const items = Array.from(containersShellList.querySelectorAll(".containers-shell-item"));
+      items.forEach((item) => {
+        const source = item.dataset && item.dataset.search ? item.dataset.search : item.textContent;
+        const haystack = normalizeQuery(source);
+        const match = !query || haystack.includes(query);
+        item.classList.toggle("filtered-out", !match);
+      });
+    } else if (containersViewMode === "logs" && containersLogsList) {
+      const items = Array.from(containersLogsList.querySelectorAll(".containers-shell-item"));
+      items.forEach((item) => {
+        const source = item.dataset && item.dataset.search ? item.dataset.search : item.textContent;
+        const haystack = normalizeQuery(source);
+        const match = !query || haystack.includes(query);
+        item.classList.toggle("filtered-out", !match);
+      });
+    } else {
+      const rows = Array.from(containersTableBody ? containersTableBody.querySelectorAll("tr") : []);
+      rows.forEach((row) => {
+        const source = row.dataset && row.dataset.search ? row.dataset.search : row.textContent;
+        const haystack = normalizeQuery(source);
+        const match = !query || haystack.includes(query);
+        row.classList.toggle("filtered-out", !match);
+      });
+    }
+    updateContainersSearchCount();
+    return;
+  }
   if (currentView === "servers") {
     serversSearchQuery = query;
     renderServers(cachedLocals, cachedRemotes);
@@ -1627,11 +1725,59 @@ function applySidebarFilter(queryOverride) {
   });
 }
 
+function applyExperimentalFeatures(cfg) {
+  const exp = cfg && cfg.experimental_features ? cfg.experimental_features : {};
+  const flags = {
+    containers: Boolean(exp.containers),
+    container_shell: Boolean(exp.container_shell),
+    container_logs: Boolean(exp.container_logs),
+    stacks: Boolean(exp.stacks),
+    images: Boolean(exp.images),
+  };
+  if (sidebar) {
+    sidebar.querySelectorAll(".experimental-link").forEach((btn) => {
+      const view = btn.getAttribute("data-view");
+      const enabled = Boolean(flags[view]);
+      btn.classList.toggle("hidden", !enabled);
+    });
+  }
+  if (flags.containers) {
+    updateContainersServerOptions();
+  }
+  if (topbarContainersShellBtn) {
+    topbarContainersShellBtn.classList.toggle("hidden", !(flags.container_shell && flags.containers));
+  }
+  if (topbarContainersLogsBtn) {
+    topbarContainersLogsBtn.classList.toggle("hidden", !(flags.container_logs && flags.containers));
+  }
+  if (topbarContainersStacksBtn) {
+    topbarContainersStacksBtn.classList.toggle("hidden", !(flags.stacks && flags.containers));
+  }
+  if (topbarContainersImagesBtn) {
+    topbarContainersImagesBtn.classList.toggle("hidden", !(flags.images && flags.containers));
+  }
+  if (!flags.container_shell && containersViewMode === "shell") {
+    setContainersViewMode("table");
+  }
+  if (!flags.container_logs && containersViewMode === "logs") {
+    setContainersViewMode("table");
+  }
+  if (viewContainersEl && !flags.containers) viewContainersEl.classList.add("hidden");
+  if (currentView === "containers" && !flags.containers) {
+    setView("status");
+  }
+  updateContainersExperimentalToggles();
+}
+
+function isExperimentalEnabled(view) {
+  const exp = currentConfig && currentConfig.experimental_features ? currentConfig.experimental_features : {};
+  return Boolean(exp && exp[view]);
+}
+
 function updateServersFilterButtons() {
   const mode = serversFilterMode || "all";
-  if (serversFilterSelect) {
-    serversFilterSelect.value = mode;
-  }
+  renderServersFilterButton(mode);
+  updateServersFilterMenu(mode);
   if (serversFilterResetBtn) {
     const isAll = mode === "all";
     serversFilterResetBtn.disabled = isAll;
@@ -1643,6 +1789,146 @@ function updateServersFilterButtons() {
       icon.classList.toggle("icon-filter-off", !isAll);
     }
   }
+}
+
+function getServersFilterLabel(mode) {
+  switch (mode) {
+    case "active":
+      return "Active";
+    case "maintenance":
+      return "Maintenance";
+    case "offline":
+      return "Offline";
+    default:
+      return "All";
+  }
+}
+
+function renderServersFilterButton(mode) {
+  if (!serversFilterBtn) return;
+  const content = serversFilterBtn.querySelector(".servers-filter-btn-content");
+  if (!content) return;
+  content.textContent = getServersFilterLabel(mode);
+}
+
+function closeServersFilterMenu() {
+  if (!serversFilterMenu || !serversFilterBtn) return;
+  serversFilterMenu.classList.add("hidden");
+  serversFilterBtn.setAttribute("aria-expanded", "false");
+}
+
+function toggleServersFilterMenu() {
+  if (!serversFilterMenu || !serversFilterBtn) return;
+  const isOpen = !serversFilterMenu.classList.contains("hidden");
+  if (isOpen) {
+    closeServersFilterMenu();
+  } else {
+    serversFilterMenu.classList.remove("hidden");
+    serversFilterBtn.setAttribute("aria-expanded", "true");
+  }
+}
+
+function updateServersFilterMenu(mode = serversFilterMode) {
+  if (!serversFilterMenu) return;
+  const options = [
+    { value: "all", label: "All" },
+    { value: "active", label: "Active" },
+    { value: "maintenance", label: "Maintenance" },
+    { value: "offline", label: "Offline" },
+  ];
+  serversFilterMenu.innerHTML = "";
+  options.forEach((option) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "containers-server-option servers-filter-option";
+    if (option.value === mode) {
+      button.classList.add("active");
+    }
+    button.textContent = option.label;
+    button.addEventListener("click", () => {
+      setServersFilterMode(option.value);
+      closeServersFilterMenu();
+    });
+    serversFilterMenu.appendChild(button);
+  });
+}
+
+function updateContainersExperimentalToggles() {
+  const enabled = expContainersInput ? expContainersInput.checked : false;
+  const dependents = [expContainerShellInput, expContainerLogsInput, expStacksInput, expImagesInput];
+  dependents.forEach((input) => {
+    if (!input) return;
+    input.disabled = !enabled;
+    const row = input.closest(".toggle-row");
+    if (row) {
+      row.classList.toggle("toggle-disabled", !enabled);
+    }
+  });
+}
+
+function getLogsLevelLabel(mode) {
+  switch (mode) {
+    case "info":
+      return "Info";
+    case "warn":
+      return "Warn";
+    case "error":
+      return "Error";
+    default:
+      return "All";
+  }
+}
+
+function renderLogsLevelButton(mode) {
+  if (!logsLevelBtn) return;
+  const content = logsLevelBtn.querySelector(".logs-level-btn-content");
+  if (!content) return;
+  content.textContent = getLogsLevelLabel(mode);
+}
+
+function closeLogsLevelMenu() {
+  if (!logsLevelMenu || !logsLevelBtn) return;
+  logsLevelMenu.classList.add("hidden");
+  logsLevelBtn.setAttribute("aria-expanded", "false");
+}
+
+function toggleLogsLevelMenu() {
+  if (!logsLevelMenu || !logsLevelBtn) return;
+  const isOpen = !logsLevelMenu.classList.contains("hidden");
+  if (isOpen) {
+    closeLogsLevelMenu();
+  } else {
+    logsLevelMenu.classList.remove("hidden");
+    logsLevelBtn.setAttribute("aria-expanded", "true");
+  }
+}
+
+function updateLogsLevelMenu(mode = logsLevelMode) {
+  if (!logsLevelMenu) return;
+  const options = [
+    { value: "all", label: "All" },
+    { value: "info", label: "Info" },
+    { value: "warn", label: "Warn" },
+    { value: "error", label: "Error" },
+  ];
+  logsLevelMenu.innerHTML = "";
+  options.forEach((option) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "containers-server-option logs-level-option";
+    if (option.value === mode) {
+      button.classList.add("active");
+    }
+    button.textContent = option.label;
+    button.addEventListener("click", () => {
+      logsLevelMode = option.value;
+      renderLogsLevelButton(logsLevelMode);
+      updateLogsLevelMenu(logsLevelMode);
+      closeLogsLevelMenu();
+      refreshLogs();
+    });
+    logsLevelMenu.appendChild(button);
+  });
 }
 
 function updateServersViewButtons() {
@@ -1797,6 +2083,15 @@ async function refreshConfig() {
   }
   updateStoppedInput.checked = Boolean(cfg.update_stopped_containers);
   pruneDanglingInput.checked = Boolean(cfg.prune_dangling_images);
+  const exp = cfg.experimental_features || {};
+  if (expContainersInput) expContainersInput.checked = Boolean(exp.containers);
+  if (expContainerShellInput) expContainerShellInput.checked = Boolean(exp.container_shell);
+  if (expContainerLogsInput) expContainerLogsInput.checked = Boolean(exp.container_logs);
+  if (expStacksInput) expStacksInput.checked = Boolean(exp.stacks);
+  if (expImagesInput) expImagesInput.checked = Boolean(exp.images);
+  currentTimeZone = cfg.time_zone ? String(cfg.time_zone).trim() : "";
+  setContainersLogsTimestamps(containersLogsTimestamps);
+  applyExperimentalFeatures(cfg);
   const enabled = Boolean(cfg.scheduler_enabled);
   const intervalSec = Number(cfg.scan_interval_sec);
   const enableChanged = lastSchedulerEnabled === null ? false : enabled !== lastSchedulerEnabled;
@@ -1869,6 +2164,13 @@ function buildConfigPayload(options = {}) {
     discord_notify_on_container_updated: discordContainerUpdatedInput ? discordContainerUpdatedInput.checked : true,
     update_stopped_containers: updateStoppedInput.checked,
     prune_dangling_images: pruneDanglingInput.checked,
+    experimental_features: {
+      containers: expContainersInput ? expContainersInput.checked : false,
+      container_shell: expContainerShellInput ? expContainerShellInput.checked : false,
+      container_logs: expContainerLogsInput ? expContainerLogsInput.checked : false,
+      stacks: expStacksInput ? expStacksInput.checked : false,
+      images: expImagesInput ? expImagesInput.checked : false,
+    },
   };
 }
 
@@ -1901,6 +2203,7 @@ async function refreshServers() {
   renderServers(cachedLocals, cachedRemotes);
   updateServersFilterButtons();
   updateServersViewButtons();
+  updateContainersServerOptions();
   statusHintEl.classList.add("hidden");
 }
 
@@ -1915,6 +2218,1117 @@ async function triggerServersRefresh() {
 
 async function triggerStatusRefresh() {
   await fetchJSON("/api/status/refresh", { method: "POST" });
+}
+
+function formatUptime(seconds) {
+  const total = Number(seconds);
+  if (!Number.isFinite(total) || total <= 0) return "—";
+  const days = Math.floor(total / 86400);
+  const hours = Math.floor((total % 86400) / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const parts = [];
+  if (days > 0) parts.push(`${days}d`);
+  if (hours > 0 || days > 0) parts.push(`${hours}h`);
+  parts.push(`${minutes}m`);
+  return parts.join(" ");
+}
+
+function normalizeContainerState(state) {
+  return String(state || "").toLowerCase();
+}
+
+function containersSort(list, mode) {
+  const [field, order] = String(mode || "name:asc").split(":");
+  const dir = order === "desc" ? -1 : 1;
+  return list.slice().sort((a, b) => {
+    const aVal = field === "state" ? normalizeContainerState(a.state) : String(a.name || "");
+    const bVal = field === "state" ? normalizeContainerState(b.state) : String(b.name || "");
+    if (aVal === bVal) return 0;
+    return aVal > bVal ? dir : -dir;
+  });
+}
+
+function updateContainersSortUI() {
+  const buttons = [
+    { key: "name", btn: containersNameSortBtn, label: "name" },
+    { key: "state", btn: containersStateSortBtn, label: "state" },
+  ];
+  buttons.forEach(({ key, btn, label }) => {
+    if (!btn) return;
+    const icon = btn.querySelector(".icon-sort");
+    if (!icon) return;
+    icon.classList.remove("icon-sort-neutral", "icon-sort-asc", "icon-sort-desc");
+    if (containersSortMode === `${key}:asc`) {
+      icon.classList.add("icon-sort-asc");
+      btn.setAttribute("aria-label", `Sort ${label} A → Z`);
+      return;
+    }
+    if (containersSortMode === `${key}:desc`) {
+      icon.classList.add("icon-sort-desc");
+      btn.setAttribute("aria-label", `Sort ${label} Z → A`);
+      return;
+    }
+    icon.classList.add("icon-sort-neutral");
+    btn.setAttribute("aria-label", `Sort by ${label}`);
+  });
+}
+
+function getScopeInfo(scope) {
+  const [type, name] = String(scope || "").split(":");
+  if (!type || !name) return null;
+  const server = type === "local"
+    ? cachedLocals.find((item) => item.name === name)
+    : cachedRemotes.find((item) => item.name === name);
+  const infoKey = `${type}:${name}`;
+  const info = cachedServerInfo[infoKey] || {};
+  const status = String(info.status || "").toLowerCase();
+  const maintenance = Boolean(server && server.maintenance);
+  const checking = debouncedCheckingVisible(infoKey, info);
+  return { type, name, server, status, maintenance, checking };
+}
+
+function updateContainersStatus(scope, errorMessage) {
+  if (!topbarContainersStatusEl) return;
+  if (!scope) {
+    topbarContainersStatusEl.innerHTML = "";
+    return;
+  }
+  const info = getScopeInfo(scope);
+  let message = "";
+  let variant = "online";
+  if (info && info.maintenance) {
+    message = "Maintenance mode — operations may be limited.";
+    variant = "maintenance";
+  }
+  if (info && info.status === "offline") {
+    message = "Offline — data unavailable.";
+    variant = "offline";
+  }
+  if (errorMessage) {
+    message = `Error: ${errorMessage}`;
+    variant = "offline";
+  }
+  if (!message) {
+    topbarContainersStatusEl.innerHTML = "";
+    return;
+  }
+  topbarContainersStatusEl.innerHTML = "";
+  const pill = document.createElement("span");
+  pill.className = "status-pill";
+  pill.dataset.variant = variant;
+  pill.textContent = message;
+  topbarContainersStatusEl.appendChild(pill);
+}
+
+function updateContainersSearchCount() {
+  if (!sidebarSearchCountEl || !sidebarSearch) return;
+  if (currentView !== "containers") {
+    sidebarSearchCountEl.classList.add("hidden");
+    return;
+  }
+  let total = 0;
+  let visible = 0;
+  if (containersViewMode === "shell" && containersShellList) {
+    const items = Array.from(containersShellList.querySelectorAll(".containers-shell-item"));
+    total = items.length;
+    visible = items.filter((item) => !item.classList.contains("filtered-out")).length;
+  } else if (containersViewMode === "logs" && containersLogsList) {
+    const items = Array.from(containersLogsList.querySelectorAll(".containers-shell-item"));
+    total = items.length;
+    visible = items.filter((item) => !item.classList.contains("filtered-out")).length;
+  } else if (containersTableBody) {
+    const rows = Array.from(containersTableBody.querySelectorAll("tr"));
+    total = rows.length;
+    visible = rows.filter((row) => !row.classList.contains("filtered-out")).length;
+  }
+  const query = sidebarSearch.value.trim();
+  const focused = document.activeElement === sidebarSearch;
+  const shouldShow = focused || query.length > 0;
+  if (!shouldShow) {
+    sidebarSearchCountEl.classList.add("hidden");
+    return;
+  }
+  sidebarSearchCountEl.classList.remove("hidden");
+  sidebarSearchCountEl.textContent = query ? `${visible}/${total}` : `${total}`;
+}
+
+function setContainersViewMode(mode) {
+  const next = mode === "shell" ? "shell" : mode === "logs" ? "logs" : "table";
+  containersViewMode = next;
+  const isSplit = next !== "table";
+  if (viewContainersEl) {
+    viewContainersEl.classList.toggle("shell-mode", isSplit);
+  }
+  if (containersTableView) {
+    containersTableView.classList.toggle("hidden", isSplit);
+  }
+  if (containersShellLayout) {
+    containersShellLayout.classList.toggle("hidden", next !== "shell");
+  }
+  if (containersLogsLayout) {
+    containersLogsLayout.classList.toggle("hidden", next !== "logs");
+  }
+  if (topbarContainersShellBtn) {
+    topbarContainersShellBtn.classList.toggle("is-active", next === "shell");
+  }
+  if (topbarContainersLogsBtn) {
+    topbarContainersLogsBtn.classList.toggle("is-active", next === "logs");
+  }
+  if (next === "shell") {
+    closeContainersLogsSession("switch to shell");
+    setContainersLogsPaused(false);
+    const list = Array.from(containersCache.values()).map((entry) => entry.data);
+    renderContainersShellList(list);
+    stopContainersAutoRefresh();
+    refreshContainers({ silent: true }).catch(() => {});
+  } else if (next === "logs") {
+    closeContainersShellSession("switch to logs");
+    closeContainersLogsSession("enter logs");
+    setContainersLogsPaused(false);
+    updateContainersLogsStreamIndicator();
+    const list = Array.from(containersCache.values()).map((entry) => entry.data);
+    renderContainersLogsList(list);
+    stopContainersAutoRefresh();
+    refreshContainers({ silent: true }).catch(() => {});
+  } else {
+    closeContainersShellSession("switch to table");
+    closeContainersLogsSession("switch to table");
+    startContainersAutoRefresh();
+  }
+  updateContainersSearchCount();
+}
+
+function renderContainersShellList(list) {
+  if (!containersShellList) return;
+  containersShellList.innerHTML = "";
+  if (!Array.isArray(list) || list.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "containers-shell-placeholder";
+    empty.textContent = "No containers found.";
+    containersShellList.appendChild(empty);
+    return;
+  }
+  const sorted = containersSort(list, containersSortMode);
+  let selectedFound = false;
+  sorted.forEach((container) => {
+    if (!container || !container.id) return;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "containers-shell-item";
+    if (container.id === containersShellSelectedId) {
+      button.classList.add("active");
+      selectedFound = true;
+    }
+    button.dataset.id = container.id;
+    button.dataset.search = `${container.name || ""} ${container.state || ""}`;
+    button.textContent = container.name || container.id.slice(0, 12);
+    button.addEventListener("click", () => {
+      openContainersShell(container);
+    });
+    containersShellList.appendChild(button);
+  });
+  if (!selectedFound && containersShellSelectedId) {
+    containersShellSelectedId = "";
+    closeContainersShellSession("selection missing");
+  }
+  if (sidebarSearch && sidebarSearch.value.trim()) {
+    applySidebarFilter(sidebarSearch.value);
+  }
+}
+
+function renderContainersLogsList(list) {
+  if (!containersLogsList) return;
+  containersLogsList.innerHTML = "";
+  if (!Array.isArray(list) || list.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "containers-shell-placeholder";
+    empty.textContent = "No containers found.";
+    containersLogsList.appendChild(empty);
+    return;
+  }
+  const sorted = containersSort(list, containersSortMode);
+  let selectedFound = false;
+  sorted.forEach((container) => {
+    if (!container || !container.id) return;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "containers-shell-item";
+    if (container.id === containersLogsSelectedId) {
+      button.classList.add("active");
+      selectedFound = true;
+    }
+    button.dataset.id = container.id;
+    button.dataset.search = `${container.name || ""} ${container.state || ""}`;
+    button.textContent = container.name || container.id.slice(0, 12);
+    button.addEventListener("click", () => {
+      openContainersLogs(container);
+    });
+    containersLogsList.appendChild(button);
+  });
+  if (!selectedFound && containersLogsSelectedId) {
+    containersLogsSelectedId = "";
+    closeContainersLogsSession("selection missing");
+  }
+  if (sidebarSearch && sidebarSearch.value.trim()) {
+    applySidebarFilter(sidebarSearch.value);
+  }
+}
+
+function showContainersShellPlaceholder(message) {
+  if (containersShellPlaceholder) {
+    containersShellPlaceholder.textContent = message;
+    containersShellPlaceholder.classList.remove("hidden");
+  }
+  if (containersTerminalEl) {
+    containersTerminalEl.classList.add("hidden");
+  }
+  if (containersShellTerminalEl) {
+    containersShellTerminalEl.classList.remove("shell-active");
+  }
+}
+
+function hideContainersShellPlaceholder() {
+  if (containersShellPlaceholder) {
+    containersShellPlaceholder.classList.add("hidden");
+  }
+  if (containersTerminalEl) {
+    containersTerminalEl.classList.remove("hidden");
+  }
+  if (containersShellTerminalEl) {
+    containersShellTerminalEl.classList.add("shell-active");
+  }
+}
+
+function showContainersLogsPlaceholder(message) {
+  if (containersLogsPlaceholder) {
+    containersLogsPlaceholder.textContent = message;
+    containersLogsPlaceholder.classList.remove("hidden");
+  }
+  if (containersLogsView) {
+    containersLogsView.classList.add("hidden");
+  }
+}
+
+function hideContainersLogsPlaceholder() {
+  if (containersLogsPlaceholder) {
+    containersLogsPlaceholder.classList.add("hidden");
+  }
+  if (containersLogsView) {
+    containersLogsView.classList.remove("hidden");
+  }
+}
+
+function updateContainersLogsStreamIndicator() {
+  if (!containersLogsStreamEl) return;
+  containersLogsStreamEl.innerHTML = "";
+  containersLogsStreamEl.classList.remove("status-icon-online", "status-icon-maintenance");
+  containersLogsStreamEl.classList.add(containersLogsStreamActive ? "status-icon-online" : "status-icon-maintenance");
+  const icon = document.createElement("span");
+  icon.className = `icon-action ${containersLogsStreamActive ? "icon-wifi" : "icon-wifi-off"}`;
+  icon.setAttribute("aria-hidden", "true");
+  containersLogsStreamEl.appendChild(icon);
+  const label = containersLogsStreamActive ? "Log Live Stream Active" : "Log Live Stream Inactive";
+  containersLogsStreamEl.setAttribute("data-tooltip", label);
+  containersLogsStreamEl.setAttribute("aria-label", label);
+}
+
+function setContainersLogsStreamActive(active) {
+  containersLogsStreamActive = Boolean(active);
+  updateContainersLogsStreamIndicator();
+}
+
+function resetContainersLogsBuffer() {
+  containersLogsBuffer = "";
+  containersLogsPending = "";
+  containersLogsLineBuffer = "";
+  containersLogsBytes = 0;
+  containersLogsAutoScroll = true;
+  if (containersLogsOutput) {
+    containersLogsOutput.textContent = "";
+    containersLogsOutput.scrollTop = 0;
+  }
+}
+
+function formatLogTimestamp(date) {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) return "";
+  const options = {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  };
+  if (currentTimeZone) {
+    try {
+      return new Intl.DateTimeFormat("sv-SE", { ...options, timeZone: currentTimeZone }).format(date);
+    } catch {
+      // fallback to browser timezone
+    }
+  }
+  return new Intl.DateTimeFormat("sv-SE", options).format(date);
+}
+
+function normalizeLogLineTimestamp(line) {
+  const match = line.match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?)\s*/);
+  if (!match) return line;
+  const raw = match[1];
+  const date = new Date(raw);
+  const formatted = formatLogTimestamp(date);
+  if (!formatted) return line;
+  const rest = line.slice(match[0].length);
+  return rest ? `${formatted} ${rest}` : formatted;
+}
+
+function processContainersLogsChunk(chunk) {
+  if (!chunk) return;
+  const text = typeof chunk === "string" ? chunk : String(chunk);
+  if (!containersLogsTimestamps) {
+    appendContainersLogs(text);
+    return;
+  }
+  containersLogsLineBuffer += text;
+  const lines = containersLogsLineBuffer.split("\n");
+  containersLogsLineBuffer = lines.pop() || "";
+  lines.forEach((line) => {
+    appendContainersLogs(`${normalizeLogLineTimestamp(line)}\n`);
+  });
+}
+
+function appendContainersLogs(data) {
+  if (!data) return;
+  const text = typeof data === "string" ? data : String(data);
+  if (containersLogsPaused) {
+    containersLogsPending += text;
+    if (containersLogsPending.length > Math.floor(containersLogsMaxBytes / 2)) {
+      const excess = containersLogsPending.length - Math.floor(containersLogsMaxBytes / 2);
+      containersLogsPending = containersLogsPending.slice(excess);
+    }
+    return;
+  }
+  containersLogsBuffer += text;
+  containersLogsBytes = containersLogsBuffer.length;
+  if (containersLogsBytes > containersLogsMaxBytes) {
+    const excess = containersLogsBytes - containersLogsMaxBytes;
+    containersLogsBuffer = containersLogsBuffer.slice(excess);
+    containersLogsBytes = containersLogsBuffer.length;
+  }
+  if (containersLogsOutput) {
+    containersLogsOutput.textContent = containersLogsBuffer;
+    if (containersLogsAutoScroll) {
+      containersLogsOutput.scrollTop = containersLogsOutput.scrollHeight;
+    }
+  }
+}
+
+function setContainersLogsPaused(paused) {
+  containersLogsPaused = Boolean(paused);
+  if (containersLogsPauseBtn) {
+    const icon = containersLogsPauseBtn.querySelector(".icon-action");
+    if (icon) {
+      icon.classList.toggle("icon-pause", !containersLogsPaused);
+      icon.classList.toggle("icon-play", containersLogsPaused);
+    }
+    containersLogsPauseBtn.classList.toggle("is-active", containersLogsPaused);
+    const label = containersLogsPaused ? "Resume logs" : "Pause logs";
+    containersLogsPauseBtn.setAttribute("aria-label", label);
+    containersLogsPauseBtn.setAttribute("data-tooltip", label);
+  }
+  if (!containersLogsPaused && containersLogsPending) {
+    const pending = containersLogsPending;
+    containersLogsPending = "";
+    appendContainersLogs(pending);
+  }
+}
+
+function setContainersLogsTimestamps(enabled) {
+  containersLogsTimestamps = Boolean(enabled);
+  if (containersLogsTimestampsBtn) {
+    const icon = containersLogsTimestampsBtn.querySelector(".icon-action");
+    if (icon) {
+      icon.classList.toggle("icon-clock", !containersLogsTimestamps);
+      icon.classList.toggle("icon-clock-off", containersLogsTimestamps);
+    }
+    containersLogsTimestampsBtn.classList.toggle("is-active", containersLogsTimestamps);
+    const tzInfo = currentTimeZone ? ` (TZ: ${currentTimeZone})` : "";
+    const label = containersLogsTimestamps ? "Timestamp off" : "Timestamp on";
+    containersLogsTimestampsBtn.setAttribute("aria-label", `${label}${tzInfo}`);
+    containersLogsTimestampsBtn.setAttribute("data-tooltip", `${label}${tzInfo}`);
+  }
+}
+
+function closeContainersLogsSession(reason, options = {}) {
+  const preserve = Boolean(options && options.preserve);
+  const silent = Boolean(options && options.silent);
+  if (reason) {
+    console.debug(`[containers-logs] closing: ${reason}`);
+  }
+  setContainersLogsStreamActive(false);
+  if (containersLogsSocket) {
+    containersLogsSilentClose = silent;
+    try {
+      containersLogsSocket.close();
+    } catch (err) {
+      // ignore
+    }
+    containersLogsSocket = null;
+  }
+  if (!preserve) {
+    resetContainersLogsBuffer();
+  }
+  showContainersLogsPlaceholder("Select a container to view logs.");
+}
+
+function closeContainersShellSession(reason) {
+  if (reason) {
+    console.debug(`[containers-shell] closing: ${reason}`);
+  }
+  if (containersShellSocket) {
+    try {
+      containersShellSocket.close();
+    } catch (err) {
+      // ignore
+    }
+    containersShellSocket = null;
+  }
+  if (containersShellDataListener) {
+    containersShellDataListener.dispose();
+    containersShellDataListener = null;
+  }
+  if (containersShellTerm) {
+    containersShellTerm.dispose();
+    containersShellTerm = null;
+    containersShellFitAddon = null;
+  }
+  showContainersShellPlaceholder("Select a container to open shell.");
+}
+
+function scheduleContainersShellResize() {
+  if (containersShellResizeTimer) {
+    window.clearTimeout(containersShellResizeTimer);
+  }
+  containersShellResizeTimer = window.setTimeout(() => {
+    if (!containersShellSocket || containersShellSocket.readyState !== WebSocket.OPEN) return;
+    if (containersShellFitAddon && typeof containersShellFitAddon.fit === "function") {
+      containersShellFitAddon.fit();
+    }
+    if (!containersShellTerm) return;
+    const cols = containersShellTerm.cols || 80;
+    const rows = containersShellTerm.rows || 24;
+    containersShellSocket.send(JSON.stringify({ type: "resize", cols, rows }));
+  }, 120);
+}
+
+function openContainersShell(container) {
+  if (!container || !container.id) return;
+  containersShellSelectedId = container.id;
+  renderContainersShellList(Array.from(containersCache.values()).map((entry) => entry.data));
+  const state = normalizeContainerState(container.state);
+  if (state !== "running") {
+    closeContainersShellSession("container not running");
+    showContainersShellPlaceholder("Container is not running.");
+    return;
+  }
+  if (!containersTerminalEl) return;
+  if (typeof window.Terminal === "undefined") {
+    showContainersShellPlaceholder("Terminal library not loaded.");
+    return;
+  }
+  closeContainersShellSession("open new shell");
+  if (containersShellTerm) {
+    containersShellTerm.dispose();
+    containersShellTerm = null;
+    containersShellFitAddon = null;
+  }
+  const shellBin = container.shell || "/bin/sh";
+  const shellUser = container.user || "root";
+  containersShellTerm = new window.Terminal({
+    convertEol: true,
+    scrollback: 2000,
+    theme: {
+      background: "transparent",
+      foreground: "#e2e8f0",
+      cursor: "#94a3b8",
+      selection: "#334155",
+      black: "#0b0f1a",
+      red: "#ef4444",
+      green: "#22c55e",
+      yellow: "#eab308",
+      blue: "#3b82f6",
+      magenta: "#a855f7",
+      cyan: "#06b6d4",
+      white: "#e2e8f0",
+    },
+  });
+  if (typeof window.FitAddon !== "undefined") {
+    containersShellFitAddon = new window.FitAddon.FitAddon();
+    containersShellTerm.loadAddon(containersShellFitAddon);
+  }
+  containersTerminalEl.innerHTML = "";
+  containersShellTerm.open(containersTerminalEl);
+  containersShellTerm.focus();
+  containersShellTerm.reset();
+  containersShellTerm.writeln(`Connecting to "${container.name || container.id.slice(0, 12)}"...`);
+  containersShellTerm.writeln(`Shell: ${shellBin}, User: ${shellUser}`);
+  containersShellTerm.writeln("");
+  hideContainersShellPlaceholder();
+
+  const wsUrl = `/api/containers/shell?scope=${encodeURIComponent(containersSelectedScope)}&container_id=${encodeURIComponent(container.id)}`;
+  const ws = new WebSocket(wsUrl);
+  ws.binaryType = "arraybuffer";
+  containersShellSocket = ws;
+
+  ws.addEventListener("open", () => {
+    if (containersShellSocket !== ws) return;
+    console.debug("[containers-shell] ws open");
+    scheduleContainersShellResize();
+  });
+
+  ws.addEventListener("message", (event) => {
+    if (containersShellSocket !== ws) return;
+    if (!containersShellTerm) return;
+    if (typeof event.data === "string") {
+      try {
+        const payload = JSON.parse(event.data);
+        if (payload && payload.type === "error" && payload.message) {
+          showToast(payload.message);
+          return;
+        }
+      } catch (err) {
+        containersShellTerm.write(event.data);
+        return;
+      }
+      return;
+    }
+    const data = event.data instanceof ArrayBuffer ? new Uint8Array(event.data) : new Uint8Array();
+    if (data.length > 0) {
+      containersShellTerm.write(data);
+    }
+  });
+
+  ws.addEventListener("close", (event) => {
+    if (containersShellSocket !== ws) return;
+    console.debug(`[containers-shell] ws closed code=${event.code} reason=${event.reason || "n/a"}`);
+    showContainersShellPlaceholder("Shell disconnected.");
+  });
+
+  ws.addEventListener("error", () => {
+    if (containersShellSocket !== ws) return;
+    console.debug("[containers-shell] ws error");
+    showContainersShellPlaceholder("Shell connection failed.");
+  });
+
+  containersShellDataListener = containersShellTerm.onData((data) => {
+    if (containersShellSocket !== ws) return;
+    if (!containersShellSocket || containersShellSocket.readyState !== WebSocket.OPEN) return;
+    containersShellSocket.send(containersShellEncoder.encode(data));
+  });
+  if (!containersShellResizeHandler) {
+    containersShellResizeHandler = () => scheduleContainersShellResize();
+    window.addEventListener("resize", containersShellResizeHandler);
+  }
+}
+
+function openContainersLogs(container, options = {}) {
+  if (!container || !container.id) return;
+  containersLogsSelectedId = container.id;
+  renderContainersLogsList(Array.from(containersCache.values()).map((entry) => entry.data));
+  if (!containersLogsOutput) {
+    showContainersLogsPlaceholder("Logs panel unavailable.");
+    return;
+  }
+  setContainersLogsPaused(false);
+  setContainersLogsTimestamps(containersLogsTimestamps);
+  setContainersLogsStreamActive(false);
+  const preserve = Boolean(options && options.preserve);
+  const silentClose = Boolean(options && options.silentClose);
+  closeContainersLogsSession("open new logs", { preserve, silent: silentClose });
+  if (!preserve) {
+    resetContainersLogsBuffer();
+  }
+  containersLogsAutoScroll = true;
+  hideContainersLogsPlaceholder();
+  appendContainersLogs(`Connecting to "${container.name || container.id.slice(0, 12)}"...\n`);
+
+  updateContainersLogsStreamIndicator();
+  const timestamps = containersLogsTimestamps ? "1" : "0";
+  const wsUrl = `/api/containers/logs?scope=${encodeURIComponent(containersSelectedScope)}&container_id=${encodeURIComponent(container.id)}&follow=1&tail=100&timestamps=${timestamps}`;
+  const ws = new WebSocket(wsUrl);
+  containersLogsSocket = ws;
+
+  ws.addEventListener("open", () => {
+    if (containersLogsSocket !== ws) return;
+    console.debug("[containers-logs] ws open");
+    setContainersLogsStreamActive(true);
+  });
+
+  ws.addEventListener("message", (event) => {
+    if (containersLogsSocket !== ws) return;
+    if (typeof event.data === "string") {
+      try {
+        const payload = JSON.parse(event.data);
+        if (payload && payload.type === "error" && payload.message) {
+          showToast(payload.message);
+          return;
+        }
+      } catch (err) {
+        processContainersLogsChunk(event.data);
+        return;
+      }
+      return;
+    }
+    if (event.data instanceof ArrayBuffer) {
+      const decoder = new TextDecoder("utf-8");
+      processContainersLogsChunk(decoder.decode(event.data));
+    }
+  });
+
+  ws.addEventListener("close", (event) => {
+    if (containersLogsSocket !== ws) return;
+    setContainersLogsStreamActive(false);
+    if (containersLogsSilentClose) {
+      containersLogsSilentClose = false;
+      return;
+    }
+    console.debug(`[containers-logs] ws closed code=${event.code} reason=${event.reason || "n/a"}`);
+    appendContainersLogs("\n[logs disconnected]\n");
+  });
+
+  ws.addEventListener("error", () => {
+    if (containersLogsSocket !== ws) return;
+    setContainersLogsStreamActive(false);
+    console.debug("[containers-logs] ws error");
+    appendContainersLogs("\n[logs connection failed]\n");
+  });
+}
+
+function resolveServerStatusLabel(info) {
+  if (!info) return "unknown";
+  if (info.maintenance) return "maintenance";
+  if (info.status === "offline") return "offline";
+  if (info.status === "restarting") return "restarting";
+  if (info.checking && (!info.status || info.status === "unknown")) return "checking";
+  if (!info.status) return "unknown";
+  return "online";
+}
+
+function buildServerStatusIcon(statusLabel) {
+  const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  icon.setAttribute(
+    "class",
+    "status-card-icon icon icon-tabler icons-tabler-outline icon-tabler-server-bolt"
+  );
+  icon.setAttribute("width", "24");
+  icon.setAttribute("height", "24");
+  icon.setAttribute("viewBox", "0 0 24 24");
+  icon.setAttribute("fill", "none");
+  icon.setAttribute("stroke", "currentColor");
+  icon.setAttribute("stroke-width", "2");
+  icon.setAttribute("stroke-linecap", "round");
+  icon.setAttribute("stroke-linejoin", "round");
+  icon.setAttribute("aria-hidden", "true");
+  icon.innerHTML = '<path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M3 7a3 3 0 0 1 3 -3h12a3 3 0 0 1 3 3v2a3 3 0 0 1 -3 3h-12a3 3 0 0 1 -3 -3" /><path d="M15 20h-9a3 3 0 0 1 -3 -3v-2a3 3 0 0 1 3 -3h12" /><path d="M7 8v.01" /><path d="M7 16v.01" /><path d="M20 15l-2 3h3l-2 3" />';
+  return icon;
+}
+
+function buildServerTypeIcon(serverType, statusLabel) {
+  const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+  icon.setAttribute(
+    "class",
+    `status-card-type-icon status-icon status-icon-${statusLabel || "unknown"} icon icon-tabler icons-tabler-outline icon-tabler-${serverType === "local" ? "plug-connected" : "network"}`
+  );
+  icon.setAttribute("width", "24");
+  icon.setAttribute("height", "24");
+  icon.setAttribute("viewBox", "0 0 24 24");
+  icon.setAttribute("fill", "none");
+  icon.setAttribute("stroke", "currentColor");
+  icon.setAttribute("stroke-width", "2");
+  icon.setAttribute("stroke-linecap", "round");
+  icon.setAttribute("stroke-linejoin", "round");
+  icon.setAttribute("aria-hidden", "true");
+  if (serverType === "local") {
+    icon.innerHTML = '<path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M7 12l5 5l-1.5 1.5a3.536 3.536 0 1 1 -5 -5l1.5 -1.5" /><path d="M17 12l-5 -5l1.5 -1.5a3.536 3.536 0 1 1 5 5l-1.5 1.5" /><path d="M3 21l2.5 -2.5" /><path d="M18.5 5.5l2.5 -2.5" /><path d="M10 11l-2 2" /><path d="M13 14l-2 2" />';
+  } else {
+    icon.innerHTML = '<path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M6 9a6 6 0 1 0 12 0a6 6 0 0 0 -12 0" /><path d="M12 3c1.333 .333 2 2.333 2 6s-.667 5.667 -2 6" /><path d="M12 3c-1.333 .333 -2 2.333 -2 6s.667 5.667 2 6" /><path d="M6 9h12" /><path d="M3 20h7" /><path d="M14 20h7" /><path d="M10 20a2 2 0 1 0 4 0a2 2 0 0 0 -4 0" /><path d="M12 15v3" />';
+  }
+  return icon;
+}
+
+function renderContainersServerButton(info) {
+  if (!topbarContainersServerBtn) return;
+  const content = topbarContainersServerBtn.querySelector(".containers-server-btn-content");
+  if (!content) return;
+  content.innerHTML = "";
+  if (!info || !info.server) {
+    content.textContent = "Select server";
+    return;
+  }
+  const statusLabel = resolveServerStatusLabel(info);
+  const statusIcon = buildServerStatusIcon(statusLabel);
+  const nameEl = document.createElement("span");
+  nameEl.className = "containers-server-name";
+  nameEl.textContent = info.server.name;
+  const typeIcon = buildServerTypeIcon(info.type, statusLabel);
+  content.append(statusIcon, nameEl, typeIcon);
+}
+
+function closeContainersServerMenu() {
+  if (!topbarContainersServerMenu || !topbarContainersServerBtn) return;
+  topbarContainersServerMenu.classList.add("hidden");
+  topbarContainersServerBtn.setAttribute("aria-expanded", "false");
+}
+
+function toggleContainersServerMenu() {
+  if (!topbarContainersServerMenu || !topbarContainersServerBtn) return;
+  const isOpen = !topbarContainersServerMenu.classList.contains("hidden");
+  if (isOpen) {
+    closeContainersServerMenu();
+  } else {
+    topbarContainersServerMenu.classList.remove("hidden");
+    topbarContainersServerBtn.setAttribute("aria-expanded", "true");
+  }
+}
+
+function updateContainersServerOptions() {
+  if (!topbarContainersServerMenu) return;
+  const options = [
+    ...cachedLocals.map((server) => ({
+      scope: `local:${server.name}`,
+      label: server.name,
+      type: "local",
+      server,
+    })),
+    ...cachedRemotes.map((server) => ({
+      scope: `remote:${server.name}`,
+      label: server.name,
+      type: "remote",
+      server,
+    })),
+  ];
+  const previous = containersSelectedScope;
+  topbarContainersServerMenu.innerHTML = "";
+  options.forEach((item) => {
+    const info = getScopeInfo(item.scope) || { type: item.type, server: item.server, status: "", maintenance: false, checking: false };
+    const statusLabel = resolveServerStatusLabel(info);
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "containers-server-option";
+    if (item.scope === previous) {
+      button.classList.add("active");
+    }
+    const statusIcon = buildServerStatusIcon(statusLabel);
+    const nameEl = document.createElement("span");
+    nameEl.className = "containers-server-name";
+    nameEl.textContent = item.label;
+    const typeIcon = buildServerTypeIcon(item.type, statusLabel);
+    button.append(statusIcon, nameEl, typeIcon);
+    button.addEventListener("click", async () => {
+      containersSelectedScope = item.scope;
+      topbarContainersServerMenu.querySelectorAll(".containers-server-option").forEach((el) => {
+        el.classList.remove("active");
+      });
+      button.classList.add("active");
+      renderContainersServerButton(info);
+      closeContainersServerMenu();
+      updateContainersLogsStreamIndicator();
+      await refreshContainers({ silent: true });
+    });
+    topbarContainersServerMenu.appendChild(button);
+  });
+  const fallback = options.length > 0 ? options[0].scope : "";
+  const next = options.find((item) => item.scope === previous) ? previous : fallback;
+  containersSelectedScope = next;
+  if (next) {
+    const info = getScopeInfo(next);
+    renderContainersServerButton(info);
+  } else {
+    renderContainersServerButton(null);
+  }
+}
+
+function buildContainerActionButton(iconClass, label, onClick) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "secondary icon-action-btn has-tooltip";
+  button.setAttribute("aria-label", label);
+  button.setAttribute("data-tooltip", label);
+  const icon = document.createElement("span");
+  icon.className = `icon-action ${iconClass}`;
+  icon.setAttribute("aria-hidden", "true");
+  button.appendChild(icon);
+  button.addEventListener("click", onClick);
+  return button;
+}
+
+function setContainerOptimisticState(containerId, state, scope) {
+  if (!containerId) return;
+  const entry = containersCache.get(containerId);
+  if (!entry || !entry.data) return;
+  entry.data = { ...entry.data, state };
+  updateContainerRow(entry.row, entry.data, scope);
+  if (containersSortMode.startsWith("state:")) {
+    const list = Array.from(containersCache.values()).map((item) => item.data);
+    if (list.length > 0 && containersSelectedScope) {
+      renderContainers(list, containersSelectedScope);
+    }
+  }
+}
+
+function clearContainersKillConfirmations() {
+  if (containersKillConfirming.size === 0) return;
+  containersKillConfirming.clear();
+  if (!containersSelectedScope) return;
+  const list = Array.from(containersCache.values()).map((entry) => entry.data);
+  if (list.length > 0) {
+    renderContainers(list, containersSelectedScope);
+  }
+}
+
+function updateContainerRow(row, container, scope) {
+  row.dataset.id = container.id;
+  row.dataset.search = `${container.name || ""} ${container.image || ""} ${container.stack || ""} ${container.state || ""}`;
+  const cells = row.querySelectorAll("td");
+  if (cells.length < 6) return;
+  cells[0].textContent = container.name || container.id.slice(0, 12);
+  cells[1].textContent = container.image || "";
+  const stateValue = normalizeContainerState(container.state);
+  const stateText = container.state || "unknown";
+  cells[2].textContent = "";
+  const stateBadge = document.createElement("span");
+  stateBadge.className = `containers-state-badge ${stateValue ? `containers-state-${stateValue}` : "containers-state-unknown"}`;
+  stateBadge.textContent = stateText;
+  cells[2].className = "containers-state-cell";
+  cells[2].appendChild(stateBadge);
+  cells[3].textContent = formatUptime(container.uptime_sec);
+  cells[4].textContent = container.stack || "-";
+  row.dataset.state = stateValue;
+  const actionsCell = cells[5];
+  let actionsWrap = actionsCell.querySelector(".containers-actions");
+  if (!actionsWrap) {
+    actionsWrap = document.createElement("div");
+    actionsWrap.className = "containers-actions";
+    actionsCell.innerHTML = "";
+    actionsCell.appendChild(actionsWrap);
+  } else {
+    actionsWrap.innerHTML = "";
+  }
+  const state = stateValue;
+  const isRunning = state === "running";
+  const isPaused = state === "paused";
+  const isRestarting = state === "restarting";
+  const canStart = !(isRunning || isPaused || isRestarting);
+  const canStop = isRunning || isPaused || isRestarting;
+  const canRestart = isRunning || isPaused || isRestarting;
+  const canPause = isRunning || isPaused;
+  const canKill = isRunning || isPaused || isRestarting;
+  if (!canKill) {
+    containersKillConfirming.delete(container.id);
+  }
+
+  const startBtn = buildContainerActionButton("icon-play", "Start", async () => {
+    containersKillConfirming.delete(container.id);
+    await runContainerAction(scope, container.id, "start");
+  });
+  startBtn.classList.add("btn-success");
+  startBtn.disabled = !canStart;
+
+  const stopBtn = buildContainerActionButton("icon-stop", "Stop", async () => {
+    containersKillConfirming.delete(container.id);
+    await runContainerAction(scope, container.id, "stop");
+  });
+  stopBtn.classList.add("btn-danger");
+  stopBtn.disabled = !canStop;
+
+  const restartBtn = buildContainerActionButton("icon-reload", "Restart", async () => {
+    containersKillConfirming.delete(container.id);
+    setContainerOptimisticState(container.id, "restarting", scope);
+    await runContainerAction(scope, container.id, "restart");
+  });
+  restartBtn.classList.add("btn-info");
+  restartBtn.disabled = !canRestart;
+
+  const pauseLabel = isPaused ? "Unpause" : "Pause";
+  const pauseIcon = isPaused ? "icon-play" : "icon-pause";
+  const pauseAction = isPaused ? "unpause" : "pause";
+  const pauseBtn = buildContainerActionButton(pauseIcon, pauseLabel, async () => {
+    containersKillConfirming.delete(container.id);
+    await runContainerAction(scope, container.id, pauseAction);
+  });
+  pauseBtn.classList.add("btn-warning");
+  pauseBtn.disabled = !canPause;
+
+  const isConfirmingKill = containersKillConfirming.has(container.id);
+  const killBtn = buildContainerActionButton(
+    isConfirmingKill ? "icon-check" : "icon-skull",
+    isConfirmingKill ? "Confirm kill" : "Kill",
+    async () => {
+      if (!canKill) return;
+      if (!containersKillConfirming.has(container.id)) {
+        containersKillConfirming.add(container.id);
+        updateContainerRow(row, container, scope);
+        return;
+      }
+      containersKillConfirming.delete(container.id);
+      await runContainerAction(scope, container.id, "kill");
+    }
+  );
+  killBtn.classList.add("btn-danger");
+  killBtn.classList.add("containers-kill-btn");
+  if (isConfirmingKill) {
+    killBtn.classList.add("is-confirming");
+  }
+  killBtn.disabled = !canKill;
+
+  actionsWrap.append(startBtn, stopBtn, restartBtn, pauseBtn, killBtn);
+}
+
+function clearContainersTable(message) {
+  if (containersTableBody) {
+    containersTableBody.innerHTML = "";
+  }
+  containersCache = new Map();
+  containersKillConfirming.clear();
+  if (containersShellList) {
+    containersShellList.innerHTML = "";
+    if (containersViewMode === "shell") {
+      const empty = document.createElement("div");
+      empty.className = "containers-shell-placeholder";
+      empty.textContent = message || "No containers found.";
+      containersShellList.appendChild(empty);
+    }
+  }
+  if (containersLogsList) {
+    containersLogsList.innerHTML = "";
+    if (containersViewMode === "logs") {
+      const empty = document.createElement("div");
+      empty.className = "containers-shell-placeholder";
+      empty.textContent = message || "No containers found.";
+      containersLogsList.appendChild(empty);
+    }
+  }
+  if (containersEmptyEl) {
+    if (message) {
+      containersEmptyEl.textContent = message;
+      containersEmptyEl.classList.remove("hidden");
+    } else {
+      containersEmptyEl.classList.add("hidden");
+    }
+  }
+  updateContainersSearchCount();
+}
+
+function renderContainers(list, scope) {
+  if (!containersTableBody) return;
+  if (!Array.isArray(list) || list.length === 0) {
+    clearContainersTable("No containers found.");
+    return;
+  }
+  if (containersEmptyEl) {
+    containersEmptyEl.classList.add("hidden");
+  }
+  const previous = containersCache;
+  const next = new Map();
+  list.forEach((container) => {
+    if (!container || !container.id) return;
+    let entry = previous.get(container.id);
+    let row = entry ? entry.row : null;
+    if (!row) {
+      row = document.createElement("tr");
+      for (let i = 0; i < 6; i += 1) {
+        row.appendChild(document.createElement("td"));
+      }
+    }
+    updateContainerRow(row, container, scope);
+    next.set(container.id, { row, data: container });
+  });
+  previous.forEach((entry, id) => {
+    if (!next.has(id)) {
+      entry.row.remove();
+    }
+  });
+  containersCache = next;
+  const sorted = containersSort(Array.from(next.values()).map((entry) => entry.data), containersSortMode);
+  const fragment = document.createDocumentFragment();
+  sorted.forEach((container) => {
+    const entry = containersCache.get(container.id);
+    if (entry) {
+      fragment.appendChild(entry.row);
+    }
+  });
+  containersTableBody.appendChild(fragment);
+  if (containersViewMode === "shell") {
+    renderContainersShellList(sorted);
+  } else if (containersViewMode === "logs") {
+    renderContainersLogsList(sorted);
+  }
+  updateContainersSearchCount();
+}
+
+async function refreshContainers(options = {}) {
+  if (!containersTableBody) return;
+  if (containersUpdateInProgress) return;
+  containersUpdateInProgress = true;
+  const scope = containersSelectedScope;
+  if (!scope) {
+    clearContainersTable("No servers configured. Add one in Servers.");
+    updateContainersStatus("", "");
+    containersUpdateInProgress = false;
+    return;
+  }
+  containersSelectedScope = scope;
+  updateContainersStatus(scope, "");
+  try {
+    const payload = await fetchJSON(`/api/containers?scope=${encodeURIComponent(scope)}`);
+    if (!payload || payload.error) {
+      const errorMessage = payload && payload.error ? payload.error : "Unable to load containers.";
+      clearContainersTable("No containers data available.");
+      updateContainersStatus(scope, errorMessage);
+      return;
+    }
+    const list = Array.isArray(payload.containers) ? payload.containers : [];
+    renderContainers(list, scope);
+    updateContainersStatus(scope, "");
+  } catch (err) {
+    clearContainersTable("No containers data available.");
+    updateContainersStatus(scope, err.message);
+  } finally {
+    containersUpdateInProgress = false;
+  }
+}
+
+async function runContainerAction(scope, containerID, action) {
+  if (!scope || !containerID || !action) return;
+  try {
+    const payload = await fetchJSON("/api/containers/action", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ scope, container_id: containerID, action }),
+    });
+    if (payload && payload.container) {
+      const entry = containersCache.get(payload.container.id);
+      const row = entry ? entry.row : null;
+      if (row) {
+        updateContainerRow(row, payload.container, scope);
+      }
+    }
+    await refreshContainers({ silent: true });
+  } catch (err) {
+    showToast(err.message || "Container action failed.");
+  }
+}
+
+function startContainersAutoRefresh() {
+  if (containersRefreshTimer) return;
+  containersRefreshTimer = window.setInterval(() => {
+    refreshContainers({ silent: true });
+  }, 5000);
+}
+
+function stopContainersAutoRefresh() {
+  if (!containersRefreshTimer) return;
+  window.clearInterval(containersRefreshTimer);
+  containersRefreshTimer = null;
 }
 
 function applyStatusResults(results) {
@@ -2052,7 +3466,7 @@ async function refreshLogs() {
   if (viewLogsEl.classList.contains("hidden")) return;
   try {
     const logs = await fetchJSON("/api/logs");
-    const level = logsLevelSelect ? logsLevelSelect.value : "all";
+    const level = logsLevelMode || "all";
     const list = Array.isArray(logs) ? logs : [];
     const filtered = level === "all" ? list : list.filter((entry) => entry.level === level);
     filtered.sort((a, b) => {
@@ -2287,9 +3701,12 @@ function showTooltip(target) {
     }
   }
   if (target && target.dataset && target.dataset.tooltipServerStatus === "true") {
-    const statusLabel = String(target.dataset.statusLabel || "").trim();
+    const statusLabel = String(target.dataset.statusLabel || "").trim() || "unknown";
     const lastChecked = formatLastChecked(target.dataset.checkedAt);
-    const label = lastChecked ? `Status: ${statusLabel} · ${lastChecked}` : `Status: ${statusLabel}`;
+    const serverType = String(target.dataset.serverType || "").trim();
+    const typeLabel = serverType === "local" ? "Local socket" : "Remote agent";
+    const base = `${typeLabel} ${statusLabel}`;
+    const label = lastChecked ? `${base} - ${lastChecked}` : base;
     target.setAttribute("data-tooltip", label);
     target.setAttribute("aria-label", label);
   }
@@ -2364,6 +3781,9 @@ window.addEventListener("resize", () => {
 function refreshViewData(view) {
   const tasks = [];
   tasks.push(refreshConfig().catch(() => {}));
+  if (view === "containers") {
+    tasks.push(refreshContainers({ silent: true }).catch(() => {}));
+  }
   if (view === "logs") {
     tasks.push(refreshLogs().catch(() => {}));
   }
@@ -2397,9 +3817,14 @@ mobileNavQuery.addEventListener("change", () => {
 });
 
 function setView(nextView) {
+  const prevView = currentView;
+  if (["containers", "stacks", "images"].includes(nextView) && !isExperimentalEnabled(nextView)) {
+    nextView = "status";
+  }
   currentView = nextView;
   viewStatusEl.classList.toggle("hidden", nextView !== "status");
   viewSettingsEl.classList.toggle("hidden", nextView !== "settings");
+  if (viewContainersEl) viewContainersEl.classList.toggle("hidden", nextView !== "containers");
   viewServersEl.classList.toggle("hidden", nextView !== "servers");
   viewLogsEl.classList.toggle("hidden", nextView !== "logs");
   if (topbarStatusEl) {
@@ -2408,11 +3833,19 @@ function setView(nextView) {
   if (topbarSettingsEl) {
     topbarSettingsEl.classList.toggle("hidden", nextView !== "settings");
   }
+  if (topbarContainersEl) {
+    topbarContainersEl.classList.toggle("hidden", nextView !== "containers");
+  }
   if (topbarServersEl) {
     topbarServersEl.classList.toggle("hidden", nextView !== "servers");
   }
   if (topbarLogsEl) {
     topbarLogsEl.classList.toggle("hidden", nextView !== "logs");
+  }
+  if (sidebarSearch && prevView !== nextView) {
+    sidebarSearch.value = "";
+    applySidebarFilter("");
+    updateSidebarSearchUI();
   }
   updateTopbarHeight();
   updateMobileNavHeight();
@@ -2446,6 +3879,27 @@ function setView(nextView) {
     startLogsAutoRefresh();
   } else {
     stopLogsAutoRefresh();
+  }
+  if (nextView === "containers") {
+    // Always start in table mode when entering Containers to avoid confusion.
+    if (prevView !== "containers") {
+      containersShellSelectedId = "";
+      containersLogsSelectedId = "";
+      setContainersViewMode("table");
+    }
+    if (containersViewMode === "table") {
+      startContainersAutoRefresh();
+    } else {
+      stopContainersAutoRefresh();
+    }
+    refreshContainers({ silent: true }).catch(() => {});
+  } else {
+    stopContainersAutoRefresh();
+    if (prevView === "containers") {
+      closeContainersShellSession("leave containers view");
+      closeContainersLogsSession("leave containers view");
+      setContainersLogsPaused(false);
+    }
   }
   if (nextView === "servers" && sidebarSearch) {
     serversSearchQuery = normalizeQuery(sidebarSearch.value);
@@ -2542,7 +3996,6 @@ clearLogsBtn.addEventListener("click", async () => {
     showToast(`Clear logs failed: ${err.message}`);
   }
 });
-logsLevelSelect.addEventListener("change", refreshLogs);
 if (logsAutoToggle) {
   logsAutoToggle.addEventListener("click", async () => {
     const nextEnabled = !isLogsAutoEnabled();
@@ -2578,6 +4031,11 @@ attachImmediateSave(discordEnabledInput);
 attachImmediateSave(discordStartupNotifyInput);
 attachImmediateSave(discordUpdateDetectedInput);
 attachImmediateSave(discordContainerUpdatedInput);
+attachImmediateSave(expContainersInput);
+attachImmediateSave(expContainerShellInput);
+attachImmediateSave(expContainerLogsInput);
+attachImmediateSave(expStacksInput);
+attachImmediateSave(expImagesInput);
 globalPolicySelect.addEventListener("change", async () => {
   try {
     await saveConfig({ useWebhookInput: false });
@@ -2747,7 +4205,14 @@ async function init() {
     sidebarSearch.addEventListener("input", (event) => {
       applySidebarFilter(event.target.value);
     });
+    sidebarSearch.addEventListener("focus", () => {
+      updateSidebarSearchUI();
+    });
+    sidebarSearch.addEventListener("blur", () => {
+      updateSidebarSearchUI();
+    });
   }
+  updateContainersSortUI();
 
   if (statusSelectiveToggleBtn) {
     statusSelectiveToggleBtn.addEventListener("click", () => {
@@ -2757,16 +4222,11 @@ async function init() {
     updateSelectiveScanToggle();
   }
 
-  if (serversFilterSelect) {
-    serversFilterSelect.addEventListener("change", () => {
-      setServersFilterMode(serversFilterSelect.value);
-    });
-  }
   if (serversFilterResetBtn) {
     serversFilterResetBtn.addEventListener("click", () => {
       setServersFilterMode("all");
-      if (serversFilterSelect) {
-        serversFilterSelect.focus();
+      if (serversFilterBtn) {
+        serversFilterBtn.focus();
       }
     });
   }
@@ -2808,6 +4268,141 @@ async function init() {
       await refreshServers();
       await triggerServersRefresh();
       showToast("Connection checked", 2000);
+    });
+  }
+
+  if (topbarContainersServerBtn) {
+    topbarContainersServerBtn.addEventListener("click", () => {
+      toggleContainersServerMenu();
+    });
+  }
+  if (serversFilterBtn) {
+    serversFilterBtn.addEventListener("click", () => {
+      toggleServersFilterMenu();
+    });
+  }
+  if (expContainersInput) {
+    expContainersInput.addEventListener("change", () => {
+      updateContainersExperimentalToggles();
+    });
+  }
+  if (logsLevelBtn) {
+    logsLevelBtn.addEventListener("click", () => {
+      toggleLogsLevelMenu();
+    });
+    renderLogsLevelButton(logsLevelMode);
+    updateLogsLevelMenu(logsLevelMode);
+  }
+  if (containersNameSortBtn) {
+    containersNameSortBtn.addEventListener("click", () => {
+      if (containersSortMode !== "name:asc" && containersSortMode !== "name:desc") {
+        containersSortMode = "name:asc";
+      } else {
+        containersSortMode = containersSortMode === "name:asc" ? "name:desc" : "name:asc";
+      }
+      updateContainersSortUI();
+      const list = Array.from(containersCache.values()).map((entry) => entry.data);
+      if (list.length > 0 && containersSelectedScope) {
+        renderContainers(list, containersSelectedScope);
+      }
+    });
+  }
+  if (containersStateSortBtn) {
+    containersStateSortBtn.addEventListener("click", () => {
+      if (containersSortMode !== "state:asc" && containersSortMode !== "state:desc") {
+        containersSortMode = "state:asc";
+      } else {
+        containersSortMode = containersSortMode === "state:asc" ? "state:desc" : "state:asc";
+      }
+      updateContainersSortUI();
+      const list = Array.from(containersCache.values()).map((entry) => entry.data);
+      if (list.length > 0 && containersSelectedScope) {
+        renderContainers(list, containersSelectedScope);
+      }
+    });
+  }
+  if (topbarContainersRefreshBtn) {
+    topbarContainersRefreshBtn.addEventListener("click", async () => {
+      await refreshContainers({ silent: true });
+    });
+  }
+  if (topbarContainersShellBtn) {
+    topbarContainersShellBtn.addEventListener("click", () => {
+      const enabled = currentConfig && currentConfig.experimental_features
+        ? Boolean(currentConfig.experimental_features.container_shell)
+        : false;
+      if (!enabled) {
+        showToast("Container shell is disabled in Experimental features.");
+        return;
+      }
+      setContainersViewMode(containersViewMode === "shell" ? "table" : "shell");
+    });
+  }
+  if (topbarContainersLogsBtn) {
+    topbarContainersLogsBtn.addEventListener("click", () => {
+      const enabled = currentConfig && currentConfig.experimental_features
+        ? Boolean(currentConfig.experimental_features.container_logs)
+        : false;
+      if (!enabled) {
+        showToast("Container logs is disabled in Experimental features.");
+        return;
+      }
+      setContainersViewMode(containersViewMode === "logs" ? "table" : "logs");
+    });
+  }
+  if (topbarContainersStacksBtn) {
+    topbarContainersStacksBtn.addEventListener("click", () => {
+      const enabled = currentConfig && currentConfig.experimental_features
+        ? Boolean(currentConfig.experimental_features.stacks)
+        : false;
+      if (!enabled) {
+        showToast("Container stacks is disabled in Experimental features.");
+        return;
+      }
+      showToast("Container stacks view is not implemented yet.");
+    });
+  }
+  if (topbarContainersImagesBtn) {
+    topbarContainersImagesBtn.addEventListener("click", () => {
+      const enabled = currentConfig && currentConfig.experimental_features
+        ? Boolean(currentConfig.experimental_features.images)
+        : false;
+      if (!enabled) {
+        showToast("Container images is disabled in Experimental features.");
+        return;
+      }
+      showToast("Container images view is not implemented yet.");
+    });
+  }
+
+  if (containersLogsClearBtn) {
+    containersLogsClearBtn.addEventListener("click", () => {
+      resetContainersLogsBuffer();
+    });
+  }
+  if (containersLogsPauseBtn) {
+    setContainersLogsPaused(false);
+    containersLogsPauseBtn.addEventListener("click", () => {
+      setContainersLogsPaused(!containersLogsPaused);
+    });
+  }
+  if (containersLogsTimestampsBtn) {
+    setContainersLogsTimestamps(false);
+    containersLogsTimestampsBtn.addEventListener("click", () => {
+      setContainersLogsTimestamps(!containersLogsTimestamps);
+      if (!containersLogsSelectedId) return;
+      const entry = containersCache.get(containersLogsSelectedId);
+      if (entry && entry.data) {
+        setContainersLogsPaused(false);
+        openContainersLogs(entry.data, { preserve: false, silentClose: true });
+      }
+    });
+  }
+  if (containersLogsOutput) {
+    containersLogsOutput.addEventListener("scroll", () => {
+      const threshold = 24;
+      const distance = containersLogsOutput.scrollHeight - containersLogsOutput.scrollTop - containersLogsOutput.clientHeight;
+      containersLogsAutoScroll = distance <= threshold;
     });
   }
 
@@ -2880,6 +4475,38 @@ async function init() {
         const removeBtn = actions ? actions.querySelector(".servers-remove-btn") : null;
         if (removeBtn) removeBtn.classList.remove("hidden");
       });
+    },
+    true
+  );
+
+  document.addEventListener("click", (event) => {
+    if (!topbarContainersServerMenu || !topbarContainersServerBtn) return;
+    if (topbarContainersServerBtn.contains(event.target)) return;
+    if (topbarContainersServerMenu.contains(event.target)) return;
+    closeContainersServerMenu();
+  });
+
+  document.addEventListener("click", (event) => {
+    if (!serversFilterMenu || !serversFilterBtn) return;
+    if (serversFilterBtn.contains(event.target)) return;
+    if (serversFilterMenu.contains(event.target)) return;
+    closeServersFilterMenu();
+  });
+
+  document.addEventListener("click", (event) => {
+    if (!logsLevelMenu || !logsLevelBtn) return;
+    if (logsLevelBtn.contains(event.target)) return;
+    if (logsLevelMenu.contains(event.target)) return;
+    closeLogsLevelMenu();
+  });
+
+  document.addEventListener(
+    "click",
+    (event) => {
+      if (containersKillConfirming.size === 0) return;
+      const target = event.target;
+      if (target && target.closest && target.closest(".containers-kill-btn")) return;
+      clearContainersKillConfirmations();
     },
     true
   );

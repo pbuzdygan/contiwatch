@@ -264,6 +264,10 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/scan", s.handleScan)
 	s.mux.HandleFunc("/api/scan/stop", s.handleScanStop)
 	s.mux.HandleFunc("/api/update/", s.handleUpdateContainer)
+	s.mux.HandleFunc("/api/containers", s.handleContainers)
+	s.mux.HandleFunc("/api/containers/action", s.handleContainerAction)
+	s.mux.HandleFunc("/api/containers/shell", s.handleContainerShell)
+	s.mux.HandleFunc("/api/containers/logs", s.handleContainerLogs)
 	s.mux.HandleFunc("/api/self-update", s.handleSelfUpdate)
 	s.mux.HandleFunc("/api/logs", s.handleLogs)
 	s.mux.HandleFunc("/api/notifications/test", s.handleNotificationsTest)
@@ -310,6 +314,14 @@ func (s *Server) agentAllowed(path string) bool {
 		return true
 	case path == "/api/notifications/test":
 		return true
+	case path == "/api/containers":
+		return true
+	case path == "/api/containers/action":
+		return true
+	case path == "/api/containers/shell":
+		return true
+	case path == "/api/containers/logs":
+		return true
 	case strings.HasPrefix(path, "/api/update/"):
 		return true
 	case path == "/api/self-update":
@@ -326,7 +338,9 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
-		writeJSON(w, http.StatusOK, s.store.Get())
+		cfg := s.store.Get()
+		cfg.TimeZone = strings.TrimSpace(os.Getenv("TZ"))
+		writeJSON(w, http.StatusOK, cfg)
 	case http.MethodPut:
 		before := s.store.Get()
 		var payload config.Config
@@ -353,6 +367,7 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 			}
 			cfg.UpdateStoppedContainers = payload.UpdateStoppedContainers
 			cfg.PruneDanglingImages = payload.PruneDanglingImages
+			cfg.ExperimentalFeatures = payload.ExperimentalFeatures
 		})
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err)

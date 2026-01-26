@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="icon icon-tabler icon-tabler-wifi-off" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <path stroke="none" d="M0 0h24v24H0z" fill="none"/>
+  <path d="M12 18l.01 0" />
+  <path d="M9.172 15.172a4 4 0 0 1 2.237 -1.155" />
+  <path d="M6.343 12.343a8 8 0 0 1 7.52 -2.072" />
+  <path d="M3.515 9.515a12 12 0 0 1 7.714 -2.86" />
+  <path d="M3 3l18 18" />
+</svg>

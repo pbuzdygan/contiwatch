@@ -9,6 +9,7 @@
     <link rel="icon" href="/icons/favicon.ico">
     <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png">
     <link rel="stylesheet" href="/style.css">
+    <link rel="stylesheet" href="/vendor/xterm/xterm.css">
   </head>
   <body>
     <header class="topbar">
@@ -21,7 +22,7 @@
           >
         </div>
         <div id="topbar-status" class="topbar-status hidden">
-          <h2>Status</h2>
+          <h2>Updates</h2>
           <div class="actions">
             <button
               id="scan-btn"
@@ -59,6 +60,63 @@
         <div id="topbar-settings" class="topbar-status hidden">
           <h2>Settings</h2>
         </div>
+        <div id="topbar-containers" class="topbar-status hidden">
+          <h2>Containers</h2>
+          <div class="actions containers-topbar-actions">
+            <div class="containers-server-picker">
+              <button id="topbar-containers-server-btn" class="secondary containers-server-btn" type="button" aria-haspopup="listbox" aria-expanded="false">
+                <span class="containers-server-btn-content"></span>
+              </button>
+              <div id="topbar-containers-server-menu" class="containers-server-menu hidden" role="listbox" tabindex="-1"></div>
+            </div>
+            <button
+              id="topbar-containers-refresh"
+              class="secondary icon-action-btn has-tooltip"
+              type="button"
+              aria-label="Refresh containers"
+              data-tooltip="Refresh containers"
+            >
+              <span class="icon-action icon-reload" aria-hidden="true"></span>
+            </button>
+            <button
+              id="topbar-containers-shell"
+              class="secondary icon-action-btn has-tooltip"
+              type="button"
+              aria-label="Container shell"
+              data-tooltip="Container shell"
+            >
+              <span class="icon-action icon-terminal-2" aria-hidden="true"></span>
+            </button>
+            <button
+              id="topbar-containers-logs"
+              class="secondary icon-action-btn has-tooltip"
+              type="button"
+              aria-label="Container logs"
+              data-tooltip="Container logs"
+            >
+              <span class="icon-action icon-logs" aria-hidden="true"></span>
+            </button>
+            <button
+              id="topbar-containers-stacks"
+              class="secondary icon-action-btn has-tooltip"
+              type="button"
+              aria-label="Container stacks"
+              data-tooltip="Container stacks"
+            >
+              <span class="icon-action icon-stack-3" aria-hidden="true"></span>
+            </button>
+            <button
+              id="topbar-containers-images"
+              class="secondary icon-action-btn has-tooltip"
+              type="button"
+              aria-label="Container images"
+              data-tooltip="Container images"
+            >
+              <span class="icon-action icon-polaroid" aria-hidden="true"></span>
+            </button>
+            <div id="topbar-containers-status" class="containers-status"></div>
+          </div>
+        </div>
         <div id="topbar-servers" class="topbar-status hidden">
           <h2>Servers</h2>
           <div class="actions servers-topbar-actions">
@@ -81,14 +139,20 @@
               >
                 <span class="icon-action icon-filter" aria-hidden="true"></span>
               </button>
-              <span class="servers-filter-select has-tooltip" aria-label="Filter by status" data-tooltip="Filter by status">
-                <select id="servers-filter" aria-label="Filter by status">
-                  <option value="all">All</option>
-                  <option value="active">Active</option>
-                  <option value="maintenance">Maintenance</option>
-                  <option value="offline">Offline</option>
-                </select>
-              </span>
+              <div class="servers-filter-picker">
+                <button
+                  id="servers-filter-btn"
+                  class="secondary containers-server-btn servers-filter-btn has-tooltip"
+                  type="button"
+                  aria-label="Filter by status"
+                  data-tooltip="Filter by status"
+                  aria-haspopup="listbox"
+                  aria-expanded="false"
+                >
+                  <span class="servers-filter-btn-content"></span>
+                </button>
+                <div id="servers-filter-menu" class="containers-server-menu servers-filter-menu hidden" role="listbox" tabindex="-1"></div>
+              </div>
             </div>
             <button
               id="add-server"
@@ -116,13 +180,19 @@
         <div id="topbar-logs" class="topbar-status hidden">
           <h2>Logs</h2>
           <div class="logs-toolbar">
-            <div class="logs-field">
-              <select id="logs-level">
-                <option value="all">All</option>
-                <option value="info">Info</option>
-                <option value="warn">Warn</option>
-                <option value="error">Error</option>
-              </select>
+            <div class="logs-field logs-level-picker">
+              <button
+                id="logs-level-btn"
+                class="secondary containers-server-btn logs-level-btn has-tooltip"
+                type="button"
+                aria-label="Filter logs"
+                data-tooltip="Filter logs"
+                aria-haspopup="listbox"
+                aria-expanded="false"
+              >
+                <span class="logs-level-btn-content"></span>
+              </button>
+              <div id="logs-level-menu" class="containers-server-menu logs-level-menu hidden" role="listbox" tabindex="-1"></div>
             </div>
             <button
               id="refresh-logs"
@@ -187,15 +257,20 @@
           <svg xmlns="http://www.w3.org/2000/svg" class="search-icon icon icon-tabler icons-tabler-outline icon-tabler-search" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M3 10a7 7 0 1 0 14 0a7 7 0 1 0 -14 0" /><path d="M21 21l-6 -6" /></svg>
           <input type="search" id="sidebar-search" placeholder="Servers / containers">
         </span>
+        <span id="sidebar-search-count" class="search-count hidden" aria-hidden="true"></span>
       </label>
       <nav class="sidebar-nav">
         <button type="button" class="sidebar-link" data-view="status">
           <svg xmlns="http://www.w3.org/2000/svg" class="sidebar-icon icon icon-tabler icons-tabler-outline icon-tabler-home-spark" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M5 12h-2l9 -9l9 9h-2" /><path d="M5 12v7a2 2 0 0 0 2 2h5" /><path d="M9 21v-6a2 2 0 0 1 2 -2h2a2 2 0 0 1 2 2" /><path d="M19 22.5a4.75 4.75 0 0 1 3.5 -3.5a4.75 4.75 0 0 1 -3.5 -3.5a4.75 4.75 0 0 1 -3.5 3.5a4.75 4.75 0 0 1 3.5 3.5" /></svg>
-          <span class="sidebar-label">Status</span>
+          <span class="sidebar-label">Updates</span>
         </button>
         <button type="button" class="sidebar-link" data-view="servers">
           <svg xmlns="http://www.w3.org/2000/svg" class="sidebar-icon icon icon-tabler icons-tabler-outline icon-tabler-server-bolt" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M3 7a3 3 0 0 1 3 -3h12a3 3 0 0 1 3 3v2a3 3 0 0 1 -3 3h-12a3 3 0 0 1 -3 -3" /><path d="M15 20h-9a3 3 0 0 1 -3 -3v-2a3 3 0 0 1 3 -3h12" /><path d="M7 8v.01" /><path d="M7 16v.01" /><path d="M20 15l-2 3h3l-2 3" /></svg>
           <span class="sidebar-label">Servers</span>
+        </button>
+        <button type="button" class="sidebar-link experimental-link hidden" data-view="containers">
+          <svg xmlns="http://www.w3.org/2000/svg" class="sidebar-icon icon icon-tabler icons-tabler-outline icon-tabler-package" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M12 3l8 4.5l0 9l-8 4.5l-8 -4.5l0 -9l8 -4.5" /><path d="M12 12l8 -4.5" /><path d="M12 12l0 9" /><path d="M12 12l-8 -4.5" /><path d="M16 5.25l-8 4.5" /></svg>
+          <span class="sidebar-label">Containers</span>
         </button>
         <button type="button" class="sidebar-link" data-view="settings">
           <svg xmlns="http://www.w3.org/2000/svg" class="sidebar-icon icon icon-tabler icons-tabler-outline icon-tabler-settings" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M10.325 4.317c.426 -1.756 2.924 -1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543 -.94 3.31 .826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756 .426 1.756 2.924 0 3.35a1.724 1.724 0 0 0 -1.066 2.573c.94 1.543 -.826 3.31 -2.37 2.37a1.724 1.724 0 0 0 -2.572 1.065c-.426 1.756 -2.924 1.756 -3.35 0a1.724 1.724 0 0 0 -2.573 -1.066c-1.543 .94 -3.31 -.826 -2.37 -2.37a1.724 1.724 0 0 0 -1.065 -2.572c-1.756 -.426 -1.756 -2.924 0 -3.35a1.724 1.724 0 0 0 1.066 -2.573c-.94 -1.543 .826 -3.31 2.37 -2.37c1 .608 2.296 .07 2.572 -1.065" /><path d="M9 12a3 3 0 1 0 6 0a3 3 0 0 0 -6 0" /></svg>
@@ -299,9 +374,111 @@
               </div>
               <p class="settings-hint">Test must succeed to save webhook.</p>
             </div>
+            <div class="settings-card experimental-card">
+              <h3 class="settings-title">
+                <svg xmlns="http://www.w3.org/2000/svg" class="settings-icon icon icon-tabler icons-tabler-outline icon-tabler-radioactive" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M13.5 14.6l3 5.19a9 9 0 0 0 4.5 -7.79h-6a3 3 0 0 1 -1.5 2.6" /><path d="M13.5 9.4l3 -5.19a9 9 0 0 0 -9 0l3 5.19a3 3 0 0 1 3 0" /><path d="M10.5 14.6l-3 5.19a9 9 0 0 1 -4.5 -7.79h6a3 3 0 0 0 1.5 2.6" /></svg>
+                Experimental features
+              </h3>
+              <label class="toggle-row">
+                <input type="checkbox" id="exp-containers">
+                <span class="toggle-track" aria-hidden="true"><span class="toggle-thumb"></span></span>
+                <span>Containers</span>
+              </label>
+              <label class="toggle-row">
+                <input type="checkbox" id="exp-container-shell">
+                <span class="toggle-track" aria-hidden="true"><span class="toggle-thumb"></span></span>
+                <span>Container shell</span>
+              </label>
+              <label class="toggle-row">
+                <input type="checkbox" id="exp-container-logs">
+                <span class="toggle-track" aria-hidden="true"><span class="toggle-thumb"></span></span>
+                <span>Container logs</span>
+              </label>
+              <label class="toggle-row">
+                <input type="checkbox" id="exp-stacks">
+                <span class="toggle-track" aria-hidden="true"><span class="toggle-thumb"></span></span>
+                <span>Container stacks</span>
+              </label>
+              <label class="toggle-row">
+                <input type="checkbox" id="exp-images">
+                <span class="toggle-track" aria-hidden="true"><span class="toggle-thumb"></span></span>
+                <span>Container images</span>
+              </label>
+            </div>
           </div>
         </form>
       </section>
+
+      <section id="view-containers" class="hidden">
+        <div id="containers-table-view">
+          <div class="containers-table-wrap">
+            <table class="containers-table">
+              <thead>
+                <tr>
+                  <th class="containers-th-name">
+                    <span class="containers-th-name-inner">
+                      <span>Name</span>
+                      <button id="containers-name-sort" class="containers-sort-btn" type="button" aria-label="Sort by name">
+                        <span class="icon-sort icon-sort-neutral" aria-hidden="true"></span>
+                      </button>
+                    </span>
+                  </th>
+                  <th>Image</th>
+                  <th class="containers-th-state">
+                    <span class="containers-th-name-inner">
+                      <span>State</span>
+                      <button id="containers-state-sort" class="containers-sort-btn" type="button" aria-label="Sort by state">
+                        <span class="icon-sort icon-sort-neutral" aria-hidden="true"></span>
+                      </button>
+                    </span>
+                  </th>
+                  <th>Uptime</th>
+                  <th>Stack</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="containers-body"></tbody>
+            </table>
+          </div>
+          <div id="containers-empty" class="hint hidden"></div>
+        </div>
+        <div id="containers-shell-layout" class="containers-shell-layout hidden">
+          <div class="containers-shell-list">
+            <div class="containers-shell-list-header">Name</div>
+            <div id="containers-shell-list" class="containers-shell-list-body"></div>
+          </div>
+          <div id="containers-shell-terminal" class="containers-shell-terminal">
+            <div id="containers-shell-placeholder" class="containers-shell-placeholder">Select a container to open shell.</div>
+            <div id="containers-terminal" class="containers-terminal hidden"></div>
+          </div>
+        </div>
+        <div id="containers-logs-layout" class="containers-shell-layout containers-logs-layout hidden">
+          <div class="containers-shell-list">
+            <div class="containers-shell-list-header">Name</div>
+            <div id="containers-logs-list" class="containers-shell-list-body"></div>
+          </div>
+          <div class="containers-shell-terminal containers-logs-panel">
+            <div id="containers-logs-placeholder" class="containers-shell-placeholder">Select a container to view logs.</div>
+            <div id="containers-logs-view" class="containers-logs-view hidden">
+              <div class="containers-logs-toolbar">
+                <span id="containers-logs-stream" class="containers-logs-stream has-tooltip" aria-label="Log Live Stream" data-tooltip="Log Live Stream"></span>
+                <button id="containers-logs-pause" class="secondary icon-action-btn has-tooltip" type="button" aria-label="Pause logs" data-tooltip="Pause logs">
+                  <span class="icon-action icon-pause" aria-hidden="true"></span>
+                </button>
+                <button id="containers-logs-timestamps" class="secondary icon-action-btn has-tooltip" type="button" aria-label="Timestamp on" data-tooltip="Timestamp on">
+                  <span class="icon-action icon-clock" aria-hidden="true"></span>
+                </button>
+                <button id="containers-logs-clear" class="secondary icon-action-btn has-tooltip" type="button" aria-label="Clear view" data-tooltip="Clear view">
+                  <span class="icon-action icon-clear-all" aria-hidden="true"></span>
+                </button>
+              </div>
+              <pre id="containers-logs-output" class="containers-logs-output"></pre>
+            </div>
+          </div>
+        </div>
+      </section>
+
+
 
       <section id="view-servers" class="hidden">
         <div id="servers-table-wrap" class="servers-table-wrap">
@@ -443,6 +620,8 @@
       </div>
     </div>
 
+    <script src="/vendor/xterm/xterm.js"></script>
+    <script src="/vendor/xterm/xterm-addon-fit.js"></script>
     <script src="/app.js"></script>
   </body>
 </html>
