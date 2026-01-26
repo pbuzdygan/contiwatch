@@ -512,6 +512,70 @@ func (w *Watcher) KillContainer(ctx context.Context, containerID string) error {
 	return w.client.ContainerKill(ctx, strings.TrimSpace(containerID), "SIGKILL")
 }
 
+func (w *Watcher) ExecShell(ctx context.Context, containerID string, cmd []string) (string, types.HijackedResponse, error) {
+	containerID = strings.TrimSpace(containerID)
+	if containerID == "" {
+		return "", types.HijackedResponse{}, errors.New("container id is required")
+	}
+	if len(cmd) == 0 {
+		cmd = []string{"/bin/sh"}
+	}
+	execResp, err := w.client.ContainerExecCreate(ctx, containerID, types.ExecConfig{
+		Tty:          true,
+		AttachStdin:  true,
+		AttachStdout: true,
+		AttachStderr: true,
+		Cmd:          cmd,
+	})
+	if err != nil {
+		return "", types.HijackedResponse{}, err
+	}
+	attach, err := w.client.ContainerExecAttach(ctx, execResp.ID, types.ExecStartCheck{Tty: true})
+	if err != nil {
+		return "", types.HijackedResponse{}, err
+	}
+	return execResp.ID, attach, nil
+}
+
+func (w *Watcher) ResizeExec(ctx context.Context, execID string, cols, rows uint) error {
+	execID = strings.TrimSpace(execID)
+	if execID == "" {
+		return errors.New("exec id is required")
+	}
+	return w.client.ContainerExecResize(ctx, execID, types.ResizeOptions{
+		Height: rows,
+		Width:  cols,
+	})
+}
+
+func (w *Watcher) InspectExec(ctx context.Context, execID string) (types.ContainerExecInspect, error) {
+	execID = strings.TrimSpace(execID)
+	if execID == "" {
+		return types.ContainerExecInspect{}, errors.New("exec id is required")
+	}
+	return w.client.ContainerExecInspect(ctx, execID)
+}
+
+func (w *Watcher) ContainerLogs(ctx context.Context, containerID string, opts types.ContainerLogsOptions) (io.ReadCloser, bool, error) {
+	containerID = strings.TrimSpace(containerID)
+	if containerID == "" {
+		return nil, false, errors.New("container id is required")
+	}
+	inspect, err := w.client.ContainerInspect(ctx, containerID)
+	if err != nil {
+		return nil, false, err
+	}
+	reader, err := w.client.ContainerLogs(ctx, containerID, opts)
+	if err != nil {
+		return nil, false, err
+	}
+	tty := false
+	if inspect.Config != nil {
+		tty = inspect.Config.Tty
+	}
+	return reader, tty, nil
+}
+
 func (w *Watcher) updateContainer(ctx context.Context, containerID string, cfg config.Config, forceStart bool) (UpdateResult, error) {
 	containerID = strings.TrimSpace(containerID)
 	if containerID == "" {

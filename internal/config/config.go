@@ -32,16 +32,19 @@ type Config struct {
 	DiscordNotifyOnContainerUpdated *bool                `json:"discord_notify_on_container_updated"`
 	UpdateStoppedContainers         bool                 `json:"update_stopped_containers"`
 	PruneDanglingImages             bool                 `json:"prune_dangling_images"`
+	TimeZone                        string               `json:"time_zone,omitempty"`
 	ExperimentalFeatures            ExperimentalFeatures `json:"experimental_features"`
 	LocalServers                    []LocalServer        `json:"local_servers"`
 	RemoteServers                   []RemoteServer       `json:"remote_servers"`
 }
 
 type ExperimentalFeatures struct {
-	Containers bool `json:"containers"`
-	Stacks     bool `json:"stacks"`
-	Images     bool `json:"images"`
-	Operations bool `json:"operations"`
+	Containers     bool `json:"containers"`
+	Stacks         bool `json:"stacks"`
+	Images         bool `json:"images"`
+	Operations     bool `json:"operations"`
+	ContainerShell bool `json:"container_shell"`
+	ContainerLogs  bool `json:"container_logs"`
 }
 
 const (

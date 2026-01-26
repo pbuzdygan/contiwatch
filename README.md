@@ -15,6 +15,8 @@
 - ✅ Simple HTML UI for status, servers, logs, and settings
 - ✅ Server maintenance mode to pause scans and updates per server
 - ✅ Experimental containers management UI (opt-in)
+- ✅ Experimental container shell (opt-in)
+- ✅ Experimental container logs (opt-in)
 - ✅ Discord webhook notifications
 
 ---
@@ -97,7 +99,9 @@ docker pull ghcr.io/<owner>/<repo>:dev_<version>
 - `discord_notify_on_container_updated`
 - `update_stopped_containers` (if `true`, `update` policy also updates stopped containers but keeps them stopped)
 - `prune_dangling_images` (if `true`, prune dangling images after updates)
-- `experimental_features` (object of feature flags: `containers`, `stacks`, `images`, `operations`)
+- `experimental_features` (object of feature flags: `containers`, `stacks`, `images`, `operations`, `container_shell`, `container_logs`)
+- `experimental_features.container_shell` (enables container shell UI)
+- `experimental_features.container_logs` (enables container logs UI)
 - `local_servers` (list of local Docker daemons with `name`, `socket`, and optional `maintenance`)
 - `remote_servers` (list of remote servers with `name`, `url`, optional `token`, and optional `maintenance`)
 
@@ -118,6 +122,8 @@ docker pull ghcr.io/<owner>/<repo>:dev_<version>
 - `POST /api/status/refresh` pull last scan snapshots from online agents (updates stream)
 - `GET /api/containers?scope=local:{name}|remote:{name}` list containers for a selected server
 - `POST /api/containers/action` run container action (`start`, `stop`, `restart`, `pause`, `unpause`, `kill`)
+- `GET /api/containers/shell` (WebSocket) interactive shell for a container
+- `GET /api/containers/logs` (WebSocket) stream logs for a container
 - `POST /api/update/{container_id}` update container
 - `POST /api/self-update?container={container_id}` update agent container via helper (agent mode only)
 - `GET/POST/DELETE /api/logs`

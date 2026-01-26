@@ -6,6 +6,8 @@
 - Settings: Experimental features toggle section (Containers/Stacks/Images/Operations).
 - Containers (experimental): new view with server picker and container table (Name, Image, State, Uptime, Stack) plus actions (start/stop/restart/pause/kill).
 - Containers: per-column sort icons for Name and State; inline confirmation for Kill.
+- Containers (experimental): shell view with selectable container list and embedded terminal.
+- Containers (experimental): logs view with selectable container list and live log stream.
 - Servers: status filter now uses the same custom dropdown style as Containers.
 
 ## Improvements

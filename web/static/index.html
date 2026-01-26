@@ -9,6 +9,7 @@
     <link rel="icon" href="/icons/favicon.ico">
     <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png">
     <link rel="stylesheet" href="/style.css">
+    <link rel="stylesheet" href="/vendor/xterm/xterm.css">
   </head>
   <body>
     <header class="topbar">
@@ -77,6 +78,24 @@
             >
               <span class="icon-action icon-reload" aria-hidden="true"></span>
             </button>
+            <button
+              id="topbar-containers-shell"
+              class="secondary icon-action-btn has-tooltip"
+              type="button"
+              aria-label="Container shell"
+              data-tooltip="Container shell"
+            >
+              <span class="icon-action icon-terminal-2" aria-hidden="true"></span>
+            </button>
+            <button
+              id="topbar-containers-logs"
+              class="secondary icon-action-btn has-tooltip"
+              type="button"
+              aria-label="Container logs"
+              data-tooltip="Container logs"
+            >
+              <span class="icon-action icon-logs" aria-hidden="true"></span>
+            </button>
             <div id="topbar-containers-status" class="containers-status"></div>
           </div>
         </div>
@@ -143,13 +162,19 @@
         <div id="topbar-logs" class="topbar-status hidden">
           <h2>Logs</h2>
           <div class="logs-toolbar">
-            <div class="logs-field">
-              <select id="logs-level">
-                <option value="all">All</option>
-                <option value="info">Info</option>
-                <option value="warn">Warn</option>
-                <option value="error">Error</option>
-              </select>
+            <div class="logs-field logs-level-picker">
+              <button
+                id="logs-level-btn"
+                class="secondary containers-server-btn logs-level-btn has-tooltip"
+                type="button"
+                aria-label="Filter logs"
+                data-tooltip="Filter logs"
+                aria-haspopup="listbox"
+                aria-expanded="false"
+              >
+                <span class="logs-level-btn-content"></span>
+              </button>
+              <div id="logs-level-menu" class="containers-server-menu logs-level-menu hidden" role="listbox" tabindex="-1"></div>
             </div>
             <button
               id="refresh-logs"
@@ -354,6 +379,16 @@
                 <span>Containers</span>
               </label>
               <label class="toggle-row">
+                <input type="checkbox" id="exp-container-shell">
+                <span class="toggle-track" aria-hidden="true"><span class="toggle-thumb"></span></span>
+                <span>Container shell</span>
+              </label>
+              <label class="toggle-row">
+                <input type="checkbox" id="exp-container-logs">
+                <span class="toggle-track" aria-hidden="true"><span class="toggle-thumb"></span></span>
+                <span>Container logs</span>
+              </label>
+              <label class="toggle-row">
                 <input type="checkbox" id="exp-stacks">
                 <span class="toggle-track" aria-hidden="true"><span class="toggle-thumb"></span></span>
                 <span>Stacks</span>
@@ -374,36 +409,72 @@
       </section>
 
       <section id="view-containers" class="hidden">
-        <div class="containers-table-wrap">
-          <table class="containers-table">
-            <thead>
-              <tr>
-                <th class="containers-th-name">
-                  <span class="containers-th-name-inner">
-                    <span>Name</span>
-                    <button id="containers-name-sort" class="containers-sort-btn" type="button" aria-label="Sort by name">
-                      <span class="icon-sort icon-sort-neutral" aria-hidden="true"></span>
-                    </button>
-                  </span>
-                </th>
-                <th>Image</th>
-                <th class="containers-th-state">
-                  <span class="containers-th-name-inner">
-                    <span>State</span>
-                    <button id="containers-state-sort" class="containers-sort-btn" type="button" aria-label="Sort by state">
-                      <span class="icon-sort icon-sort-neutral" aria-hidden="true"></span>
-                    </button>
-                  </span>
-                </th>
-                <th>Uptime</th>
-                <th>Stack</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody id="containers-body"></tbody>
-          </table>
+        <div id="containers-table-view">
+          <div class="containers-table-wrap">
+            <table class="containers-table">
+              <thead>
+                <tr>
+                  <th class="containers-th-name">
+                    <span class="containers-th-name-inner">
+                      <span>Name</span>
+                      <button id="containers-name-sort" class="containers-sort-btn" type="button" aria-label="Sort by name">
+                        <span class="icon-sort icon-sort-neutral" aria-hidden="true"></span>
+                      </button>
+                    </span>
+                  </th>
+                  <th>Image</th>
+                  <th class="containers-th-state">
+                    <span class="containers-th-name-inner">
+                      <span>State</span>
+                      <button id="containers-state-sort" class="containers-sort-btn" type="button" aria-label="Sort by state">
+                        <span class="icon-sort icon-sort-neutral" aria-hidden="true"></span>
+                      </button>
+                    </span>
+                  </th>
+                  <th>Uptime</th>
+                  <th>Stack</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="containers-body"></tbody>
+            </table>
+          </div>
+          <div id="containers-empty" class="hint hidden"></div>
         </div>
-        <div id="containers-empty" class="hint hidden"></div>
+        <div id="containers-shell-layout" class="containers-shell-layout hidden">
+          <div class="containers-shell-list">
+            <div class="containers-shell-list-header">Name</div>
+            <div id="containers-shell-list" class="containers-shell-list-body"></div>
+          </div>
+          <div id="containers-shell-terminal" class="containers-shell-terminal">
+            <div id="containers-shell-placeholder" class="containers-shell-placeholder">Select a container to open shell.</div>
+            <div id="containers-terminal" class="containers-terminal hidden"></div>
+          </div>
+        </div>
+        <div id="containers-logs-layout" class="containers-shell-layout containers-logs-layout hidden">
+          <div class="containers-shell-list">
+            <div class="containers-shell-list-header">Name</div>
+            <div id="containers-logs-list" class="containers-shell-list-body"></div>
+          </div>
+          <div class="containers-shell-terminal containers-logs-panel">
+            <div id="containers-logs-placeholder" class="containers-shell-placeholder">Select a container to view logs.</div>
+            <div id="containers-logs-view" class="containers-logs-view hidden">
+              <div class="containers-logs-toolbar">
+                <span id="containers-logs-stream" class="containers-logs-stream has-tooltip" aria-label="Log Live Stream" data-tooltip="Log Live Stream"></span>
+                <button id="containers-logs-pause" class="secondary icon-action-btn has-tooltip" type="button" aria-label="Pause logs" data-tooltip="Pause logs">
+                  <span class="icon-action icon-pause" aria-hidden="true"></span>
+                </button>
+                <button id="containers-logs-timestamps" class="secondary icon-action-btn has-tooltip" type="button" aria-label="Timestamp on" data-tooltip="Timestamp on">
+                  <span class="icon-action icon-clock" aria-hidden="true"></span>
+                </button>
+                <button id="containers-logs-clear" class="secondary icon-action-btn has-tooltip" type="button" aria-label="Clear view" data-tooltip="Clear view">
+                  <span class="icon-action icon-clear-all" aria-hidden="true"></span>
+                </button>
+              </div>
+              <pre id="containers-logs-output" class="containers-logs-output"></pre>
+            </div>
+          </div>
+        </div>
       </section>
 
       <section id="view-stacks" class="hidden">
@@ -558,6 +629,8 @@
       </div>
     </div>
 
+    <script src="/vendor/xterm/xterm.js"></script>
+    <script src="/vendor/xterm/xterm-addon-fit.js"></script>
     <script src="/app.js"></script>
   </body>
 </html>
