@@ -1530,6 +1530,10 @@ input::placeholder {
   gap: var(--s-3);
 }
 
+.modal-card-lg {
+  width: min(1120px, 94vw);
+}
+
 .modal-header {
   display: flex;
   align-items: center;
@@ -1563,6 +1567,56 @@ input::placeholder {
   display: flex;
   flex-direction: column;
   gap: var(--s-3);
+}
+
+#stack-modal .modal-card {
+  height: 90vh;
+  max-height: 90vh;
+  overflow: hidden;
+}
+
+#stack-modal .modal-body {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+#stack-modal .stack-editor-grid {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  grid-auto-rows: 1fr;
+}
+
+#stack-modal .stack-textarea,
+#stack-modal .stack-editor {
+  height: 100%;
+  min-height: 0;
+}
+
+#stack-modal .stack-editor {
+  min-height: 0;
+}
+
+.stack-editor-main .stack-editor,
+.stack-editor-env .stack-editor {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.stack-editor-main,
+.stack-editor-env {
+  height: 100%;
+}
+
+.stack-modal-error {
+  border: 1px solid var(--status-error);
+  background: color-mix(in oklab, var(--status-error) 14%, transparent);
+  color: var(--color-text);
+  padding: var(--s-2) var(--s-3);
+  border-radius: var(--r-card);
+  font-size: 0.9rem;
+  white-space: pre-wrap;
 }
 
 .modal-tabs {
@@ -2324,6 +2378,310 @@ input::placeholder {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+.containers-stacks-view {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-3);
+}
+
+.containers-stacks-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-2);
+}
+
+.containers-stacks-title {
+  font-weight: 600;
+}
+
+.stacks-table th:nth-child(1),
+.stacks-table td:nth-child(1) {
+  width: 32%;
+}
+
+.stacks-table th:nth-child(2),
+.stacks-table td:nth-child(2) {
+  width: 18%;
+}
+
+.stacks-table th:nth-child(3),
+.stacks-table td:nth-child(3) {
+  width: 16%;
+}
+
+.stacks-table th:nth-child(4),
+.stacks-table td:nth-child(4) {
+  width: 34%;
+}
+
+.stacks-table td:nth-child(1) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stack-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border-radius: 999px;
+  padding: 4px 10px;
+  border: 1px solid transparent;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.stack-status-running {
+  background: rgba(60, 177, 121, 0.12);
+  color: var(--status-success);
+  border-color: rgba(60, 177, 121, 0.28);
+}
+
+.stack-status-stopped,
+.stack-status-not_deployed {
+  background: rgba(148, 163, 184, 0.12);
+  color: var(--color-text-muted);
+  border-color: rgba(148, 163, 184, 0.28);
+}
+
+.stack-status-partial {
+  background: rgba(75, 163, 217, 0.12);
+  color: var(--status-info);
+  border-color: rgba(75, 163, 217, 0.3);
+}
+
+.stack-status-degraded {
+  background: rgba(224, 88, 88, 0.12);
+  color: var(--status-error);
+  border-color: rgba(224, 88, 88, 0.28);
+}
+
+.stack-status-deploying,
+.stack-status-teardown,
+.stack-status-tearing_down,
+.stack-status-restarting,
+.stack-status-starting,
+.stack-status-stopping,
+.stack-status-killing,
+.stack-status-removing {
+  background: rgba(245, 158, 11, 0.12);
+  color: var(--status-warning);
+  border-color: rgba(245, 158, 11, 0.28);
+}
+
+.stack-textarea {
+  width: 100%;
+  min-height: clamp(240px, 52vh, 560px);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.85rem;
+  resize: none;
+}
+
+.stack-editor {
+  width: 100%;
+  min-height: clamp(240px, 52vh, 560px);
+  border: 1px solid var(--color-border);
+  border-radius: var(--r-card);
+  overflow: hidden;
+  background: var(--color-surface);
+  display: flex;
+  flex: 1 1 auto;
+}
+
+.stack-editor .cm-editor {
+  height: 100%;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.85rem;
+  width: 100%;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.stack-editor .cm-content,
+.stack-editor .cm-scroller {
+  min-height: 0;
+}
+
+.stack-editor .cm-scroller {
+  font-family: inherit;
+  overflow: auto;
+  width: 100%;
+}
+
+.stack-editor .cm-scroller {
+  overflow-x: hidden;
+}
+
+.stack-editor .cm-editor,
+.stack-editor .cm-scroller,
+.stack-editor .cm-content {
+  box-sizing: border-box;
+}
+
+[data-theme="dark"] .stack-editor .cm-editor {
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+[data-theme="dark"] .stack-editor .cm-gutters {
+  background: color-mix(in oklab, var(--color-surface) 92%, black);
+  color: var(--color-text-muted);
+  border-right: 1px solid var(--color-border);
+}
+
+[data-theme="dark"] .stack-editor .cm-activeLineGutter {
+  background: color-mix(in oklab, var(--color-surface) 85%, white);
+}
+
+[data-theme="dark"] .stack-editor .cm-cursor {
+  border-left-color: rgba(255, 255, 255, 0.95) !important;
+}
+
+:root[data-theme="dark"] .stack-editor .cm-editor,
+:root[data-theme="dark"] .stack-editor .cm-content {
+  caret-color: rgba(255, 255, 255, 0.95) !important;
+}
+
+/* CM6 tooltips (lint + autocomplete) */
+.stack-editor .cm-tooltip {
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+[data-theme="dark"] .stack-editor .cm-tooltip {
+  background: color-mix(in oklab, var(--color-surface) 92%, black);
+  color: var(--color-text);
+}
+
+.stack-editor .cm-tooltip-autocomplete ul {
+  max-height: 260px;
+}
+
+.stack-editor .cm-tooltip-autocomplete li[aria-selected] {
+  background: color-mix(in oklab, var(--color-primary) 20%, transparent);
+  color: var(--color-text);
+}
+
+/* Lint tooltip text should not be white-on-white in dark mode */
+.stack-editor .cm-tooltip.cm-tooltip-lint {
+  background: var(--color-surface);
+  color: var(--color-text);
+}
+
+[data-theme="dark"] .stack-editor .cm-tooltip.cm-tooltip-lint {
+  background: color-mix(in oklab, var(--color-surface) 92%, black);
+}
+
+/* Indent guides */
+.stack-editor .cm-indentGuide {
+  border-left: 1px solid color-mix(in oklab, var(--color-border) 70%, transparent);
+  margin-left: -1px;
+}
+
+[data-theme="dark"] .stack-editor .cm-indentGuide {
+  border-left-color: color-mix(in oklab, var(--color-border) 55%, transparent);
+}
+
+.stack-editor .cm-indentation-guide,
+.stack-editor .cm-indentationGuide,
+.stack-editor .cm-indentMarker,
+.stack-editor .cm-indentation-marker {
+  border-left: 1px solid color-mix(in oklab, var(--color-border) 70%, transparent);
+  margin-left: -1px;
+}
+
+[data-theme="dark"] .stack-editor .cm-indentation-guide,
+[data-theme="dark"] .stack-editor .cm-indentationGuide,
+[data-theme="dark"] .stack-editor .cm-indentMarker,
+[data-theme="dark"] .stack-editor .cm-indentation-marker {
+  border-left-color: color-mix(in oklab, var(--color-border) 55%, transparent);
+}
+
+.stack-modal-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--s-3);
+  align-items: end;
+}
+
+.stack-modal-grid input[type="text"] {
+  max-width: 320px;
+}
+
+.stack-editor-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  gap: var(--s-3);
+  align-items: stretch;
+}
+
+.stack-editor-main,
+.stack-editor-env {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+.stack-env-label {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+@media (max-width: 960px) {
+  .stack-editor-grid {
+    grid-template-columns: 1fr;
+  }
+  .stack-textarea {
+    min-height: clamp(200px, 46vh, 360px);
+  }
+  .stack-editor {
+    min-height: clamp(200px, 46vh, 360px);
+  }
+}
+
+
+.stack-toggle {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: var(--s-2);
+  margin-top: 0;
+  position: relative;
+  justify-self: end;
+}
+
+.stack-toggle input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+  width: 0;
+  height: 0;
+}
+
+.stack-toggle input:checked + .toggle-track {
+  background: color-mix(in srgb, var(--color-primary), transparent 82%);
+  border-color: color-mix(in srgb, var(--color-primary), transparent 55%);
+}
+
+.stack-toggle input:checked + .toggle-track .toggle-thumb {
+  transform: translateX(16px);
+  background: var(--color-primary);
+}
+
+.stack-toggle input:focus-visible + .toggle-track {
+  box-shadow: var(--focus-ring);
+}
+
 
 .containers-table th:nth-child(1),
 .containers-table td:nth-child(1) {

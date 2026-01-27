@@ -268,6 +268,11 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/containers/action", s.handleContainerAction)
 	s.mux.HandleFunc("/api/containers/shell", s.handleContainerShell)
 	s.mux.HandleFunc("/api/containers/logs", s.handleContainerLogs)
+	s.mux.HandleFunc("/api/stacks", s.handleStacks)
+	s.mux.HandleFunc("/api/stacks/get", s.handleStackGet)
+	s.mux.HandleFunc("/api/stacks/save", s.handleStackSave)
+	s.mux.HandleFunc("/api/stacks/validate", s.handleStackValidate)
+	s.mux.HandleFunc("/api/stacks/action", s.handleStackAction)
 	s.mux.HandleFunc("/api/self-update", s.handleSelfUpdate)
 	s.mux.HandleFunc("/api/logs", s.handleLogs)
 	s.mux.HandleFunc("/api/notifications/test", s.handleNotificationsTest)
@@ -321,6 +326,8 @@ func (s *Server) agentAllowed(path string) bool {
 	case path == "/api/containers/shell":
 		return true
 	case path == "/api/containers/logs":
+		return true
+	case strings.HasPrefix(path, "/api/stacks"):
 		return true
 	case strings.HasPrefix(path, "/api/update/"):
 		return true

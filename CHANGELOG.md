@@ -1,5 +1,22 @@
 # Changelog
 
+## v1.2.1
+
+## Bug fixes
+- Container stacks: `docker compose` actions no longer fail when stack name contains uppercase letters (project name is normalized to lowercase).
+- Container stacks: validation markers now point to the offending line more reliably (includes `Line N` in the tooltip; best-effort mapping for Compose config errors).
+
+## New features
+- Container stacks: Compose/.env editor migrated to CodeMirror 6 (bundled in the image; no CDN).
+- Container stacks: inline validation while editing (Compose via `/api/stacks/validate`, `.env` via local lint rules).
+- Container stacks: destructive actions (Remove/Kill) now use an inline confirm click (no browser `confirm()` popup).
+- Container stacks: optimistic per-action status labels while an operation is in progress (Deploying/Teardown/Restarting/Killing/Removing).
+
+## Improvements
+- Container stacks: removed row expand/collapse (container list under a stack) to simplify the table UX (API `/api/stacks/containers` removed as well).
+- Editor UX: YAML-friendly defaults (2-space indent, word wrap, folding, indent guides) plus basic autocomplete for common Compose keys/values.
+- Dark mode: improved editor theming (gutter/cursor/tooltips/autocomplete are theme-aware).
+
 ## v1.2.0
 
 ## New features
@@ -10,12 +27,19 @@
     - per-column sort icons for Name and State; inline confirmation for Kill.
     - shell view (top bar button) with selectable container list and embedded terminal.
     - logs view (top bar button) with selectable container list, live stream, pause/resume, and optional timestamps.
+- Container stacks (experimental):
+    - stacks table with status, container counts, and per-stack actions.
+    - create/edit stack compose files without deploying.
+    - stack containers expansion with downed containers highlighted.
 
 ## Improvements
 - Containers feature:
     - auto-refresh every 5s with in-place row updates (no list reset), manual refresh, and sort by name/state
     - action buttons use colored icons with hover backgrounds; state column uses badge-style labels
     - logs: default tail reduced to 100 lines for faster initial load.
+- Container stacks:
+    - stored in `/data/stacks/<server>/<stack>/` with `docker-compose.yml` and optional `.env`.
+    - compose actions available: up/down/start/stop/restart/kill/rm.
 - Server reachability: checking state no longer overrides online/offline once known.
 - Remote shell/logs proxy: improved WebSocket close handling when switching sessions.
 

@@ -85,6 +85,10 @@ const containersStateSortBtn = document.getElementById("containers-state-sort");
 const containersTableBody = document.getElementById("containers-body");
 const containersEmptyEl = document.getElementById("containers-empty");
 const containersTableView = document.getElementById("containers-table-view");
+const containersStacksView = document.getElementById("containers-stacks-view");
+const stacksTableBody = document.getElementById("stacks-body");
+const stacksEmptyEl = document.getElementById("stacks-empty");
+const stacksNewBtn = document.getElementById("stacks-new");
 const containersShellLayout = document.getElementById("containers-shell-layout");
 const containersShellList = document.getElementById("containers-shell-list");
 const containersShellPlaceholder = document.getElementById("containers-shell-placeholder");
@@ -114,6 +118,19 @@ const detailsBody = document.getElementById("details-body");
 const detailsCloseBtn = document.getElementById("details-close");
 const policyModal = document.getElementById("policy-modal");
 const policyCloseBtn = document.getElementById("policy-close");
+const stackModal = document.getElementById("stack-modal");
+const stackModalTitle = document.getElementById("stack-modal-title");
+const stackModalClose = document.getElementById("stack-modal-close");
+const stackModalSave = document.getElementById("stack-modal-save");
+const stackModalCancel = document.getElementById("stack-modal-cancel");
+const stackNameInput = document.getElementById("stack-name-input");
+const stackNameRow = document.getElementById("stack-name-row");
+const stackComposeEditorEl = document.getElementById("stack-compose-editor");
+const stackComposeInput = document.getElementById("stack-compose-input");
+const stackEnvEditorEl = document.getElementById("stack-env-editor");
+const stackEnvInput = document.getElementById("stack-env-input");
+const stackEnvToggle = document.getElementById("stack-env-toggle");
+const stackModalErrorEl = document.getElementById("stack-modal-error");
 
 let currentScanController = null;
 let currentView = "status";
@@ -153,8 +170,12 @@ let containersSelectedScope = "";
 let containersSortMode = "name:asc";
 let containersRefreshTimer = null;
 let containersUpdateInProgress = false;
+let stacksRefreshTimer = null;
+let stacksUpdateInProgress = false;
 let containersCache = new Map();
 let containersKillConfirming = new Set();
+let stacksActionConfirming = new Set();
+let stackStatusOverrides = new Map();
 let containersViewMode = "table";
 let containersShellSelectedId = "";
 let containersShellSocket = null;
@@ -177,6 +198,26 @@ const containersLogsMaxBytes = 300000;
 let containersLogsSilentClose = false;
 let containersLogsStreamActive = false;
 let currentTimeZone = "";
+let stacksCache = new Map();
+let editingStackName = "";
+let composeEditor = null;
+let envEditor = null;
+
+function showStackModalError(message) {
+  if (!stackModalErrorEl) return;
+  const text = String(message || "").trim();
+  if (!text) {
+    stackModalErrorEl.textContent = "";
+    stackModalErrorEl.classList.add("hidden");
+    return;
+  }
+  stackModalErrorEl.textContent = text;
+  stackModalErrorEl.classList.remove("hidden");
+}
+
+function clearStackModalError() {
+  showStackModalError("");
+}
 
 function pendingSelfUpdateKey(serverKey, containerName) {
   return `${serverKey}::${containerName}`;
@@ -441,6 +482,458 @@ function closeRemoteModal() {
   remoteModal.setAttribute("aria-hidden", "true");
   editingRemoteServer = null;
   editingLocalServer = null;
+}
+
+function isValidStackName(name) {
+  return /^[A-Za-z0-9_-]+$/.test(String(name || "").trim());
+}
+
+function enableYamlIndent(textarea) {
+  if (!textarea) return;
+  textarea.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      const start = textarea.selectionStart;
+      const value = textarea.value;
+      const lineStart = value.lastIndexOf("\n", start - 1) + 1;
+      const line = value.slice(lineStart, start);
+      const indentMatch = line.match(/^\s+/);
+      const indent = indentMatch ? indentMatch[0] : "";
+      event.preventDefault();
+      const insert = `\n${indent}`;
+      textarea.value = value.slice(0, start) + insert + value.slice(start);
+      const nextPos = start + insert.length;
+      textarea.selectionStart = nextPos;
+      textarea.selectionEnd = nextPos;
+      return;
+    }
+    if (event.key !== "Tab") return;
+    event.preventDefault();
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const value = textarea.value;
+    const indent = "  ";
+    if (event.shiftKey) {
+      const before = value.slice(0, start);
+      const lineStart = before.lastIndexOf("\n") + 1;
+      const line = value.slice(lineStart, start);
+      if (line.startsWith(indent)) {
+        textarea.value = value.slice(0, lineStart) + line.slice(indent.length) + value.slice(start);
+        textarea.selectionStart = start - indent.length;
+        textarea.selectionEnd = end - indent.length;
+      }
+      return;
+    }
+    textarea.value = value.slice(0, start) + indent + value.slice(end);
+    textarea.selectionStart = start + indent.length;
+    textarea.selectionEnd = start + indent.length;
+  });
+}
+
+function getComposeValue() {
+  if (composeEditor && typeof composeEditor.getValue === "function") {
+    return composeEditor.getValue();
+  }
+  return stackComposeInput ? stackComposeInput.value : "";
+}
+
+function setComposeValue(value) {
+  if (composeEditor && typeof composeEditor.setValue === "function") {
+    composeEditor.setValue(value || "");
+    return;
+  }
+  if (stackComposeInput) {
+    stackComposeInput.value = value || "";
+  }
+}
+
+function getEnvValue() {
+  return stackEnvInput ? stackEnvInput.value : "";
+}
+
+function setEnvValue(value) {
+  if (envEditor && typeof envEditor.setValue === "function") {
+    envEditor.setValue(value || "");
+    return;
+  }
+  if (stackEnvInput) {
+    stackEnvInput.value = value || "";
+  }
+}
+
+function initComposeEditor() {
+  if (!stackComposeEditorEl || !stackComposeInput || !window.CM6Compose || typeof window.CM6Compose.init !== "function") {
+    if (stackComposeInput) stackComposeInput.classList.remove("hidden");
+    if (stackComposeEditorEl) stackComposeEditorEl.classList.add("hidden");
+    return;
+  }
+  stackComposeInput.classList.add("hidden");
+  stackComposeEditorEl.classList.remove("hidden");
+  composeEditor = window.CM6Compose.init({
+    container: stackComposeEditorEl,
+    textarea: stackComposeInput,
+    getEnv: () => (stackEnvInput ? stackEnvInput.value : ""),
+    getUseEnv: () => Boolean(stackEnvToggle && stackEnvToggle.checked),
+    onChange: () => clearStackModalError(),
+    mode: "yaml",
+    lint: true,
+  });
+}
+
+function initEnvEditor() {
+  if (!stackEnvEditorEl || !stackEnvInput || !window.CM6Compose || typeof window.CM6Compose.init !== "function") {
+    if (stackEnvInput) stackEnvInput.classList.remove("hidden");
+    if (stackEnvEditorEl) stackEnvEditorEl.classList.add("hidden");
+    return;
+  }
+  stackEnvInput.classList.add("hidden");
+  stackEnvEditorEl.classList.remove("hidden");
+  envEditor = window.CM6Compose.init({
+    container: stackEnvEditorEl,
+    textarea: stackEnvInput,
+    onChange: () => {
+      clearStackModalError();
+      if (composeEditor && typeof composeEditor.forceLint === "function") {
+        composeEditor.forceLint();
+      }
+    },
+    mode: "env",
+    lint: true,
+  });
+}
+
+const envFileItemRegex = /^-\s*["']?\.env["']?\s*$/;
+
+function countIndent(line) {
+  const match = String(line || "").match(/^\s*/);
+  return match ? match[0].length : 0;
+}
+
+function isCommentOrBlank(line) {
+  const trimmed = String(line || "").trim();
+  return trimmed === "" || trimmed.startsWith("#");
+}
+
+function isServiceHeader(line, indent, servicesIndent) {
+  const trimmed = String(line || "").trim();
+  if (!trimmed || trimmed.startsWith("#")) return false;
+  if (!trimmed.endsWith(":")) return false;
+  if (trimmed.startsWith("-")) return false;
+  return indent > servicesIndent;
+}
+
+function findServicesBlock(lines) {
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = String(lines[i] || "");
+    if (line.trim() === "services:") {
+      return { index: i, indent: countIndent(line) };
+    }
+  }
+  return { index: -1, indent: 0 };
+}
+
+function ensureEnvFileForServices(text) {
+  const lines = String(text || "").split(/\r?\n/);
+  const servicesInfo = findServicesBlock(lines);
+  if (servicesInfo.index < 0) {
+    const trimmed = String(text || "").trim();
+    if (!trimmed) {
+      return "services:\n  app:\n    env_file:\n      - .env";
+    }
+    return `${trimmed}\n\nservices:\n  app:\n    env_file:\n      - .env`;
+  }
+  let i = servicesInfo.index + 1;
+  let foundService = false;
+  while (i < lines.length) {
+    const line = lines[i];
+    const indent = countIndent(line);
+    if (indent <= servicesInfo.indent && !isCommentOrBlank(line)) {
+      break;
+    }
+    if (isServiceHeader(line, indent, servicesInfo.indent)) {
+      foundService = true;
+      const serviceIndent = indent;
+      let blockEnd = i + 1;
+      while (blockEnd < lines.length) {
+        const nextLine = lines[blockEnd];
+        const nextIndent = countIndent(nextLine);
+        if (nextIndent <= serviceIndent && !isCommentOrBlank(nextLine)) {
+          break;
+        }
+        blockEnd += 1;
+      }
+      let envFileLine = -1;
+      let envFileIndent = serviceIndent + 2;
+      for (let j = i + 1; j < blockEnd; j += 1) {
+        const current = lines[j];
+        const currentIndent = countIndent(current);
+        if (currentIndent === envFileIndent && String(current || "").trim().startsWith("env_file:")) {
+          envFileLine = j;
+          break;
+        }
+      }
+      if (envFileLine >= 0) {
+        let hasEnv = false;
+        let insertAt = envFileLine + 1;
+        for (let j = envFileLine + 1; j < blockEnd; j += 1) {
+          const current = lines[j];
+          const currentIndent = countIndent(current);
+          if (currentIndent <= envFileIndent && !isCommentOrBlank(current)) {
+            break;
+          }
+          if (currentIndent > envFileIndent && String(current || "").trim().startsWith("-")) {
+            insertAt = j + 1;
+            if (envFileItemRegex.test(String(current || "").trim())) {
+              hasEnv = true;
+            }
+          }
+        }
+        if (!hasEnv) {
+          lines.splice(insertAt, 0, `${" ".repeat(envFileIndent + 2)}- .env`);
+          blockEnd += 1;
+        }
+      } else {
+        let insertAt = i + 1;
+        while (insertAt < blockEnd && isCommentOrBlank(lines[insertAt])) {
+          insertAt += 1;
+        }
+        lines.splice(
+          insertAt,
+          0,
+          `${" ".repeat(envFileIndent)}env_file:`,
+          `${" ".repeat(envFileIndent + 2)}- .env`
+        );
+        blockEnd += 2;
+      }
+      i = blockEnd;
+      continue;
+    }
+    i += 1;
+  }
+  if (!foundService) {
+    const insertAt = servicesInfo.index + 1;
+    lines.splice(
+      insertAt,
+      0,
+      `${" ".repeat(servicesInfo.indent + 2)}app:`,
+      `${" ".repeat(servicesInfo.indent + 4)}env_file:`,
+      `${" ".repeat(servicesInfo.indent + 6)}- .env`
+    );
+  }
+  return lines.join("\n");
+}
+
+function removeEnvFileFromServices(text) {
+  const lines = String(text || "").split(/\r?\n/);
+  const servicesInfo = findServicesBlock(lines);
+  if (servicesInfo.index < 0) return text;
+  const processed = [];
+  processed.push(...lines.slice(0, servicesInfo.index + 1));
+  let i = servicesInfo.index + 1;
+  while (i < lines.length) {
+    const currentLine = lines[i];
+    const currentIndent = countIndent(currentLine);
+    if (currentIndent <= servicesInfo.indent && !isCommentOrBlank(currentLine)) {
+      processed.push(...lines.slice(i));
+      return processed.join("\n");
+    }
+    if (!isServiceHeader(currentLine, currentIndent, servicesInfo.indent)) {
+      processed.push(currentLine);
+      i += 1;
+      continue;
+    }
+    const serviceIndent = currentIndent;
+    let blockEnd = i + 1;
+    while (blockEnd < lines.length) {
+      const nextLine = lines[blockEnd];
+      const nextIndent = countIndent(nextLine);
+      if (nextIndent <= serviceIndent && !isCommentOrBlank(nextLine)) {
+        break;
+      }
+      blockEnd += 1;
+    }
+    const block = lines.slice(i, blockEnd);
+    const newBlock = [block[0]];
+    const envFileIndent = serviceIndent + 2;
+    let k = 1;
+    while (k < block.length) {
+      const line = block[k];
+      const indent = countIndent(line);
+      const trimmed = String(line || "").trim();
+      if (indent === envFileIndent && trimmed.startsWith("env_file:")) {
+        let subEnd = k + 1;
+        while (subEnd < block.length) {
+          const subLine = block[subEnd];
+          const subIndent = countIndent(subLine);
+          if (subIndent <= envFileIndent && !isCommentOrBlank(subLine)) {
+            break;
+          }
+          subEnd += 1;
+        }
+        const sub = block.slice(k + 1, subEnd);
+        const kept = [];
+        let hasItem = false;
+        sub.forEach((subLine) => {
+          const subIndent = countIndent(subLine);
+          const subTrimmed = String(subLine || "").trim();
+          if (subIndent > envFileIndent && subTrimmed.startsWith("-")) {
+            if (envFileItemRegex.test(subTrimmed)) {
+              return;
+            }
+            hasItem = true;
+            kept.push(subLine);
+            return;
+          }
+          kept.push(subLine);
+        });
+        if (hasItem) {
+          newBlock.push(line, ...kept);
+        } else {
+          newBlock.push(...kept);
+        }
+        k = subEnd;
+        continue;
+      }
+      newBlock.push(line);
+      k += 1;
+    }
+    processed.push(...newBlock);
+    i = blockEnd;
+  }
+  return processed.join("\n");
+}
+
+function updateStackEnvState() {
+  if (!stackEnvToggle || !stackEnvInput) return;
+  const enabled = Boolean(stackEnvToggle.checked);
+  stackEnvInput.disabled = !enabled;
+  if (envEditor && typeof envEditor.setReadOnly === "function") {
+    envEditor.setReadOnly(!enabled);
+  }
+  const current = getComposeValue();
+  const next = enabled
+    ? ensureEnvFileForServices(current)
+    : removeEnvFileFromServices(current);
+  setComposeValue(next);
+  if (!enabled) {
+    setEnvValue("");
+  }
+  if (composeEditor && typeof composeEditor.forceLint === "function") {
+    composeEditor.forceLint();
+  }
+  if (envEditor && typeof envEditor.forceLint === "function") {
+    envEditor.forceLint();
+  }
+}
+
+async function openStackModal(name = "") {
+  if (!stackModal) return;
+  const scope = containersSelectedScope;
+  if (!scope) {
+    showToast("Select server first.");
+    return;
+  }
+  editingStackName = name ? String(name) : "";
+  if (stackModalTitle) {
+    stackModalTitle.textContent = editingStackName ? `Edit stack: ${editingStackName}` : "New stack";
+  }
+  if (stackNameRow) {
+    stackNameRow.classList.toggle("hidden", Boolean(editingStackName));
+  }
+  if (stackNameInput) {
+    stackNameInput.value = editingStackName ? editingStackName : "";
+    stackNameInput.disabled = Boolean(editingStackName);
+  }
+  setComposeValue("");
+  setEnvValue("");
+  clearStackModalError();
+  if (stackEnvToggle) {
+    stackEnvToggle.checked = false;
+  }
+  updateStackEnvState();
+  stackModal.classList.remove("hidden");
+  stackModal.setAttribute("aria-hidden", "false");
+  if (editingStackName) {
+    try {
+      const payload = await fetchJSON(`/api/stacks/get?scope=${encodeURIComponent(scope)}&name=${encodeURIComponent(editingStackName)}`);
+      if (payload) {
+        setComposeValue(payload.compose_yaml || "");
+        setEnvValue(payload.env || "");
+        if (stackEnvToggle) stackEnvToggle.checked = Boolean(payload.has_env);
+        updateStackEnvState();
+        clearStackModalError();
+      }
+    } catch (err) {
+      showToast(err.message || "Unable to load stack.");
+    }
+  } else if (stackNameInput) {
+    stackNameInput.focus();
+  }
+}
+
+function closeStackModal() {
+  if (!stackModal) return;
+  if (document.activeElement && stackModal.contains(document.activeElement)) {
+    try {
+      document.activeElement.blur();
+    } catch {
+      // ignore
+    }
+  }
+  stackModal.classList.add("hidden");
+  stackModal.setAttribute("aria-hidden", "true");
+  editingStackName = "";
+}
+
+async function saveStackFromModal() {
+  const scope = containersSelectedScope;
+  if (!scope) {
+    showToast("Select server first.");
+    return;
+  }
+  const name = editingStackName || (stackNameInput ? stackNameInput.value.trim() : "");
+  if (!name || !isValidStackName(name)) {
+    showToast("Stack name must match A-Z, a-z, 0-9, _ or -.");
+    return;
+  }
+  clearStackModalError();
+  const composeYml = getComposeValue()
+    .split(/\r?\n/)
+    .map((line) => {
+      const prefix = String(line || "").match(/^\s*/)?.[0] || "";
+      if (!prefix.includes("\t")) return line;
+      const fixed = prefix.replace(/\t/g, "  ");
+      return fixed + String(line || "").slice(prefix.length);
+    })
+    .join("\n")
+    .trim();
+  setComposeValue(composeYml);
+  if (!composeYml) {
+    showStackModalError("docker-compose.yml is required.");
+    return;
+  }
+  const useEnv = Boolean(stackEnvToggle && stackEnvToggle.checked);
+  const env = useEnv ? getEnvValue() : "";
+  try {
+    const validation = await fetchJSON("/api/stacks/validate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ compose_yaml: composeYml, env, use_env: useEnv }),
+    });
+    if (!validation || validation.valid !== true) {
+      const message = validation && validation.error ? validation.error : "Compose validation failed.";
+      showStackModalError(message);
+      return;
+    }
+    await fetchJSON("/api/stacks/save", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ scope, name, compose_yaml: composeYml, env, use_env: useEnv }),
+    });
+    closeStackModal();
+    await refreshStacks({ silent: true });
+  } catch (err) {
+    showStackModalError(err.message || "Stack save failed.");
+  }
 }
 
 async function copyToClipboard(value, label) {
@@ -1698,7 +2191,15 @@ function applySidebarFilter(queryOverride) {
         const match = !query || haystack.includes(query);
         item.classList.toggle("filtered-out", !match);
       });
-    } else {
+	    } else if (containersViewMode === "stacks" && stacksTableBody) {
+	      const rows = Array.from(stacksTableBody.querySelectorAll("tr.stack-row"));
+	      rows.forEach((row) => {
+	        const source = row.dataset && row.dataset.search ? row.dataset.search : row.textContent;
+	        const haystack = normalizeQuery(source);
+	        const match = !query || haystack.includes(query);
+	        row.classList.toggle("filtered-out", !match);
+	      });
+	    } else {
       const rows = Array.from(containersTableBody ? containersTableBody.querySelectorAll("tr") : []);
       rows.forEach((row) => {
         const source = row.dataset && row.dataset.search ? row.dataset.search : row.textContent;
@@ -1760,6 +2261,9 @@ function applyExperimentalFeatures(cfg) {
     setContainersViewMode("table");
   }
   if (!flags.container_logs && containersViewMode === "logs") {
+    setContainersViewMode("table");
+  }
+  if (!flags.stacks && containersViewMode === "stacks") {
     setContainersViewMode("table");
   }
   if (viewContainersEl && !flags.containers) viewContainersEl.classList.add("hidden");
@@ -2336,6 +2840,10 @@ function updateContainersSearchCount() {
     const items = Array.from(containersLogsList.querySelectorAll(".containers-shell-item"));
     total = items.length;
     visible = items.filter((item) => !item.classList.contains("filtered-out")).length;
+  } else if (containersViewMode === "stacks" && stacksTableBody) {
+    const rows = Array.from(stacksTableBody.querySelectorAll("tr.stack-row"));
+    total = rows.length;
+    visible = rows.filter((row) => !row.classList.contains("filtered-out")).length;
   } else if (containersTableBody) {
     const rows = Array.from(containersTableBody.querySelectorAll("tr"));
     total = rows.length;
@@ -2353,14 +2861,23 @@ function updateContainersSearchCount() {
 }
 
 function setContainersViewMode(mode) {
-  const next = mode === "shell" ? "shell" : mode === "logs" ? "logs" : "table";
+  const next = mode === "shell"
+    ? "shell"
+    : mode === "logs"
+        ? "logs"
+        : mode === "stacks"
+            ? "stacks"
+            : "table";
   containersViewMode = next;
-  const isSplit = next !== "table";
+  const isSplit = next === "shell" || next === "logs";
   if (viewContainersEl) {
     viewContainersEl.classList.toggle("shell-mode", isSplit);
   }
   if (containersTableView) {
-    containersTableView.classList.toggle("hidden", isSplit);
+    containersTableView.classList.toggle("hidden", next !== "table");
+  }
+  if (containersStacksView) {
+    containersStacksView.classList.toggle("hidden", next !== "stacks");
   }
   if (containersShellLayout) {
     containersShellLayout.classList.toggle("hidden", next !== "shell");
@@ -2374,12 +2891,16 @@ function setContainersViewMode(mode) {
   if (topbarContainersLogsBtn) {
     topbarContainersLogsBtn.classList.toggle("is-active", next === "logs");
   }
+  if (topbarContainersStacksBtn) {
+    topbarContainersStacksBtn.classList.toggle("is-active", next === "stacks");
+  }
   if (next === "shell") {
     closeContainersLogsSession("switch to shell");
     setContainersLogsPaused(false);
     const list = Array.from(containersCache.values()).map((entry) => entry.data);
     renderContainersShellList(list);
     stopContainersAutoRefresh();
+    stopStacksAutoRefresh();
     refreshContainers({ silent: true }).catch(() => {});
   } else if (next === "logs") {
     closeContainersShellSession("switch to logs");
@@ -2389,10 +2910,19 @@ function setContainersViewMode(mode) {
     const list = Array.from(containersCache.values()).map((entry) => entry.data);
     renderContainersLogsList(list);
     stopContainersAutoRefresh();
+    stopStacksAutoRefresh();
     refreshContainers({ silent: true }).catch(() => {});
+  } else if (next === "stacks") {
+    closeContainersShellSession("switch to stacks");
+    closeContainersLogsSession("switch to stacks");
+    setContainersLogsPaused(false);
+    stopContainersAutoRefresh();
+    startStacksAutoRefresh();
+    refreshStacks({ silent: true }).catch(() => {});
   } else {
     closeContainersShellSession("switch to table");
     closeContainersLogsSession("switch to table");
+    stopStacksAutoRefresh();
     startContainersAutoRefresh();
   }
   updateContainersSearchCount();
@@ -3022,17 +3552,21 @@ function updateContainersServerOptions() {
     nameEl.className = "containers-server-name";
     nameEl.textContent = item.label;
     const typeIcon = buildServerTypeIcon(item.type, statusLabel);
-    button.append(statusIcon, nameEl, typeIcon);
-    button.addEventListener("click", async () => {
-      containersSelectedScope = item.scope;
-      topbarContainersServerMenu.querySelectorAll(".containers-server-option").forEach((el) => {
-        el.classList.remove("active");
-      });
-      button.classList.add("active");
+	    button.append(statusIcon, nameEl, typeIcon);
+	    button.addEventListener("click", async () => {
+	      containersSelectedScope = item.scope;
+	      topbarContainersServerMenu.querySelectorAll(".containers-server-option").forEach((el) => {
+	        el.classList.remove("active");
+	      });
+	      button.classList.add("active");
       renderContainersServerButton(info);
       closeContainersServerMenu();
       updateContainersLogsStreamIndicator();
-      await refreshContainers({ silent: true });
+      if (containersViewMode === "stacks") {
+        await refreshStacks({ silent: true });
+      } else {
+        await refreshContainers({ silent: true });
+      }
     });
     topbarContainersServerMenu.appendChild(button);
   });
@@ -3044,6 +3578,13 @@ function updateContainersServerOptions() {
     renderContainersServerButton(info);
   } else {
     renderContainersServerButton(null);
+  }
+  if (currentView === "containers") {
+    if (containersViewMode === "stacks") {
+      refreshStacks({ silent: true }).catch(() => {});
+    } else {
+      refreshContainers({ silent: true }).catch(() => {});
+    }
   }
 }
 
@@ -3082,6 +3623,19 @@ function clearContainersKillConfirmations() {
   const list = Array.from(containersCache.values()).map((entry) => entry.data);
   if (list.length > 0) {
     renderContainers(list, containersSelectedScope);
+  }
+}
+
+function stackActionKey(name, action) {
+  return `${name || ""}::${action || ""}`;
+}
+
+function clearStacksActionConfirmations() {
+  if (stacksActionConfirming.size === 0) return;
+  stacksActionConfirming.clear();
+  const list = Array.from(stacksCache.values()).map((entry) => entry && entry.data).filter(Boolean);
+  if (list.length > 0) {
+    renderStacks(list);
   }
 }
 
@@ -3295,6 +3849,332 @@ async function refreshContainers(options = {}) {
   } finally {
     containersUpdateInProgress = false;
   }
+}
+
+function clearStacksTable(message) {
+  if (stacksTableBody) {
+    stacksTableBody.innerHTML = "";
+  }
+  stacksCache = new Map();
+  if (stacksEmptyEl) {
+    if (message) {
+      stacksEmptyEl.textContent = message;
+      stacksEmptyEl.classList.remove("hidden");
+    } else {
+      stacksEmptyEl.classList.add("hidden");
+    }
+  }
+  updateContainersSearchCount();
+}
+
+function formatStackContainers(stack) {
+  const total = Number(stack.containers_total || 0);
+  const running = Number(stack.containers_running || 0);
+  return total > 0 ? `${running}/${total}` : "0";
+}
+
+function buildStackStatusBadge(status) {
+  const badge = document.createElement("span");
+  const normalized = String(status || "not_deployed").toLowerCase();
+  badge.className = `stack-status-badge stack-status-${normalized}`;
+  badge.textContent = normalized.replace(/_/g, " ");
+  return badge;
+}
+
+function setStackStatusOverride(name, action, status, baseline) {
+  if (!name || !status || !action) return;
+  const baseStatus = baseline && baseline.status ? String(baseline.status) : "";
+  const baseTotal = Number(baseline && baseline.containers_total ? baseline.containers_total : 0);
+  const baseRunning = Number(baseline && baseline.containers_running ? baseline.containers_running : 0);
+  stackStatusOverrides.set(name, {
+    action,
+    status,
+    baseStatus,
+    baseTotal,
+    baseRunning,
+    startedAtMs: Date.now(),
+    completedAtMs: 0,
+  });
+}
+
+function markStackStatusOverrideCompleted(name) {
+  const entry = stackStatusOverrides.get(name);
+  if (!entry) return;
+  entry.completedAtMs = Date.now();
+  stackStatusOverrides.set(name, entry);
+}
+
+function maybeClearStackStatusOverride(stack) {
+  if (!stack || !stack.name) return;
+  const entry = stackStatusOverrides.get(stack.name);
+  if (!entry) return;
+
+  const now = Date.now();
+  const maxAgeMs = 5 * 60 * 1000;
+  if (now - entry.startedAtMs > maxAgeMs) {
+    stackStatusOverrides.delete(stack.name);
+    return;
+  }
+
+  const currentStatus = String(stack.status || "");
+  const currentTotal = Number(stack.containers_total || 0);
+  const currentRunning = Number(stack.containers_running || 0);
+
+  if (entry.baseStatus && currentStatus && currentStatus.toLowerCase() !== String(entry.baseStatus).toLowerCase()) {
+    stackStatusOverrides.delete(stack.name);
+    return;
+  }
+  if (currentTotal !== Number(entry.baseTotal || 0) || currentRunning !== Number(entry.baseRunning || 0)) {
+    stackStatusOverrides.delete(stack.name);
+    return;
+  }
+
+  if (entry.completedAtMs) {
+    const fallbackByActionMs = {
+      up: 30000,
+      down: 30000,
+      restart: 5000,
+      start: 5000,
+      stop: 5000,
+      kill: 5000,
+      rm: 5000,
+    };
+    const ttlMs = fallbackByActionMs[String(entry.action)] || 12000;
+    if (now - entry.completedAtMs > ttlMs) {
+      stackStatusOverrides.delete(stack.name);
+      return;
+    }
+  }
+}
+
+function getStackStatusOverride(name, stack) {
+  if (stack) {
+    maybeClearStackStatusOverride(stack);
+  }
+  const entry = stackStatusOverrides.get(name);
+  return entry ? entry.status : "";
+}
+
+function buildStackActionButton(iconClass, label, onClick, variant) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "secondary icon-action-btn has-tooltip";
+  if (variant) {
+    button.classList.add(variant);
+  }
+  button.setAttribute("aria-label", label);
+  button.setAttribute("data-tooltip", label);
+  const icon = document.createElement("span");
+  icon.className = `icon-action ${iconClass}`;
+  icon.setAttribute("aria-hidden", "true");
+  button.appendChild(icon);
+  button.addEventListener("click", onClick);
+  return button;
+}
+
+function updateStackRow(entry, stack) {
+  entry.data = stack;
+  const row = entry.row;
+  row.className = "stack-row";
+  row.dataset.search = `${stack.name || ""} ${stack.status || ""}`;
+  const cells = row.querySelectorAll("td");
+  if (cells.length < 4) return;
+  cells[0].textContent = stack.name;
+  cells[1].textContent = "";
+  const optimistic = getStackStatusOverride(stack.name, stack);
+  cells[1].appendChild(buildStackStatusBadge(optimistic || stack.status));
+  cells[2].textContent = formatStackContainers(stack);
+  const actionsCell = cells[3];
+  let actionsWrap = actionsCell.querySelector(".containers-actions");
+  if (!actionsWrap) {
+    actionsWrap = document.createElement("div");
+    actionsWrap.className = "containers-actions";
+    actionsCell.innerHTML = "";
+    actionsCell.appendChild(actionsWrap);
+  } else {
+    actionsWrap.innerHTML = "";
+  }
+  const editBtn = buildStackActionButton("icon-edit", "Edit stack", () => openStackModal(stack.name));
+  const upBtn = buildStackActionButton("icon-play", "Compose up", () => runStackAction(stack.name, "up"), "btn-success");
+  const downBtn = buildStackActionButton("icon-stop", "Compose down", () => runStackAction(stack.name, "down"), "btn-warning");
+  const restartBtn = buildStackActionButton("icon-reload", "Restart stack", () => runStackAction(stack.name, "restart"), "btn-info");
+  const startBtn = buildStackActionButton("icon-play", "Start stack", () => runStackAction(stack.name, "start"), "btn-success");
+  const stopBtn = buildStackActionButton("icon-stop", "Stop stack", () => runStackAction(stack.name, "stop"), "btn-warning");
+  const killKey = stackActionKey(stack.name, "kill");
+  const isConfirmingKill = stacksActionConfirming.has(killKey);
+  const killBtn = buildStackActionButton(
+    isConfirmingKill ? "icon-check" : "icon-skull",
+    isConfirmingKill ? "Confirm kill" : "Kill stack",
+    async () => {
+      if (!stacksActionConfirming.has(killKey)) {
+        stacksActionConfirming.add(killKey);
+        updateStackRow(entry, stack);
+        return;
+      }
+      stacksActionConfirming.delete(killKey);
+      await runStackAction(stack.name, "kill");
+    },
+    "btn-danger"
+  );
+  killBtn.classList.add("containers-kill-btn");
+  if (isConfirmingKill) {
+    killBtn.classList.add("is-confirming");
+  }
+
+  const rmKey = stackActionKey(stack.name, "rm");
+  const isConfirmingRm = stacksActionConfirming.has(rmKey);
+  const rmBtn = buildStackActionButton(
+    isConfirmingRm ? "icon-check" : "icon-trash",
+    isConfirmingRm ? "Confirm remove" : "Remove stack",
+    async () => {
+      if (!stacksActionConfirming.has(rmKey)) {
+        stacksActionConfirming.add(rmKey);
+        updateStackRow(entry, stack);
+        return;
+      }
+      stacksActionConfirming.delete(rmKey);
+      await runStackAction(stack.name, "rm");
+    },
+    "btn-danger"
+  );
+  rmBtn.classList.add("containers-kill-btn");
+  if (isConfirmingRm) {
+    rmBtn.classList.add("is-confirming");
+  }
+  actionsWrap.append(editBtn, upBtn, downBtn, restartBtn, startBtn, stopBtn, killBtn, rmBtn);
+}
+
+function renderStacks(list) {
+  if (!stacksTableBody) return;
+  if (!Array.isArray(list) || list.length === 0) {
+    clearStacksTable("No stacks found.");
+    return;
+  }
+  if (stacksEmptyEl) {
+    stacksEmptyEl.classList.add("hidden");
+  }
+  const previous = stacksCache;
+  const next = new Map();
+  list.forEach((stack) => {
+    if (!stack || !stack.name) return;
+    let entry = previous.get(stack.name);
+    let row = entry ? entry.row : null;
+    if (!row) {
+      row = document.createElement("tr");
+      for (let i = 0; i < 4; i += 1) {
+        row.appendChild(document.createElement("td"));
+      }
+    }
+    entry = { ...(entry || {}), row, name: stack.name };
+    updateStackRow(entry, stack);
+    next.set(stack.name, entry);
+  });
+  previous.forEach((entry, name) => {
+    if (!next.has(name)) {
+      entry.row.remove();
+    }
+  });
+  stacksCache = next;
+  const fragment = document.createDocumentFragment();
+  list.forEach((stack) => {
+    const entry = stacksCache.get(stack.name);
+    if (entry) {
+      fragment.appendChild(entry.row);
+    }
+  });
+  stacksTableBody.appendChild(fragment);
+  if (sidebarSearch && sidebarSearch.value.trim()) {
+    applySidebarFilter(sidebarSearch.value);
+  } else {
+    updateContainersSearchCount();
+  }
+}
+
+async function refreshStacks(options = {}) {
+  if (!stacksTableBody) return;
+  if (stacksUpdateInProgress) return;
+  stacksUpdateInProgress = true;
+  const scope = containersSelectedScope;
+  if (!scope) {
+    clearStacksTable("No servers configured. Add one in Servers.");
+    updateContainersStatus("", "");
+    stacksUpdateInProgress = false;
+    return;
+  }
+  containersSelectedScope = scope;
+  updateContainersStatus(scope, "");
+  try {
+    const payload = await fetchJSON(`/api/stacks?scope=${encodeURIComponent(scope)}`);
+    const list = payload && Array.isArray(payload.stacks) ? payload.stacks : [];
+    if (payload && payload.error) {
+      renderStacks(list);
+      updateContainersStatus(scope, payload.error);
+      return;
+    }
+    if (!payload) {
+      clearStacksTable("No stacks data available.");
+      updateContainersStatus(scope, "Unable to load stacks.");
+      return;
+    }
+    renderStacks(list);
+    updateContainersStatus(scope, "");
+  } catch (err) {
+    clearStacksTable("No stacks data available.");
+    updateContainersStatus(scope, err.message);
+  } finally {
+    stacksUpdateInProgress = false;
+  }
+}
+
+async function runStackAction(name, action) {
+  if (!name || !action) return;
+  const scope = containersSelectedScope;
+  if (!scope) {
+    showToast("Select server first.");
+    return;
+  }
+  const optimisticByAction = {
+    up: "deploying",
+    down: "tearing_down",
+    restart: "restarting",
+    start: "starting",
+    stop: "stopping",
+    kill: "killing",
+    rm: "removing",
+  };
+  if (optimisticByAction[action]) {
+    const cached = stacksCache.get(name);
+    setStackStatusOverride(name, action, optimisticByAction[action], cached ? cached.data : null);
+    if (cached && cached.data) {
+      updateStackRow(cached, cached.data);
+    }
+  }
+  try {
+    clearStacksActionConfirmations();
+    await fetchJSON("/api/stacks/action", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ scope, name, action }),
+    });
+    markStackStatusOverrideCompleted(name);
+    await refreshStacks({ silent: true });
+  } catch (err) {
+    stackStatusOverrides.delete(name);
+    showToast(err.message || "Stack action failed.");
+  }
+}
+
+function startStacksAutoRefresh() {
+  if (stacksRefreshTimer) return;
+  stacksRefreshTimer = window.setInterval(() => {
+    refreshStacks({ silent: true });
+  }, 6000);
+}
+
+function stopStacksAutoRefresh() {
+  if (!stacksRefreshTimer) return;
+  window.clearInterval(stacksRefreshTimer);
+  stacksRefreshTimer = null;
 }
 
 async function runContainerAction(scope, containerID, action) {
@@ -3782,7 +4662,11 @@ function refreshViewData(view) {
   const tasks = [];
   tasks.push(refreshConfig().catch(() => {}));
   if (view === "containers") {
-    tasks.push(refreshContainers({ silent: true }).catch(() => {}));
+    if (containersViewMode === "stacks") {
+      tasks.push(refreshStacks({ silent: true }).catch(() => {}));
+    } else {
+      tasks.push(refreshContainers({ silent: true }).catch(() => {}));
+    }
   }
   if (view === "logs") {
     tasks.push(refreshLogs().catch(() => {}));
@@ -3895,6 +4779,7 @@ function setView(nextView) {
     refreshContainers({ silent: true }).catch(() => {});
   } else {
     stopContainersAutoRefresh();
+    stopStacksAutoRefresh();
     if (prevView === "containers") {
       closeContainersShellSession("leave containers view");
       closeContainersLogsSession("leave containers view");
@@ -4149,6 +5034,46 @@ if (remoteModalClose) {
   });
 }
 
+if (stacksNewBtn) {
+  stacksNewBtn.addEventListener("click", () => {
+    openStackModal("");
+  });
+}
+
+if (stackModalSave) {
+  stackModalSave.addEventListener("click", () => {
+    saveStackFromModal();
+  });
+}
+
+if (stackModalCancel) {
+  stackModalCancel.addEventListener("click", () => {
+    closeStackModal();
+  });
+}
+
+if (stackModalClose) {
+  stackModalClose.addEventListener("click", () => {
+    closeStackModal();
+  });
+}
+
+if (stackEnvToggle) {
+  stackEnvToggle.addEventListener("change", () => {
+    updateStackEnvState();
+  });
+}
+if (stackComposeInput) {
+  stackComposeInput.addEventListener("input", () => {
+    clearStackModalError();
+  });
+}
+if (stackEnvInput) {
+  stackEnvInput.addEventListener("input", () => {
+    clearStackModalError();
+  });
+}
+
 if (remoteModalTokenCopy) {
   remoteModalTokenCopy.addEventListener("click", () => {
     copyToClipboard(remoteModalTokenInput ? remoteModalTokenInput.value : "", "Token");
@@ -4212,6 +5137,10 @@ async function init() {
       updateSidebarSearchUI();
     });
   }
+  initComposeEditor();
+  initEnvEditor();
+  enableYamlIndent(stackComposeInput);
+  enableYamlIndent(stackEnvInput);
   updateContainersSortUI();
 
   if (statusSelectiveToggleBtn) {
@@ -4323,7 +5252,11 @@ async function init() {
   }
   if (topbarContainersRefreshBtn) {
     topbarContainersRefreshBtn.addEventListener("click", async () => {
-      await refreshContainers({ silent: true });
+      if (containersViewMode === "stacks") {
+        await refreshStacks({ silent: true });
+      } else {
+        await refreshContainers({ silent: true });
+      }
     });
   }
   if (topbarContainersShellBtn) {
@@ -4359,7 +5292,7 @@ async function init() {
         showToast("Container stacks is disabled in Experimental features.");
         return;
       }
-      showToast("Container stacks view is not implemented yet.");
+      setContainersViewMode(containersViewMode === "stacks" ? "table" : "stacks");
     });
   }
   if (topbarContainersImagesBtn) {
@@ -4437,6 +5370,13 @@ async function init() {
       }
     });
   }
+  if (stackModal) {
+    stackModal.addEventListener("click", (event) => {
+      if (event.target && event.target.dataset && event.target.dataset.close) {
+        closeStackModal();
+      }
+    });
+  }
   if (globalPolicyInfoBtn) {
     globalPolicyInfoBtn.addEventListener("click", openPolicyModal);
   }
@@ -4500,16 +5440,27 @@ async function init() {
     closeLogsLevelMenu();
   });
 
-  document.addEventListener(
-    "click",
-    (event) => {
-      if (containersKillConfirming.size === 0) return;
-      const target = event.target;
-      if (target && target.closest && target.closest(".containers-kill-btn")) return;
-      clearContainersKillConfirmations();
-    },
-    true
-  );
+	  document.addEventListener(
+	    "click",
+	    (event) => {
+	      if (containersKillConfirming.size === 0) return;
+	      const target = event.target;
+	      if (target && target.closest && target.closest(".containers-kill-btn")) return;
+	      clearContainersKillConfirmations();
+	    },
+	    true
+	  );
+
+	  document.addEventListener(
+	    "click",
+	    (event) => {
+	      if (stacksActionConfirming.size === 0) return;
+	      const target = event.target;
+	      if (target && target.closest && target.closest(".containers-kill-btn")) return;
+	      clearStacksActionConfirmations();
+	    },
+	    true
+	  );
 
   initThemeToggle();
   updateTopbarHeight();

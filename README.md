@@ -125,6 +125,11 @@ docker pull ghcr.io/<owner>/<repo>:dev_<version>
 - `POST /api/containers/action` run container action (`start`, `stop`, `restart`, `pause`, `unpause`, `kill`)
 - `GET /api/containers/shell` (WebSocket) interactive shell for a container
 - `GET /api/containers/logs` (WebSocket) stream logs for a container
+- `GET /api/stacks?scope=local:{name}|remote:{name}` list compose stacks stored on the controller
+- `GET /api/stacks/get?scope=local:{name}|remote:{name}&name={stack}` fetch compose + env content
+- `PUT /api/stacks/save` save compose + env without deploy
+- `POST /api/stacks/validate` validate compose yaml (Docker Compose config)
+- `POST /api/stacks/action` run stack action (`up`, `down`, `start`, `stop`, `restart`, `kill`, `rm`)
 - `POST /api/update/{container_id}` update container
 - `POST /api/self-update?container={container_id}` update agent container via helper (agent mode only)
 - `GET/POST/DELETE /api/logs`

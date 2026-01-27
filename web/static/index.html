@@ -442,6 +442,28 @@
           </div>
           <div id="containers-empty" class="hint hidden"></div>
         </div>
+        <div id="containers-stacks-view" class="containers-stacks-view hidden">
+          <div class="containers-stacks-toolbar">
+            <div class="containers-stacks-title">Container stacks</div>
+            <button id="stacks-new" class="secondary icon-action-btn has-tooltip" type="button" aria-label="New stack" data-tooltip="New stack">
+              <span class="icon-action icon-plus" aria-hidden="true"></span>
+            </button>
+          </div>
+          <div class="containers-table-wrap">
+            <table class="containers-table stacks-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Status</th>
+                  <th>Containers</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="stacks-body"></tbody>
+            </table>
+          </div>
+          <div id="stacks-empty" class="hint hidden"></div>
+        </div>
         <div id="containers-shell-layout" class="containers-shell-layout hidden">
           <div class="containers-shell-list">
             <div class="containers-shell-list-header">Name</div>
@@ -620,8 +642,51 @@
       </div>
     </div>
 
-    <script src="/vendor/xterm/xterm.js"></script>
-    <script src="/vendor/xterm/xterm-addon-fit.js"></script>
-    <script src="/app.js"></script>
+    <div id="stack-modal" class="modal hidden" aria-hidden="true" role="dialog" aria-modal="true">
+      <div class="modal-backdrop" data-close="true"></div>
+      <div class="modal-card modal-card-lg" role="document">
+        <div class="modal-header">
+          <h3 id="stack-modal-title">New stack</h3>
+          <button id="stack-modal-close" class="secondary btn-small" type="button">Close</button>
+        </div>
+        <div class="modal-body">
+          <div class="stack-modal-grid">
+            <label id="stack-name-row">
+              Stack name
+              <input type="text" id="stack-name-input" placeholder="my_stack">
+            </label>
+            <label class="stack-toggle">
+              <input type="checkbox" id="stack-env-toggle">
+              <span class="toggle-track" aria-hidden="true"><span class="toggle-thumb"></span></span>
+              <span>Use .env</span>
+            </label>
+          </div>
+          <div class="stack-editor-grid">
+            <div class="stack-editor-main">
+              <label for="stack-compose-input">docker-compose.yml</label>
+              <div id="stack-compose-editor" class="stack-editor"></div>
+              <textarea id="stack-compose-input" class="stack-textarea hidden" rows="16" spellcheck="false" placeholder="services:"></textarea>
+            </div>
+            <div class="stack-editor-env">
+              <div class="stack-env-label">
+                <label for="stack-env-input">.env</label>
+                <div id="stack-env-editor" class="stack-editor"></div>
+                <textarea id="stack-env-input" class="stack-textarea hidden" rows="16" spellcheck="false" placeholder="KEY=value"></textarea>
+              </div>
+            </div>
+          </div>
+          <div id="stack-modal-error" class="stack-modal-error hidden" role="alert"></div>
+          <div class="settings-actions">
+            <button id="stack-modal-save" type="button">Save</button>
+            <button id="stack-modal-cancel" class="secondary" type="button">Cancel</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+	    <script src="/vendor/xterm/xterm.js"></script>
+	    <script src="/vendor/xterm/xterm-addon-fit.js"></script>
+	    <script src="/vendor/cm6/compose.bundle.js"></script>
+	    <script src="/app.js"></script>
   </body>
 </html>
