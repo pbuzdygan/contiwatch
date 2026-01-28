@@ -69,36 +69,18 @@
               </button>
               <div id="topbar-containers-server-menu" class="containers-server-menu hidden" role="listbox" tabindex="-1"></div>
             </div>
-            <button
-              id="topbar-containers-refresh"
-              class="secondary icon-action-btn has-tooltip"
-              type="button"
-              aria-label="Refresh containers"
-              data-tooltip="Refresh containers"
-            >
-              <span class="icon-action icon-reload" aria-hidden="true"></span>
-            </button>
-            <button
-              id="topbar-containers-shell"
-              class="secondary icon-action-btn has-tooltip"
-              type="button"
-              aria-label="Container shell"
-              data-tooltip="Container shell"
-            >
-              <span class="icon-action icon-terminal-2" aria-hidden="true"></span>
-            </button>
-            <button
-              id="topbar-containers-logs"
-              class="secondary icon-action-btn has-tooltip"
-              type="button"
-              aria-label="Container logs"
-              data-tooltip="Container logs"
-            >
-              <span class="icon-action icon-logs" aria-hidden="true"></span>
-            </button>
-            <button
-              id="topbar-containers-stacks"
-              class="secondary icon-action-btn has-tooltip"
+	            <button
+	              id="topbar-containers-refresh"
+	              class="secondary icon-action-btn has-tooltip"
+	              type="button"
+	              aria-label="Refresh"
+	              data-tooltip="Refresh"
+	            >
+	              <span class="icon-action icon-reload" aria-hidden="true"></span>
+	            </button>
+	            <button
+	              id="topbar-containers-stacks"
+	              class="secondary icon-action-btn has-tooltip"
               type="button"
               aria-label="Container stacks"
               data-tooltip="Container stacks"
@@ -111,12 +93,31 @@
               type="button"
               aria-label="Container images"
               data-tooltip="Container images"
-            >
-              <span class="icon-action icon-polaroid" aria-hidden="true"></span>
-            </button>
-            <div id="topbar-containers-status" class="containers-status"></div>
-          </div>
-        </div>
+	            >
+	              <span class="icon-action icon-cube-3d-sphere" aria-hidden="true"></span>
+	            </button>
+	            <span class="topbar-separator" aria-hidden="true"></span>
+	            <button
+	              id="topbar-containers-logs"
+	              class="secondary icon-action-btn has-tooltip"
+	              type="button"
+	              aria-label="Container logs"
+	              data-tooltip="Container logs"
+	            >
+	              <span class="icon-action icon-logs" aria-hidden="true"></span>
+	            </button>
+	            <button
+	              id="topbar-containers-shell"
+	              class="secondary icon-action-btn has-tooltip"
+	              type="button"
+	              aria-label="Container shell"
+	              data-tooltip="Container shell"
+	            >
+	              <span class="icon-action icon-terminal-2" aria-hidden="true"></span>
+	            </button>
+	            <div id="topbar-containers-status" class="containers-status"></div>
+	          </div>
+	        </div>
         <div id="topbar-servers" class="topbar-status hidden">
           <h2>Servers</h2>
           <div class="actions servers-topbar-actions">
@@ -178,7 +179,7 @@
           </div>
         </div>
         <div id="topbar-logs" class="topbar-status hidden">
-          <h2>Logs</h2>
+          <h2>Events</h2>
           <div class="logs-toolbar">
             <div class="logs-field logs-level-picker">
               <button
@@ -219,8 +220,8 @@
                 type="button"
                 data-enabled="true"
                 aria-pressed="true"
-                aria-label="Logs auto refresh: On"
-                data-tooltip="Logs auto refresh: On"
+                aria-label="Events auto refresh: On"
+                data-tooltip="Events auto refresh: On"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" class="logs-auto-icon logs-auto-icon-play icon icon-tabler icons-tabler-outline icon-tabler-player-play" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M7 4v16l13 -8z" /></svg>
                 <svg xmlns="http://www.w3.org/2000/svg" class="logs-auto-icon logs-auto-icon-stop icon icon-tabler icons-tabler-outline icon-tabler-player-stop" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M5 5h14v14h-14z" /></svg>
@@ -272,13 +273,29 @@
           <svg xmlns="http://www.w3.org/2000/svg" class="sidebar-icon icon icon-tabler icons-tabler-outline icon-tabler-package" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M12 3l8 4.5l0 9l-8 4.5l-8 -4.5l0 -9l8 -4.5" /><path d="M12 12l8 -4.5" /><path d="M12 12l0 9" /><path d="M12 12l-8 -4.5" /><path d="M16 5.25l-8 4.5" /></svg>
           <span class="sidebar-label">Containers</span>
         </button>
+        <button type="button" class="sidebar-link containers-sidebar-link hidden" data-view="containers" data-containers-mode="stacks" data-feature="stacks">
+          <span class="sidebar-icon icon-action icon-stack-3" aria-hidden="true"></span>
+          <span class="sidebar-label">Stacks</span>
+        </button>
+        <button type="button" class="sidebar-link containers-sidebar-link hidden" data-view="containers" data-containers-mode="images" data-feature="images">
+          <span class="sidebar-icon icon-action icon-cube-3d-sphere" aria-hidden="true"></span>
+          <span class="sidebar-label">Images</span>
+        </button>
+        <button type="button" class="sidebar-link containers-sidebar-link hidden" data-view="containers" data-containers-mode="logs" data-feature="container_logs">
+          <span class="sidebar-icon icon-action icon-logs" aria-hidden="true"></span>
+          <span class="sidebar-label">Logs</span>
+        </button>
+        <button type="button" class="sidebar-link containers-sidebar-link hidden" data-view="containers" data-containers-mode="shell" data-feature="container_shell">
+          <span class="sidebar-icon icon-action icon-terminal-2" aria-hidden="true"></span>
+          <span class="sidebar-label">Shell</span>
+        </button>
         <button type="button" class="sidebar-link" data-view="settings">
           <svg xmlns="http://www.w3.org/2000/svg" class="sidebar-icon icon icon-tabler icons-tabler-outline icon-tabler-settings" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M10.325 4.317c.426 -1.756 2.924 -1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543 -.94 3.31 .826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756 .426 1.756 2.924 0 3.35a1.724 1.724 0 0 0 -1.066 2.573c.94 1.543 -.826 3.31 -2.37 2.37a1.724 1.724 0 0 0 -2.572 1.065c-.426 1.756 -2.924 1.756 -3.35 0a1.724 1.724 0 0 0 -2.573 -1.066c-1.543 .94 -3.31 -.826 -2.37 -2.37a1.724 1.724 0 0 0 -1.065 -2.572c-1.756 -.426 -1.756 -2.924 0 -3.35a1.724 1.724 0 0 0 1.066 -2.573c-.94 -1.543 .826 -3.31 2.37 -2.37c1 .608 2.296 .07 2.572 -1.065" /><path d="M9 12a3 3 0 1 0 6 0a3 3 0 0 0 -6 0" /></svg>
           <span class="sidebar-label">Settings</span>
         </button>
         <button type="button" class="sidebar-link" data-view="logs">
-          <svg xmlns="http://www.w3.org/2000/svg" class="sidebar-icon icon icon-tabler icons-tabler-outline icon-tabler-logs" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M4 12h.01" /><path d="M4 6h.01" /><path d="M4 18h.01" /><path d="M8 18h2" /><path d="M8 12h2" /><path d="M8 6h2" /><path d="M14 6h6" /><path d="M14 12h6" /><path d="M14 18h6" /></svg>
-          <span class="sidebar-label">Logs</span>
+          <span class="sidebar-icon icon-action icon-clipboard-text" aria-hidden="true"></span>
+          <span class="sidebar-label">Events</span>
         </button>
       </nav>
       <div class="sidebar-footer">
@@ -385,6 +402,11 @@
                 <span>Containers</span>
               </label>
               <label class="toggle-row">
+                <input type="checkbox" id="exp-containers-sidebar">
+                <span class="toggle-track" aria-hidden="true"><span class="toggle-thumb"></span></span>
+                <span>Container features in side bar</span>
+              </label>
+              <label class="toggle-row">
                 <input type="checkbox" id="exp-container-shell">
                 <span class="toggle-track" aria-hidden="true"><span class="toggle-thumb"></span></span>
                 <span>Container shell</span>
@@ -452,8 +474,22 @@
             <table class="containers-table stacks-table">
               <thead>
                 <tr>
-                  <th>Name</th>
-                  <th>Status</th>
+                  <th>
+                    <span class="containers-th-name-inner">
+                      <span>Name</span>
+                      <button id="stacks-name-sort" class="containers-sort-btn" type="button" aria-label="Sort by name">
+                        <span class="icon-sort icon-sort-neutral" aria-hidden="true"></span>
+                      </button>
+                    </span>
+                  </th>
+                  <th>
+                    <span class="containers-th-name-inner">
+                      <span>State</span>
+                      <button id="stacks-state-sort" class="containers-sort-btn" type="button" aria-label="Sort by state">
+                        <span class="icon-sort icon-sort-neutral" aria-hidden="true"></span>
+                      </button>
+                    </span>
+                  </th>
                   <th>Containers</th>
                   <th>Actions</th>
                 </tr>
@@ -462,6 +498,78 @@
             </table>
           </div>
           <div id="stacks-empty" class="hint hidden"></div>
+        </div>
+        <div id="containers-images-view" class="containers-images-view hidden">
+          <div class="containers-images-toolbar">
+            <div class="containers-images-actions">
+              <button id="images-pull" class="secondary icon-action-btn has-tooltip" type="button" aria-label="Pull image" data-tooltip="Pull image">
+                <span class="icon-action icon-download" aria-hidden="true"></span>
+              </button>
+              <button id="images-prune-unused" class="secondary icon-action-btn has-tooltip" type="button" aria-label="Prune unused" data-tooltip="Prune unused">
+                <span class="icon-action icon-square-minus" aria-hidden="true"></span>
+              </button>
+              <button id="images-prune-dangling" class="secondary icon-action-btn has-tooltip" type="button" aria-label="Prune dangling" data-tooltip="Prune dangling">
+                <span class="icon-action icon-copy-minus" aria-hidden="true"></span>
+              </button>
+              <button id="images-remove" class="secondary icon-action-btn has-tooltip" type="button" aria-label="Remove image" data-tooltip="Remove image" disabled>
+                <span class="icon-action icon-trash" aria-hidden="true"></span>
+              </button>
+            </div>
+            <div class="containers-images-summary">
+              <span id="images-total-count" class="has-tooltip" aria-label="Total images" data-tooltip="Total images">
+                <span class="icon-action icon-sum" aria-hidden="true"></span>
+                <span class="summary-value">0</span>
+              </span>
+              <span id="images-total-size" class="has-tooltip" aria-label="Total size" data-tooltip="Total size">
+                <span class="icon-action icon-database" aria-hidden="true"></span>
+                <span class="summary-value">0</span>
+              </span>
+            </div>
+          </div>
+          <div class="containers-table-wrap">
+            <table class="containers-table images-table">
+              <thead>
+                <tr>
+                  <th>
+                    <span class="containers-th-name-inner">
+                      <span>Repository</span>
+                      <button id="images-repo-sort" class="containers-sort-btn" type="button" aria-label="Sort by repository">
+                        <span class="icon-sort icon-sort-neutral" aria-hidden="true"></span>
+                      </button>
+                    </span>
+                  </th>
+                  <th>
+                    <span class="containers-th-name-inner">
+                      <span>Tags</span>
+                      <button id="images-tag-sort" class="containers-sort-btn" type="button" aria-label="Sort by tags">
+                        <span class="icon-sort icon-sort-neutral" aria-hidden="true"></span>
+                      </button>
+                    </span>
+                  </th>
+                  <th>
+                    <span class="containers-th-name-inner">
+                      <span>State</span>
+                      <button id="images-state-sort" class="containers-sort-btn" type="button" aria-label="Sort by state">
+                        <span class="icon-sort icon-sort-neutral" aria-hidden="true"></span>
+                      </button>
+                    </span>
+                  </th>
+                  <th>
+                    <span class="containers-th-name-inner">
+                      <span>Size</span>
+                      <button id="images-size-sort" class="containers-sort-btn" type="button" aria-label="Sort by size">
+                        <span class="icon-sort icon-sort-neutral" aria-hidden="true"></span>
+                      </button>
+                    </span>
+                  </th>
+                  <th>Images</th>
+                  <th>Created</th>
+                </tr>
+              </thead>
+              <tbody id="images-body"></tbody>
+            </table>
+          </div>
+          <div id="images-empty" class="hint hidden"></div>
         </div>
         <div id="containers-shell-layout" class="containers-shell-layout hidden">
           <div class="containers-shell-list">
@@ -678,6 +786,33 @@
           <div class="settings-actions">
             <button id="stack-modal-save" type="button">Save</button>
             <button id="stack-modal-cancel" class="secondary" type="button">Cancel</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="images-pull-modal" class="modal hidden" aria-hidden="true" role="dialog" aria-modal="true">
+      <div class="modal-backdrop" data-close="true"></div>
+      <div class="modal-card" role="document">
+        <div class="modal-header">
+          <h3>Pull image</h3>
+          <button id="images-pull-close" class="secondary btn-small" type="button">Close</button>
+        </div>
+          <div class="modal-body">
+          <div class="server-wizard-grid">
+            <label>
+              Repository
+              <input type="text" id="images-pull-repo" placeholder="nginx">
+            </label>
+            <label>
+              Tag
+              <input type="text" id="images-pull-tag" placeholder="latest">
+            </label>
+          </div>
+          <div id="images-pull-status" class="images-pull-status is-empty" role="status"></div>
+          <div class="settings-actions">
+            <button id="images-pull-confirm" type="button">Pull</button>
+            <button id="images-pull-cancel" class="secondary" type="button">Cancel</button>
           </div>
         </div>
       </div>

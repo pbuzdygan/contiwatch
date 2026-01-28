@@ -11,6 +11,7 @@
 - Container stacks: inline validation while editing (Compose via `/api/stacks/validate`, `.env` via local lint rules).
 - Container stacks: destructive actions (Remove/Kill) now use an inline confirm click (no browser `confirm()` popup).
 - Container stacks: optimistic per-action status labels while an operation is in progress (Deploying/Teardown/Restarting/Killing/Removing).
+- Container images: new images view with repository grouping, manual refresh, pull, prune (unused/dangling), and remove-by-image-id.
 
 ## Improvements
 - Container stacks: removed row expand/collapse (container list under a stack) to simplify the table UX (API `/api/stacks/containers` removed as well).
@@ -19,6 +20,8 @@
 - Containers UI: Shell/Logs/Stacks topbar title now reflects the current view.
 - Containers UI: consistent typography for container lists (table vs shell/logs list), including header styling.
 - Containers UI: name-leading icons added (containers use `box.svg`, stacks use `stack.svg`), plus spacing tweaks.
+- Logs UI: sidebar label updated to “Events” (container logs remain unchanged).
+- Settings: optional sidebar shortcuts for container subviews (Shell/Logs/Stacks/Images) via “Container features in side bar”.
 
 ## v1.2.0
 
