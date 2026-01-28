@@ -12,7 +12,7 @@
 - ✅ Pull image tags and detect updates
 - ✅ Global and per-container policy (`contiwatch.policy` label)
 - ✅ Optional update (recreate container) or notify-only
-- ✅ Simple HTML UI for updates, servers, logs, and settings
+- ✅ Simple HTML UI for updates, servers, events, and settings
 - ✅ Server maintenance mode to pause scans and updates per server
 - ✅ Experimental containers management UI (opt-in)
 - ✅ Experimental container shell (opt-in)
@@ -99,10 +99,11 @@ docker pull ghcr.io/<owner>/<repo>:dev_<version>
 - `discord_notify_on_container_updated`
 - `update_stopped_containers` (if `true`, `update` policy also updates stopped containers but keeps them stopped)
 - `prune_dangling_images` (if `true`, prune dangling images after updates)
-- `experimental_features` (object of feature flags: `containers`, `stacks`, `images`, `container_shell`, `container_logs`)
+- `experimental_features` (object of feature flags: `containers`, `containers_sidebar`, `stacks`, `images`, `container_shell`, `container_logs`)
 - `experimental_features.container_shell` (enables container shell UI)
 - `experimental_features.container_logs` (enables container logs UI)
-- `experimental_features.stacks` / `experimental_features.images` (enables Container stacks/images buttons in the Containers top bar; views are not implemented yet)
+- `experimental_features.stacks` / `experimental_features.images` (enables Container stacks/images buttons in the Containers top bar)
+- `experimental_features.containers_sidebar` (shows enabled container subfeatures in the sidebar as shortcuts)
 - `local_servers` (list of local Docker daemons with `name`, `socket`, and optional `maintenance`)
 - `remote_servers` (list of remote servers with `name`, `url`, optional `token`, and optional `maintenance`)
 
@@ -125,6 +126,15 @@ docker pull ghcr.io/<owner>/<repo>:dev_<version>
 - `POST /api/containers/action` run container action (`start`, `stop`, `restart`, `pause`, `unpause`, `kill`)
 - `GET /api/containers/shell` (WebSocket) interactive shell for a container
 - `GET /api/containers/logs` (WebSocket) stream logs for a container
+- `GET /api/images?scope=local:{name}|remote:{name}` list images for a selected server
+- `POST /api/images/pull` pull image (`repository`, optional `tag`)
+- `POST /api/images/prune` prune images (`mode=unused|dangling`)
+- `POST /api/images/remove` remove image by `image_id`
+- `GET /api/stacks?scope=local:{name}|remote:{name}` list compose stacks stored on the controller
+- `GET /api/stacks/get?scope=local:{name}|remote:{name}&name={stack}` fetch compose + env content
+- `PUT /api/stacks/save` save compose + env without deploy
+- `POST /api/stacks/validate` validate compose yaml (Docker Compose config)
+- `POST /api/stacks/action` run stack action (`up`, `down`, `start`, `stop`, `restart`, `kill`, `rm`)
 - `POST /api/update/{container_id}` update container
 - `POST /api/self-update?container={container_id}` update agent container via helper (agent mode only)
 - `GET/POST/DELETE /api/logs`

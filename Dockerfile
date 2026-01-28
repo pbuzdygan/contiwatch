@@ -10,6 +10,11 @@ COPY go.* ./
 RUN --mount=type=cache,target=/go/pkg/mod go mod download
 
 COPY . .
+RUN apk add --no-cache nodejs npm \
+    && npm install --no-audit --no-fund \
+    && mkdir -p web/static/vendor/cm6 \
+    && npm run build:cm6 \
+    && rm -rf node_modules
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     CGO_ENABLED=0 \
@@ -20,9 +25,9 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 
 FROM alpine:3.20
 WORKDIR /app
-RUN apk add --no-cache su-exec tzdata
+RUN apk add --no-cache su-exec tzdata docker-cli docker-cli-compose
 COPY --from=builder /out/contiwatch /app/contiwatch
-COPY web/static /app/web/static
+COPY --from=builder /src/web/static /app/web/static
 COPY entrypoint.sh /app/entrypoint.sh
 RUN mkdir -p /data && chmod 755 /app/entrypoint.sh
 ENV CONTIWATCH_ADDR=:8080

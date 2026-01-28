@@ -22,6 +22,7 @@ const discordContainerUpdatedInput = document.getElementById("discord-container-
 const updateStoppedInput = document.getElementById("update-stopped");
 const pruneDanglingInput = document.getElementById("prune-dangling");
 const expContainersInput = document.getElementById("exp-containers");
+const expContainersSidebarInput = document.getElementById("exp-containers-sidebar");
 const expContainerShellInput = document.getElementById("exp-container-shell");
 const expContainerLogsInput = document.getElementById("exp-container-logs");
 const expStacksInput = document.getElementById("exp-stacks");
@@ -85,6 +86,32 @@ const containersStateSortBtn = document.getElementById("containers-state-sort");
 const containersTableBody = document.getElementById("containers-body");
 const containersEmptyEl = document.getElementById("containers-empty");
 const containersTableView = document.getElementById("containers-table-view");
+const containersStacksView = document.getElementById("containers-stacks-view");
+const containersImagesView = document.getElementById("containers-images-view");
+const stacksTableBody = document.getElementById("stacks-body");
+const stacksEmptyEl = document.getElementById("stacks-empty");
+const stacksNewBtn = document.getElementById("stacks-new");
+const stacksNameSortBtn = document.getElementById("stacks-name-sort");
+const stacksStateSortBtn = document.getElementById("stacks-state-sort");
+const imagesTableBody = document.getElementById("images-body");
+const imagesEmptyEl = document.getElementById("images-empty");
+const imagesRepoSortBtn = document.getElementById("images-repo-sort");
+const imagesTagSortBtn = document.getElementById("images-tag-sort");
+const imagesStateSortBtn = document.getElementById("images-state-sort");
+const imagesSizeSortBtn = document.getElementById("images-size-sort");
+const imagesPullBtn = document.getElementById("images-pull");
+const imagesPruneUnusedBtn = document.getElementById("images-prune-unused");
+const imagesPruneDanglingBtn = document.getElementById("images-prune-dangling");
+const imagesRemoveBtn = document.getElementById("images-remove");
+const imagesTotalCountEl = document.getElementById("images-total-count");
+const imagesTotalSizeEl = document.getElementById("images-total-size");
+const imagesPullModal = document.getElementById("images-pull-modal");
+const imagesPullCloseBtn = document.getElementById("images-pull-close");
+const imagesPullCancelBtn = document.getElementById("images-pull-cancel");
+const imagesPullConfirmBtn = document.getElementById("images-pull-confirm");
+const imagesPullRepoInput = document.getElementById("images-pull-repo");
+const imagesPullTagInput = document.getElementById("images-pull-tag");
+const imagesPullStatusEl = document.getElementById("images-pull-status");
 const containersShellLayout = document.getElementById("containers-shell-layout");
 const containersShellList = document.getElementById("containers-shell-list");
 const containersShellPlaceholder = document.getElementById("containers-shell-placeholder");
@@ -114,6 +141,20 @@ const detailsBody = document.getElementById("details-body");
 const detailsCloseBtn = document.getElementById("details-close");
 const policyModal = document.getElementById("policy-modal");
 const policyCloseBtn = document.getElementById("policy-close");
+const stackModal = document.getElementById("stack-modal");
+const stackModalTitle = document.getElementById("stack-modal-title");
+const stackModalClose = document.getElementById("stack-modal-close");
+const stackModalSave = document.getElementById("stack-modal-save");
+const stackModalCancel = document.getElementById("stack-modal-cancel");
+const stackNameInput = document.getElementById("stack-name-input");
+const stackNameRow = document.getElementById("stack-name-row");
+const stackComposeEditorEl = document.getElementById("stack-compose-editor");
+const stackComposeInput = document.getElementById("stack-compose-input");
+const stackEnvEditorEl = document.getElementById("stack-env-editor");
+const stackEnvInput = document.getElementById("stack-env-input");
+const stackEnvToggle = document.getElementById("stack-env-toggle");
+const stackEnvToggleBtn = document.getElementById("stack-env-toggle-btn");
+const stackModalErrorEl = document.getElementById("stack-modal-error");
 
 let currentScanController = null;
 let currentView = "status";
@@ -151,11 +192,27 @@ let pendingSelfUpdateTimers = {};
 let logsLevelMode = "all";
 let containersSelectedScope = "";
 let containersSortMode = "name:asc";
+let stacksSortMode = "name:asc";
+let imagesSortMode = "repository:asc";
 let containersRefreshTimer = null;
 let containersUpdateInProgress = false;
+let stacksRefreshTimer = null;
+let stacksUpdateInProgress = false;
+let imagesUpdateInProgress = false;
 let containersCache = new Map();
 let containersKillConfirming = new Set();
+let stacksActionConfirming = new Set();
+let stackStatusOverrides = new Map();
+let imagesCache = [];
+let imagesSelectedId = "";
+let imagesExpandedRepos = new Set();
+let imagesActionConfirming = new Set();
+let imagesPullInProgress = false;
+let imagesPullAutoCloseTimer = null;
+let imagesPullAutoCloseRemainingSec = 0;
+let imagesPullLastRef = "";
 let containersViewMode = "table";
+let pendingContainersMode = "";
 let containersShellSelectedId = "";
 let containersShellSocket = null;
 let containersShellTerm = null;
@@ -177,6 +234,26 @@ const containersLogsMaxBytes = 300000;
 let containersLogsSilentClose = false;
 let containersLogsStreamActive = false;
 let currentTimeZone = "";
+let stacksCache = new Map();
+let editingStackName = "";
+let composeEditor = null;
+let envEditor = null;
+
+function showStackModalError(message) {
+  if (!stackModalErrorEl) return;
+  const text = String(message || "").trim();
+  if (!text) {
+    stackModalErrorEl.textContent = "";
+    stackModalErrorEl.classList.add("hidden");
+    return;
+  }
+  stackModalErrorEl.textContent = text;
+  stackModalErrorEl.classList.remove("hidden");
+}
+
+function clearStackModalError() {
+  showStackModalError("");
+}
 
 function pendingSelfUpdateKey(serverKey, containerName) {
   return `${serverKey}::${containerName}`;
@@ -441,6 +518,470 @@ function closeRemoteModal() {
   remoteModal.setAttribute("aria-hidden", "true");
   editingRemoteServer = null;
   editingLocalServer = null;
+}
+
+function isValidStackName(name) {
+  return /^[A-Za-z0-9_-]+$/.test(String(name || "").trim());
+}
+
+function enableYamlIndent(textarea) {
+  if (!textarea) return;
+  textarea.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      const start = textarea.selectionStart;
+      const value = textarea.value;
+      const lineStart = value.lastIndexOf("\n", start - 1) + 1;
+      const line = value.slice(lineStart, start);
+      const indentMatch = line.match(/^\s+/);
+      const indent = indentMatch ? indentMatch[0] : "";
+      event.preventDefault();
+      const insert = `\n${indent}`;
+      textarea.value = value.slice(0, start) + insert + value.slice(start);
+      const nextPos = start + insert.length;
+      textarea.selectionStart = nextPos;
+      textarea.selectionEnd = nextPos;
+      return;
+    }
+    if (event.key !== "Tab") return;
+    event.preventDefault();
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const value = textarea.value;
+    const indent = "  ";
+    if (event.shiftKey) {
+      const before = value.slice(0, start);
+      const lineStart = before.lastIndexOf("\n") + 1;
+      const line = value.slice(lineStart, start);
+      if (line.startsWith(indent)) {
+        textarea.value = value.slice(0, lineStart) + line.slice(indent.length) + value.slice(start);
+        textarea.selectionStart = start - indent.length;
+        textarea.selectionEnd = end - indent.length;
+      }
+      return;
+    }
+    textarea.value = value.slice(0, start) + indent + value.slice(end);
+    textarea.selectionStart = start + indent.length;
+    textarea.selectionEnd = start + indent.length;
+  });
+}
+
+function getComposeValue() {
+  if (composeEditor && typeof composeEditor.getValue === "function") {
+    return composeEditor.getValue();
+  }
+  return stackComposeInput ? stackComposeInput.value : "";
+}
+
+function setComposeValue(value) {
+  if (composeEditor && typeof composeEditor.setValue === "function") {
+    composeEditor.setValue(value || "");
+    return;
+  }
+  if (stackComposeInput) {
+    stackComposeInput.value = value || "";
+  }
+}
+
+function getEnvValue() {
+  return stackEnvInput ? stackEnvInput.value : "";
+}
+
+function setEnvValue(value) {
+  if (envEditor && typeof envEditor.setValue === "function") {
+    envEditor.setValue(value || "");
+    return;
+  }
+  if (stackEnvInput) {
+    stackEnvInput.value = value || "";
+  }
+}
+
+function initComposeEditor() {
+  if (!stackComposeEditorEl || !stackComposeInput || !window.CM6Compose || typeof window.CM6Compose.init !== "function") {
+    if (stackComposeInput) stackComposeInput.classList.remove("hidden");
+    if (stackComposeEditorEl) stackComposeEditorEl.classList.add("hidden");
+    return;
+  }
+  stackComposeInput.classList.add("hidden");
+  stackComposeEditorEl.classList.remove("hidden");
+  composeEditor = window.CM6Compose.init({
+    container: stackComposeEditorEl,
+    textarea: stackComposeInput,
+    getEnv: () => (stackEnvInput ? stackEnvInput.value : ""),
+    getUseEnv: () => Boolean(stackEnvToggle && stackEnvToggle.checked),
+    onChange: () => clearStackModalError(),
+    mode: "yaml",
+    lint: true,
+  });
+}
+
+function initEnvEditor() {
+  if (!stackEnvEditorEl || !stackEnvInput || !window.CM6Compose || typeof window.CM6Compose.init !== "function") {
+    if (stackEnvInput) stackEnvInput.classList.remove("hidden");
+    if (stackEnvEditorEl) stackEnvEditorEl.classList.add("hidden");
+    return;
+  }
+  stackEnvInput.classList.add("hidden");
+  stackEnvEditorEl.classList.remove("hidden");
+  envEditor = window.CM6Compose.init({
+    container: stackEnvEditorEl,
+    textarea: stackEnvInput,
+    onChange: () => {
+      clearStackModalError();
+      if (composeEditor && typeof composeEditor.forceLint === "function") {
+        composeEditor.forceLint();
+      }
+    },
+    mode: "env",
+    lint: true,
+  });
+}
+
+const envFileItemRegex = /^-\s*["']?\.env["']?\s*$/;
+
+function countIndent(line) {
+  const match = String(line || "").match(/^\s*/);
+  return match ? match[0].length : 0;
+}
+
+function isCommentOrBlank(line) {
+  const trimmed = String(line || "").trim();
+  return trimmed === "" || trimmed.startsWith("#");
+}
+
+function isServiceHeader(line, indent, servicesIndent) {
+  const trimmed = String(line || "").trim();
+  if (!trimmed || trimmed.startsWith("#")) return false;
+  if (!trimmed.endsWith(":")) return false;
+  if (trimmed.startsWith("-")) return false;
+  return indent > servicesIndent;
+}
+
+function findServicesBlock(lines) {
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = String(lines[i] || "");
+    if (line.trim() === "services:") {
+      return { index: i, indent: countIndent(line) };
+    }
+  }
+  return { index: -1, indent: 0 };
+}
+
+function ensureEnvFileForServices(text) {
+  const lines = String(text || "").split(/\r?\n/);
+  const servicesInfo = findServicesBlock(lines);
+  if (servicesInfo.index < 0) {
+    const trimmed = String(text || "").trim();
+    if (!trimmed) {
+      return "services:\n  app:\n    env_file:\n      - .env";
+    }
+    return `${trimmed}\n\nservices:\n  app:\n    env_file:\n      - .env`;
+  }
+  let i = servicesInfo.index + 1;
+  let foundService = false;
+  while (i < lines.length) {
+    const line = lines[i];
+    const indent = countIndent(line);
+    if (indent <= servicesInfo.indent && !isCommentOrBlank(line)) {
+      break;
+    }
+    if (isServiceHeader(line, indent, servicesInfo.indent)) {
+      foundService = true;
+      const serviceIndent = indent;
+      let blockEnd = i + 1;
+      while (blockEnd < lines.length) {
+        const nextLine = lines[blockEnd];
+        const nextIndent = countIndent(nextLine);
+        if (nextIndent <= serviceIndent && !isCommentOrBlank(nextLine)) {
+          break;
+        }
+        blockEnd += 1;
+      }
+      let envFileLine = -1;
+      let envFileIndent = serviceIndent + 2;
+      for (let j = i + 1; j < blockEnd; j += 1) {
+        const current = lines[j];
+        const currentIndent = countIndent(current);
+        if (currentIndent === envFileIndent && String(current || "").trim().startsWith("env_file:")) {
+          envFileLine = j;
+          break;
+        }
+      }
+      if (envFileLine >= 0) {
+        let hasEnv = false;
+        let insertAt = envFileLine + 1;
+        for (let j = envFileLine + 1; j < blockEnd; j += 1) {
+          const current = lines[j];
+          const currentIndent = countIndent(current);
+          if (currentIndent <= envFileIndent && !isCommentOrBlank(current)) {
+            break;
+          }
+          if (currentIndent > envFileIndent && String(current || "").trim().startsWith("-")) {
+            insertAt = j + 1;
+            if (envFileItemRegex.test(String(current || "").trim())) {
+              hasEnv = true;
+            }
+          }
+        }
+        if (!hasEnv) {
+          lines.splice(insertAt, 0, `${" ".repeat(envFileIndent + 2)}- .env`);
+          blockEnd += 1;
+        }
+      } else {
+        let insertAt = i + 1;
+        while (insertAt < blockEnd && isCommentOrBlank(lines[insertAt])) {
+          insertAt += 1;
+        }
+        lines.splice(
+          insertAt,
+          0,
+          `${" ".repeat(envFileIndent)}env_file:`,
+          `${" ".repeat(envFileIndent + 2)}- .env`
+        );
+        blockEnd += 2;
+      }
+      i = blockEnd;
+      continue;
+    }
+    i += 1;
+  }
+  if (!foundService) {
+    const insertAt = servicesInfo.index + 1;
+    lines.splice(
+      insertAt,
+      0,
+      `${" ".repeat(servicesInfo.indent + 2)}app:`,
+      `${" ".repeat(servicesInfo.indent + 4)}env_file:`,
+      `${" ".repeat(servicesInfo.indent + 6)}- .env`
+    );
+  }
+  return lines.join("\n");
+}
+
+function removeEnvFileFromServices(text) {
+  const lines = String(text || "").split(/\r?\n/);
+  const servicesInfo = findServicesBlock(lines);
+  if (servicesInfo.index < 0) return text;
+  const processed = [];
+  processed.push(...lines.slice(0, servicesInfo.index + 1));
+  let i = servicesInfo.index + 1;
+  while (i < lines.length) {
+    const currentLine = lines[i];
+    const currentIndent = countIndent(currentLine);
+    if (currentIndent <= servicesInfo.indent && !isCommentOrBlank(currentLine)) {
+      processed.push(...lines.slice(i));
+      return processed.join("\n");
+    }
+    if (!isServiceHeader(currentLine, currentIndent, servicesInfo.indent)) {
+      processed.push(currentLine);
+      i += 1;
+      continue;
+    }
+    const serviceIndent = currentIndent;
+    let blockEnd = i + 1;
+    while (blockEnd < lines.length) {
+      const nextLine = lines[blockEnd];
+      const nextIndent = countIndent(nextLine);
+      if (nextIndent <= serviceIndent && !isCommentOrBlank(nextLine)) {
+        break;
+      }
+      blockEnd += 1;
+    }
+    const block = lines.slice(i, blockEnd);
+    const newBlock = [block[0]];
+    const envFileIndent = serviceIndent + 2;
+    let k = 1;
+    while (k < block.length) {
+      const line = block[k];
+      const indent = countIndent(line);
+      const trimmed = String(line || "").trim();
+      if (indent === envFileIndent && trimmed.startsWith("env_file:")) {
+        let subEnd = k + 1;
+        while (subEnd < block.length) {
+          const subLine = block[subEnd];
+          const subIndent = countIndent(subLine);
+          if (subIndent <= envFileIndent && !isCommentOrBlank(subLine)) {
+            break;
+          }
+          subEnd += 1;
+        }
+        const sub = block.slice(k + 1, subEnd);
+        const kept = [];
+        let hasItem = false;
+        sub.forEach((subLine) => {
+          const subIndent = countIndent(subLine);
+          const subTrimmed = String(subLine || "").trim();
+          if (subIndent > envFileIndent && subTrimmed.startsWith("-")) {
+            if (envFileItemRegex.test(subTrimmed)) {
+              return;
+            }
+            hasItem = true;
+            kept.push(subLine);
+            return;
+          }
+          kept.push(subLine);
+        });
+        if (hasItem) {
+          newBlock.push(line, ...kept);
+        } else {
+          newBlock.push(...kept);
+        }
+        k = subEnd;
+        continue;
+      }
+      newBlock.push(line);
+      k += 1;
+    }
+    processed.push(...newBlock);
+    i = blockEnd;
+  }
+  return processed.join("\n");
+}
+
+function updateStackEnvState() {
+  if (!stackEnvToggle || !stackEnvInput) return;
+  const enabled = Boolean(stackEnvToggle.checked);
+  stackEnvInput.disabled = !enabled;
+  if (envEditor && typeof envEditor.setReadOnly === "function") {
+    envEditor.setReadOnly(!enabled);
+  }
+  if (stackEnvToggleBtn) {
+    stackEnvToggleBtn.dataset.enabled = enabled ? "true" : "false";
+    stackEnvToggleBtn.classList.toggle("is-active", enabled);
+    const icon = stackEnvToggleBtn.querySelector(".icon-action");
+    if (icon) {
+      icon.className = `icon-action ${enabled ? "icon-key-off" : "icon-key"}`;
+    }
+    const label = enabled ? "Disable .env secrets" : "Use .env secrets";
+    stackEnvToggleBtn.setAttribute("aria-label", label);
+    stackEnvToggleBtn.setAttribute("data-tooltip", label);
+    stackEnvToggleBtn.setAttribute("aria-pressed", enabled ? "true" : "false");
+  }
+  const current = getComposeValue();
+  const next = enabled
+    ? ensureEnvFileForServices(current)
+    : removeEnvFileFromServices(current);
+  setComposeValue(next);
+  if (!enabled) {
+    setEnvValue("");
+  }
+  if (composeEditor && typeof composeEditor.forceLint === "function") {
+    composeEditor.forceLint();
+  }
+  if (envEditor && typeof envEditor.forceLint === "function") {
+    envEditor.forceLint();
+  }
+}
+
+async function openStackModal(name = "") {
+  if (!stackModal) return;
+  const scope = containersSelectedScope;
+  if (!scope) {
+    showToast("Select server first.");
+    return;
+  }
+  editingStackName = name ? String(name) : "";
+  if (stackModalTitle) {
+    stackModalTitle.textContent = editingStackName ? `Edit stack: ${editingStackName}` : "New stack";
+  }
+  if (stackNameRow) {
+    stackNameRow.classList.toggle("hidden", Boolean(editingStackName));
+  }
+  if (stackNameInput) {
+    stackNameInput.value = editingStackName ? editingStackName : "";
+    stackNameInput.disabled = Boolean(editingStackName);
+  }
+  setComposeValue("");
+  setEnvValue("");
+  clearStackModalError();
+  if (stackEnvToggle) {
+    stackEnvToggle.checked = false;
+  }
+  updateStackEnvState();
+  stackModal.classList.remove("hidden");
+  stackModal.setAttribute("aria-hidden", "false");
+  if (editingStackName) {
+    try {
+      const payload = await fetchJSON(`/api/stacks/get?scope=${encodeURIComponent(scope)}&name=${encodeURIComponent(editingStackName)}`);
+      if (payload) {
+        setComposeValue(payload.compose_yaml || "");
+        setEnvValue(payload.env || "");
+        if (stackEnvToggle) stackEnvToggle.checked = Boolean(payload.has_env);
+        updateStackEnvState();
+        clearStackModalError();
+      }
+    } catch (err) {
+      showToast(err.message || "Unable to load stack.");
+    }
+  } else if (stackNameInput) {
+    stackNameInput.focus();
+  }
+}
+
+function closeStackModal() {
+  if (!stackModal) return;
+  if (document.activeElement && stackModal.contains(document.activeElement)) {
+    try {
+      document.activeElement.blur();
+    } catch {
+      // ignore
+    }
+  }
+  stackModal.classList.add("hidden");
+  stackModal.setAttribute("aria-hidden", "true");
+  editingStackName = "";
+}
+
+async function saveStackFromModal() {
+  const scope = containersSelectedScope;
+  if (!scope) {
+    showToast("Select server first.");
+    return;
+  }
+  const name = editingStackName || (stackNameInput ? stackNameInput.value.trim() : "");
+  if (!name || !isValidStackName(name)) {
+    showToast("Stack name must match A-Z, a-z, 0-9, _ or -.");
+    return;
+  }
+  clearStackModalError();
+  const composeYml = getComposeValue()
+    .split(/\r?\n/)
+    .map((line) => {
+      const prefix = String(line || "").match(/^\s*/)?.[0] || "";
+      if (!prefix.includes("\t")) return line;
+      const fixed = prefix.replace(/\t/g, "  ");
+      return fixed + String(line || "").slice(prefix.length);
+    })
+    .join("\n")
+    .trim();
+  setComposeValue(composeYml);
+  if (!composeYml) {
+    showStackModalError("docker-compose.yml is required.");
+    return;
+  }
+  const useEnv = Boolean(stackEnvToggle && stackEnvToggle.checked);
+  const env = useEnv ? getEnvValue() : "";
+  try {
+    const validation = await fetchJSON("/api/stacks/validate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ compose_yaml: composeYml, env, use_env: useEnv }),
+    });
+    if (!validation || validation.valid !== true) {
+      const message = validation && validation.error ? validation.error : "Compose validation failed.";
+      showStackModalError(message);
+      return;
+    }
+    await fetchJSON("/api/stacks/save", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ scope, name, compose_yaml: composeYml, env, use_env: useEnv }),
+    });
+    closeStackModal();
+    await refreshStacks({ silent: true });
+  } catch (err) {
+    showStackModalError(err.message || "Stack save failed.");
+  }
 }
 
 async function copyToClipboard(value, label) {
@@ -1698,6 +2239,22 @@ function applySidebarFilter(queryOverride) {
         const match = !query || haystack.includes(query);
         item.classList.toggle("filtered-out", !match);
       });
+    } else if (containersViewMode === "stacks" && stacksTableBody) {
+      const rows = Array.from(stacksTableBody.querySelectorAll("tr.stack-row"));
+      rows.forEach((row) => {
+        const source = row.dataset && row.dataset.search ? row.dataset.search : row.textContent;
+        const haystack = normalizeQuery(source);
+        const match = !query || haystack.includes(query);
+        row.classList.toggle("filtered-out", !match);
+      });
+    } else if (containersViewMode === "images" && imagesTableBody) {
+      const rows = Array.from(imagesTableBody.querySelectorAll("tr.images-row"));
+      rows.forEach((row) => {
+        const source = row.dataset && row.dataset.search ? row.dataset.search : row.textContent;
+        const haystack = normalizeQuery(source);
+        const match = !query || haystack.includes(query);
+        row.classList.toggle("filtered-out", !match);
+      });
     } else {
       const rows = Array.from(containersTableBody ? containersTableBody.querySelectorAll("tr") : []);
       rows.forEach((row) => {
@@ -1733,11 +2290,18 @@ function applyExperimentalFeatures(cfg) {
     container_logs: Boolean(exp.container_logs),
     stacks: Boolean(exp.stacks),
     images: Boolean(exp.images),
+    containers_sidebar: Boolean(exp.containers_sidebar),
   };
   if (sidebar) {
     sidebar.querySelectorAll(".experimental-link").forEach((btn) => {
       const view = btn.getAttribute("data-view");
       const enabled = Boolean(flags[view]);
+      btn.classList.toggle("hidden", !enabled);
+    });
+    const showContainerShortcuts = flags.containers && flags.containers_sidebar;
+    sidebar.querySelectorAll(".containers-sidebar-link").forEach((btn) => {
+      const requiredFlag = btn.getAttribute("data-feature");
+      const enabled = showContainerShortcuts && Boolean(flags[requiredFlag]);
       btn.classList.toggle("hidden", !enabled);
     });
   }
@@ -1762,11 +2326,18 @@ function applyExperimentalFeatures(cfg) {
   if (!flags.container_logs && containersViewMode === "logs") {
     setContainersViewMode("table");
   }
+  if (!flags.stacks && containersViewMode === "stacks") {
+    setContainersViewMode("table");
+  }
+  if (!flags.images && containersViewMode === "images") {
+    setContainersViewMode("table");
+  }
   if (viewContainersEl && !flags.containers) viewContainersEl.classList.add("hidden");
   if (currentView === "containers" && !flags.containers) {
     setView("status");
   }
   updateContainersExperimentalToggles();
+  updateSidebarNavActive(currentView);
 }
 
 function isExperimentalEnabled(view) {
@@ -1855,7 +2426,7 @@ function updateServersFilterMenu(mode = serversFilterMode) {
 
 function updateContainersExperimentalToggles() {
   const enabled = expContainersInput ? expContainersInput.checked : false;
-  const dependents = [expContainerShellInput, expContainerLogsInput, expStacksInput, expImagesInput];
+  const dependents = [expContainersSidebarInput, expContainerShellInput, expContainerLogsInput, expStacksInput, expImagesInput];
   dependents.forEach((input) => {
     if (!input) return;
     input.disabled = !enabled;
@@ -2085,6 +2656,7 @@ async function refreshConfig() {
   pruneDanglingInput.checked = Boolean(cfg.prune_dangling_images);
   const exp = cfg.experimental_features || {};
   if (expContainersInput) expContainersInput.checked = Boolean(exp.containers);
+  if (expContainersSidebarInput) expContainersSidebarInput.checked = Boolean(exp.containers_sidebar);
   if (expContainerShellInput) expContainerShellInput.checked = Boolean(exp.container_shell);
   if (expContainerLogsInput) expContainerLogsInput.checked = Boolean(exp.container_logs);
   if (expStacksInput) expStacksInput.checked = Boolean(exp.stacks);
@@ -2166,6 +2738,7 @@ function buildConfigPayload(options = {}) {
     prune_dangling_images: pruneDanglingInput.checked,
     experimental_features: {
       containers: expContainersInput ? expContainersInput.checked : false,
+      containers_sidebar: expContainersSidebarInput ? expContainersSidebarInput.checked : false,
       container_shell: expContainerShellInput ? expContainerShellInput.checked : false,
       container_logs: expContainerLogsInput ? expContainerLogsInput.checked : false,
       stacks: expStacksInput ? expStacksInput.checked : false,
@@ -2233,6 +2806,31 @@ function formatUptime(seconds) {
   return parts.join(" ");
 }
 
+function formatBytes(value) {
+  const total = Number(value);
+  if (!Number.isFinite(total) || total <= 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  let size = total;
+  let unitIndex = 0;
+  while (size >= 1024 && unitIndex < units.length - 1) {
+    size /= 1024;
+    unitIndex += 1;
+  }
+  return `${size.toFixed(size >= 10 || unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
+}
+
+function formatImageCreated(value) {
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return "—";
+  return date.toLocaleString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 function normalizeContainerState(state) {
   return String(state || "").toLowerCase();
 }
@@ -2245,6 +2843,83 @@ function containersSort(list, mode) {
     const bVal = field === "state" ? normalizeContainerState(b.state) : String(b.name || "");
     if (aVal === bVal) return 0;
     return aVal > bVal ? dir : -dir;
+  });
+}
+
+function stacksSort(list, mode) {
+  const [field, order] = String(mode || "name:asc").split(":");
+  const dir = order === "desc" ? -1 : 1;
+  return list.slice().sort((a, b) => {
+    const aVal = field === "state" ? String(a.status || "") : String(a.name || "");
+    const bVal = field === "state" ? String(b.status || "") : String(b.name || "");
+    if (aVal === bVal) return 0;
+    return aVal > bVal ? dir : -dir;
+  });
+}
+
+function imagesSortKey(image, field) {
+  if (!image) return "";
+  switch (field) {
+    case "tags":
+      return String(image.tag || "");
+    case "state":
+      return normalizeQuery(imageStateLabel(image));
+    case "size":
+      return Number(image.size_bytes || 0);
+    default:
+      return String(image.repository || "");
+  }
+}
+
+function updateStacksSortUI() {
+  const buttons = [
+    { key: "name", btn: stacksNameSortBtn, label: "name" },
+    { key: "state", btn: stacksStateSortBtn, label: "state" },
+  ];
+  buttons.forEach(({ key, btn, label }) => {
+    if (!btn) return;
+    const icon = btn.querySelector(".icon-sort");
+    if (!icon) return;
+    icon.classList.remove("icon-sort-neutral", "icon-sort-asc", "icon-sort-desc");
+    if (stacksSortMode === `${key}:asc`) {
+      icon.classList.add("icon-sort-asc");
+      btn.setAttribute("aria-label", `Sort ${label} A → Z`);
+      return;
+    }
+    if (stacksSortMode === `${key}:desc`) {
+      icon.classList.add("icon-sort-desc");
+      btn.setAttribute("aria-label", `Sort ${label} Z → A`);
+      return;
+    }
+    icon.classList.add("icon-sort-neutral");
+    btn.setAttribute("aria-label", `Sort by ${label}`);
+  });
+}
+
+function updateImagesSortUI() {
+  const buttons = [
+    { key: "repository", btn: imagesRepoSortBtn, label: "repository" },
+    { key: "tags", btn: imagesTagSortBtn, label: "tags" },
+    { key: "state", btn: imagesStateSortBtn, label: "state" },
+    { key: "size", btn: imagesSizeSortBtn, label: "size" },
+  ];
+  buttons.forEach(({ key, btn, label }) => {
+    if (!btn) return;
+    const icon = btn.querySelector(".icon-sort");
+    if (!icon) return;
+    icon.classList.remove("icon-sort-neutral", "icon-sort-asc", "icon-sort-desc");
+    if (imagesSortMode === `${key}:asc`) {
+      icon.classList.add("icon-sort-asc");
+      btn.setAttribute("aria-label", `Sort ${label} A → Z`);
+      return;
+    }
+    if (imagesSortMode === `${key}:desc`) {
+      icon.classList.add("icon-sort-desc");
+      btn.setAttribute("aria-label", `Sort ${label} Z → A`);
+      return;
+    }
+    icon.classList.add("icon-sort-neutral");
+    btn.setAttribute("aria-label", `Sort by ${label}`);
   });
 }
 
@@ -2336,6 +3011,14 @@ function updateContainersSearchCount() {
     const items = Array.from(containersLogsList.querySelectorAll(".containers-shell-item"));
     total = items.length;
     visible = items.filter((item) => !item.classList.contains("filtered-out")).length;
+  } else if (containersViewMode === "stacks" && stacksTableBody) {
+    const rows = Array.from(stacksTableBody.querySelectorAll("tr.stack-row"));
+    total = rows.length;
+    visible = rows.filter((row) => !row.classList.contains("filtered-out")).length;
+  } else if (containersViewMode === "images" && imagesTableBody) {
+    const rows = Array.from(imagesTableBody.querySelectorAll("tr.images-image-row"));
+    total = rows.length;
+    visible = rows.filter((row) => !row.classList.contains("filtered-out") && !row.classList.contains("images-row-hidden")).length;
   } else if (containersTableBody) {
     const rows = Array.from(containersTableBody.querySelectorAll("tr"));
     total = rows.length;
@@ -2353,14 +3036,42 @@ function updateContainersSearchCount() {
 }
 
 function setContainersViewMode(mode) {
-  const next = mode === "shell" ? "shell" : mode === "logs" ? "logs" : "table";
+  const next = mode === "shell"
+    ? "shell"
+    : mode === "logs"
+        ? "logs"
+        : mode === "stacks"
+            ? "stacks"
+            : mode === "images"
+                ? "images"
+                : "table";
   containersViewMode = next;
-  const isSplit = next !== "table";
+  if (topbarContainersEl) {
+    const title = topbarContainersEl.querySelector("h2");
+    if (title) {
+      title.textContent = next === "shell"
+        ? "Containers Shell"
+        : next === "logs"
+            ? "Containers Logs"
+            : next === "stacks"
+                ? "Containers Stacks"
+                : next === "images"
+                    ? "Containers Images"
+                    : "Containers";
+    }
+  }
+  const isSplit = next === "shell" || next === "logs";
   if (viewContainersEl) {
     viewContainersEl.classList.toggle("shell-mode", isSplit);
   }
   if (containersTableView) {
-    containersTableView.classList.toggle("hidden", isSplit);
+    containersTableView.classList.toggle("hidden", next !== "table");
+  }
+  if (containersStacksView) {
+    containersStacksView.classList.toggle("hidden", next !== "stacks");
+  }
+  if (containersImagesView) {
+    containersImagesView.classList.toggle("hidden", next !== "images");
   }
   if (containersShellLayout) {
     containersShellLayout.classList.toggle("hidden", next !== "shell");
@@ -2374,12 +3085,19 @@ function setContainersViewMode(mode) {
   if (topbarContainersLogsBtn) {
     topbarContainersLogsBtn.classList.toggle("is-active", next === "logs");
   }
+  if (topbarContainersStacksBtn) {
+    topbarContainersStacksBtn.classList.toggle("is-active", next === "stacks");
+  }
+  if (topbarContainersImagesBtn) {
+    topbarContainersImagesBtn.classList.toggle("is-active", next === "images");
+  }
   if (next === "shell") {
     closeContainersLogsSession("switch to shell");
     setContainersLogsPaused(false);
     const list = Array.from(containersCache.values()).map((entry) => entry.data);
     renderContainersShellList(list);
     stopContainersAutoRefresh();
+    stopStacksAutoRefresh();
     refreshContainers({ silent: true }).catch(() => {});
   } else if (next === "logs") {
     closeContainersShellSession("switch to logs");
@@ -2389,13 +3107,34 @@ function setContainersViewMode(mode) {
     const list = Array.from(containersCache.values()).map((entry) => entry.data);
     renderContainersLogsList(list);
     stopContainersAutoRefresh();
+    stopStacksAutoRefresh();
     refreshContainers({ silent: true }).catch(() => {});
+  } else if (next === "stacks") {
+    closeContainersShellSession("switch to stacks");
+    closeContainersLogsSession("switch to stacks");
+    setContainersLogsPaused(false);
+    stopContainersAutoRefresh();
+    startStacksAutoRefresh();
+    refreshStacks({ silent: true }).catch(() => {});
+  } else if (next === "images") {
+    closeContainersShellSession("switch to images");
+    closeContainersLogsSession("switch to images");
+    setContainersLogsPaused(false);
+    stopContainersAutoRefresh();
+    stopStacksAutoRefresh();
+    refreshImages({ silent: true }).catch(() => {});
   } else {
     closeContainersShellSession("switch to table");
     closeContainersLogsSession("switch to table");
+    stopStacksAutoRefresh();
     startContainersAutoRefresh();
   }
-  updateContainersSearchCount();
+  if (sidebarSearch && sidebarSearch.value.trim()) {
+    applySidebarFilter(sidebarSearch.value);
+  } else {
+    updateContainersSearchCount();
+  }
+  updateSidebarNavActive(currentView);
 }
 
 function renderContainersShellList(list) {
@@ -2421,7 +3160,12 @@ function renderContainersShellList(list) {
     }
     button.dataset.id = container.id;
     button.dataset.search = `${container.name || ""} ${container.state || ""}`;
-    button.textContent = container.name || container.id.slice(0, 12);
+    button.textContent = "";
+    const icon = document.createElement("span");
+    icon.className = "icon-action icon-package name-leading-icon";
+    icon.setAttribute("aria-hidden", "true");
+    button.appendChild(icon);
+    button.appendChild(document.createTextNode(container.name || container.id.slice(0, 12)));
     button.addEventListener("click", () => {
       openContainersShell(container);
     });
@@ -2459,7 +3203,12 @@ function renderContainersLogsList(list) {
     }
     button.dataset.id = container.id;
     button.dataset.search = `${container.name || ""} ${container.state || ""}`;
-    button.textContent = container.name || container.id.slice(0, 12);
+    button.textContent = "";
+    const icon = document.createElement("span");
+    icon.className = "icon-action icon-package name-leading-icon";
+    icon.setAttribute("aria-hidden", "true");
+    button.appendChild(icon);
+    button.appendChild(document.createTextNode(container.name || container.id.slice(0, 12)));
     button.addEventListener("click", () => {
       openContainersLogs(container);
     });
@@ -3022,17 +3771,21 @@ function updateContainersServerOptions() {
     nameEl.className = "containers-server-name";
     nameEl.textContent = item.label;
     const typeIcon = buildServerTypeIcon(item.type, statusLabel);
-    button.append(statusIcon, nameEl, typeIcon);
-    button.addEventListener("click", async () => {
-      containersSelectedScope = item.scope;
-      topbarContainersServerMenu.querySelectorAll(".containers-server-option").forEach((el) => {
-        el.classList.remove("active");
-      });
-      button.classList.add("active");
+	    button.append(statusIcon, nameEl, typeIcon);
+	    button.addEventListener("click", async () => {
+	      containersSelectedScope = item.scope;
+	      topbarContainersServerMenu.querySelectorAll(".containers-server-option").forEach((el) => {
+	        el.classList.remove("active");
+	      });
+	      button.classList.add("active");
       renderContainersServerButton(info);
       closeContainersServerMenu();
       updateContainersLogsStreamIndicator();
-      await refreshContainers({ silent: true });
+      if (containersViewMode === "stacks") {
+        await refreshStacks({ silent: true });
+      } else {
+        await refreshContainers({ silent: true });
+      }
     });
     topbarContainersServerMenu.appendChild(button);
   });
@@ -3044,6 +3797,15 @@ function updateContainersServerOptions() {
     renderContainersServerButton(info);
   } else {
     renderContainersServerButton(null);
+  }
+  if (currentView === "containers") {
+    if (containersViewMode === "stacks") {
+      refreshStacks({ silent: true }).catch(() => {});
+    } else if (containersViewMode === "images") {
+      refreshImages({ silent: true }).catch(() => {});
+    } else {
+      refreshContainers({ silent: true }).catch(() => {});
+    }
   }
 }
 
@@ -3085,12 +3847,30 @@ function clearContainersKillConfirmations() {
   }
 }
 
+function stackActionKey(name, action) {
+  return `${name || ""}::${action || ""}`;
+}
+
+function clearStacksActionConfirmations() {
+  if (stacksActionConfirming.size === 0) return;
+  stacksActionConfirming.clear();
+  const list = Array.from(stacksCache.values()).map((entry) => entry && entry.data).filter(Boolean);
+  if (list.length > 0) {
+    renderStacks(list);
+  }
+}
+
 function updateContainerRow(row, container, scope) {
   row.dataset.id = container.id;
   row.dataset.search = `${container.name || ""} ${container.image || ""} ${container.stack || ""} ${container.state || ""}`;
   const cells = row.querySelectorAll("td");
   if (cells.length < 6) return;
-  cells[0].textContent = container.name || container.id.slice(0, 12);
+  cells[0].textContent = "";
+  const nameIcon = document.createElement("span");
+  nameIcon.className = "icon-action icon-package name-leading-icon";
+  nameIcon.setAttribute("aria-hidden", "true");
+  cells[0].appendChild(nameIcon);
+  cells[0].appendChild(document.createTextNode(container.name || container.id.slice(0, 12)));
   cells[1].textContent = container.image || "";
   const stateValue = normalizeContainerState(container.state);
   const stateText = container.state || "unknown";
@@ -3295,6 +4075,865 @@ async function refreshContainers(options = {}) {
   } finally {
     containersUpdateInProgress = false;
   }
+}
+
+function clearStacksTable(message) {
+  if (stacksTableBody) {
+    stacksTableBody.innerHTML = "";
+  }
+  stacksCache = new Map();
+  if (stacksEmptyEl) {
+    if (message) {
+      stacksEmptyEl.textContent = message;
+      stacksEmptyEl.classList.remove("hidden");
+    } else {
+      stacksEmptyEl.classList.add("hidden");
+    }
+  }
+  updateContainersSearchCount();
+}
+
+function formatStackContainers(stack) {
+  const total = Number(stack.containers_total || 0);
+  const running = Number(stack.containers_running || 0);
+  return total > 0 ? `${running}/${total}` : "0";
+}
+
+function buildStackStatusBadge(status) {
+  const badge = document.createElement("span");
+  const normalized = String(status || "not_deployed").toLowerCase();
+  badge.className = `stack-status-badge stack-status-${normalized}`;
+  badge.textContent = normalized.replace(/_/g, " ");
+  return badge;
+}
+
+function setStackStatusOverride(name, action, status, baseline) {
+  if (!name || !status || !action) return;
+  const baseStatus = baseline && baseline.status ? String(baseline.status) : "";
+  const baseTotal = Number(baseline && baseline.containers_total ? baseline.containers_total : 0);
+  const baseRunning = Number(baseline && baseline.containers_running ? baseline.containers_running : 0);
+  stackStatusOverrides.set(name, {
+    action,
+    status,
+    baseStatus,
+    baseTotal,
+    baseRunning,
+    startedAtMs: Date.now(),
+    completedAtMs: 0,
+  });
+}
+
+function markStackStatusOverrideCompleted(name) {
+  const entry = stackStatusOverrides.get(name);
+  if (!entry) return;
+  entry.completedAtMs = Date.now();
+  stackStatusOverrides.set(name, entry);
+}
+
+function maybeClearStackStatusOverride(stack) {
+  if (!stack || !stack.name) return;
+  const entry = stackStatusOverrides.get(stack.name);
+  if (!entry) return;
+
+  const now = Date.now();
+  const maxAgeMs = 5 * 60 * 1000;
+  if (now - entry.startedAtMs > maxAgeMs) {
+    stackStatusOverrides.delete(stack.name);
+    return;
+  }
+
+  const currentStatus = String(stack.status || "");
+  const currentTotal = Number(stack.containers_total || 0);
+  const currentRunning = Number(stack.containers_running || 0);
+
+  if (entry.baseStatus && currentStatus && currentStatus.toLowerCase() !== String(entry.baseStatus).toLowerCase()) {
+    stackStatusOverrides.delete(stack.name);
+    return;
+  }
+  if (currentTotal !== Number(entry.baseTotal || 0) || currentRunning !== Number(entry.baseRunning || 0)) {
+    stackStatusOverrides.delete(stack.name);
+    return;
+  }
+
+  if (entry.completedAtMs) {
+    const fallbackByActionMs = {
+      up: 30000,
+      down: 30000,
+      restart: 5000,
+      start: 5000,
+      stop: 5000,
+      kill: 5000,
+      rm: 5000,
+    };
+    const ttlMs = fallbackByActionMs[String(entry.action)] || 12000;
+    if (now - entry.completedAtMs > ttlMs) {
+      stackStatusOverrides.delete(stack.name);
+      return;
+    }
+  }
+}
+
+function getStackStatusOverride(name, stack) {
+  if (stack) {
+    maybeClearStackStatusOverride(stack);
+  }
+  const entry = stackStatusOverrides.get(name);
+  return entry ? entry.status : "";
+}
+
+function buildStackActionButton(iconClass, label, onClick, variant) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "secondary icon-action-btn has-tooltip";
+  if (variant) {
+    button.classList.add(variant);
+  }
+  button.setAttribute("aria-label", label);
+  button.setAttribute("data-tooltip", label);
+  const icon = document.createElement("span");
+  icon.className = `icon-action ${iconClass}`;
+  icon.setAttribute("aria-hidden", "true");
+  button.appendChild(icon);
+  button.addEventListener("click", onClick);
+  return button;
+}
+
+function updateStackRow(entry, stack) {
+  entry.data = stack;
+  const row = entry.row;
+  row.className = "stack-row";
+  row.dataset.search = `${stack.name || ""} ${stack.status || ""}`;
+  const cells = row.querySelectorAll("td");
+  if (cells.length < 4) return;
+  cells[0].textContent = "";
+  const nameIcon = document.createElement("span");
+  nameIcon.className = "icon-action icon-stack name-leading-icon";
+  nameIcon.setAttribute("aria-hidden", "true");
+  cells[0].appendChild(nameIcon);
+  cells[0].appendChild(document.createTextNode(stack.name));
+  cells[1].textContent = "";
+  const optimistic = getStackStatusOverride(stack.name, stack);
+  cells[1].appendChild(buildStackStatusBadge(optimistic || stack.status));
+  cells[2].textContent = formatStackContainers(stack);
+  const actionsCell = cells[3];
+  let actionsWrap = actionsCell.querySelector(".containers-actions");
+  if (!actionsWrap) {
+    actionsWrap = document.createElement("div");
+    actionsWrap.className = "containers-actions";
+    actionsCell.innerHTML = "";
+    actionsCell.appendChild(actionsWrap);
+  } else {
+    actionsWrap.innerHTML = "";
+  }
+  const editBtn = buildStackActionButton("icon-edit", "Edit stack", () => openStackModal(stack.name));
+  const upBtn = buildStackActionButton("icon-chevrons-up", "Compose up", () => runStackAction(stack.name, "up"), "btn-success");
+  const downBtn = buildStackActionButton("icon-chevrons-down", "Compose down", () => runStackAction(stack.name, "down"), "btn-warning");
+  const restartBtn = buildStackActionButton("icon-reload", "Restart stack", () => runStackAction(stack.name, "restart"), "btn-info");
+  const startBtn = buildStackActionButton("icon-play", "Start stack", () => runStackAction(stack.name, "start"), "btn-success");
+  const stopBtn = buildStackActionButton("icon-stop", "Stop stack", () => runStackAction(stack.name, "stop"), "btn-warning");
+  const killKey = stackActionKey(stack.name, "kill");
+  const isConfirmingKill = stacksActionConfirming.has(killKey);
+  const killBtn = buildStackActionButton(
+    isConfirmingKill ? "icon-check" : "icon-skull",
+    isConfirmingKill ? "Confirm kill" : "Kill stack",
+    async () => {
+      if (!stacksActionConfirming.has(killKey)) {
+        stacksActionConfirming.add(killKey);
+        updateStackRow(entry, stack);
+        return;
+      }
+      stacksActionConfirming.delete(killKey);
+      await runStackAction(stack.name, "kill");
+    },
+    "btn-danger"
+  );
+  killBtn.classList.add("containers-kill-btn");
+  if (isConfirmingKill) {
+    killBtn.classList.add("is-confirming");
+  }
+
+  const rmKey = stackActionKey(stack.name, "rm");
+  const isConfirmingRm = stacksActionConfirming.has(rmKey);
+  const rmBtn = buildStackActionButton(
+    isConfirmingRm ? "icon-check" : "icon-trash",
+    isConfirmingRm ? "Confirm remove" : "Remove stack",
+    async () => {
+      if (!stacksActionConfirming.has(rmKey)) {
+        stacksActionConfirming.add(rmKey);
+        updateStackRow(entry, stack);
+        return;
+      }
+      stacksActionConfirming.delete(rmKey);
+      await runStackAction(stack.name, "rm");
+    },
+    "btn-danger"
+  );
+  rmBtn.classList.add("containers-kill-btn");
+  if (isConfirmingRm) {
+    rmBtn.classList.add("is-confirming");
+  }
+  actionsWrap.append(editBtn, upBtn, downBtn, restartBtn, startBtn, stopBtn, killBtn, rmBtn);
+}
+
+function renderStacks(list) {
+  if (!stacksTableBody) return;
+  if (!Array.isArray(list) || list.length === 0) {
+    clearStacksTable("No stacks found.");
+    return;
+  }
+  if (stacksEmptyEl) {
+    stacksEmptyEl.classList.add("hidden");
+  }
+  const sorted = stacksSort(list, stacksSortMode);
+  const previous = stacksCache;
+  const next = new Map();
+  sorted.forEach((stack) => {
+    if (!stack || !stack.name) return;
+    let entry = previous.get(stack.name);
+    let row = entry ? entry.row : null;
+    if (!row) {
+      row = document.createElement("tr");
+      for (let i = 0; i < 4; i += 1) {
+        row.appendChild(document.createElement("td"));
+      }
+    }
+    entry = { ...(entry || {}), row, name: stack.name };
+    updateStackRow(entry, stack);
+    next.set(stack.name, entry);
+  });
+  previous.forEach((entry, name) => {
+    if (!next.has(name)) {
+      entry.row.remove();
+    }
+  });
+  stacksCache = next;
+  const fragment = document.createDocumentFragment();
+  sorted.forEach((stack) => {
+    const entry = stacksCache.get(stack.name);
+    if (entry) {
+      fragment.appendChild(entry.row);
+    }
+  });
+  stacksTableBody.appendChild(fragment);
+  if (sidebarSearch && sidebarSearch.value.trim()) {
+    applySidebarFilter(sidebarSearch.value);
+  } else {
+    updateContainersSearchCount();
+  }
+}
+
+async function refreshStacks(options = {}) {
+  if (!stacksTableBody) return;
+  if (stacksUpdateInProgress) return;
+  stacksUpdateInProgress = true;
+  const scope = containersSelectedScope;
+  if (!scope) {
+    clearStacksTable("No servers configured. Add one in Servers.");
+    updateContainersStatus("", "");
+    stacksUpdateInProgress = false;
+    return;
+  }
+  containersSelectedScope = scope;
+  updateContainersStatus(scope, "");
+  try {
+    const payload = await fetchJSON(`/api/stacks?scope=${encodeURIComponent(scope)}`);
+    const list = payload && Array.isArray(payload.stacks) ? payload.stacks : [];
+    if (payload && payload.error) {
+      renderStacks(list);
+      updateContainersStatus(scope, payload.error);
+      return;
+    }
+    if (!payload) {
+      clearStacksTable("No stacks data available.");
+      updateContainersStatus(scope, "Unable to load stacks.");
+      return;
+    }
+    renderStacks(list);
+    updateContainersStatus(scope, "");
+  } catch (err) {
+    clearStacksTable("No stacks data available.");
+    updateContainersStatus(scope, err.message);
+  } finally {
+    stacksUpdateInProgress = false;
+  }
+}
+
+function clearImagesTable(message) {
+  if (imagesTableBody) {
+    imagesTableBody.innerHTML = "";
+  }
+  imagesCache = [];
+  imagesSelectedId = "";
+  imagesActionConfirming.clear();
+  updateImagesConfirmButtons();
+  if (imagesRemoveBtn) {
+    imagesRemoveBtn.disabled = true;
+  }
+  if (imagesEmptyEl) {
+    if (message) {
+      imagesEmptyEl.textContent = message;
+      imagesEmptyEl.classList.remove("hidden");
+    } else {
+      imagesEmptyEl.classList.add("hidden");
+    }
+  }
+  updateImagesSummary([]);
+  updateContainersSearchCount();
+}
+
+function updateImagesSummary(list) {
+  if (imagesTotalCountEl) {
+    const valueEl = imagesTotalCountEl.querySelector(".summary-value");
+    if (valueEl) {
+      valueEl.textContent = String(list.length);
+    } else {
+      imagesTotalCountEl.textContent = String(list.length);
+    }
+  }
+  if (!imagesTotalSizeEl) return;
+  const sizes = new Map();
+  list.forEach((item) => {
+    if (!item || !item.id) return;
+    if (!sizes.has(item.id)) {
+      sizes.set(item.id, Number(item.size_bytes || 0));
+    }
+  });
+  const total = Array.from(sizes.values()).reduce((acc, val) => acc + val, 0);
+  const sizeEl = imagesTotalSizeEl.querySelector(".summary-value");
+  if (sizeEl) {
+    sizeEl.textContent = formatBytes(total);
+  } else {
+    imagesTotalSizeEl.textContent = formatBytes(total);
+  }
+}
+
+function imageStateLabel(image) {
+  if (image && image.dangling) return "Dangling";
+  const count = Number(image && image.containers_count ? image.containers_count : 0);
+  return count > 0 ? "In use" : "Unused";
+}
+
+function imageStateClass(state) {
+  const normalized = String(state || "").toLowerCase();
+  if (normalized === "in use") return "image-state-in-use";
+  if (normalized === "dangling") return "image-state-dangling";
+  if (normalized === "multiple") return "image-state-unused";
+  return "image-state-unused";
+}
+
+function buildImageStateBadge(state) {
+  const badge = document.createElement("span");
+  badge.className = `image-state-badge ${imageStateClass(state)}`;
+  badge.textContent = String(state || "Unused");
+  return badge;
+}
+
+function buildImageGroups(list) {
+  const groups = new Map();
+  list.forEach((image) => {
+    if (!image) return;
+    const repo = image.repository || "<none>";
+    if (!groups.has(repo)) {
+      groups.set(repo, []);
+    }
+    groups.get(repo).push(image);
+  });
+  return groups;
+}
+
+function toggleImagesGroup(repo) {
+  if (!repo) return;
+  if (imagesExpandedRepos.has(repo)) {
+    imagesExpandedRepos.delete(repo);
+  } else {
+    imagesExpandedRepos.add(repo);
+  }
+  renderImages(imagesCache, containersSelectedScope);
+}
+
+function selectImageRow(imageId) {
+  imagesSelectedId = imageId || "";
+  if (imagesRemoveBtn) {
+    imagesRemoveBtn.disabled = !imagesSelectedId;
+  }
+  if (imagesActionConfirming.size > 0) {
+    imagesActionConfirming.clear();
+    updateImagesConfirmButtons();
+  }
+  if (!imagesTableBody) return;
+  imagesTableBody.querySelectorAll("tr.images-image-row").forEach((row) => {
+    row.classList.toggle("is-selected", row.dataset && row.dataset.id === imagesSelectedId);
+  });
+}
+
+function updateImagesConfirmButtons() {
+  const actions = [
+    { key: "prune-unused", btn: imagesPruneUnusedBtn, defaultIcon: "icon-square-minus" },
+    { key: "prune-dangling", btn: imagesPruneDanglingBtn, defaultIcon: "icon-copy-minus" },
+    { key: "remove", btn: imagesRemoveBtn, defaultIcon: "icon-trash" },
+  ];
+  actions.forEach(({ key, btn, defaultIcon }) => {
+    if (!btn) return;
+    const icon = btn.querySelector(".icon-action");
+    if (!icon) return;
+    if (imagesActionConfirming.has(key)) {
+      icon.classList.remove(defaultIcon);
+      icon.classList.add("icon-check");
+      btn.classList.add("is-confirming");
+      if (key === "remove") {
+        btn.classList.add("btn-danger");
+      } else {
+        btn.classList.add("btn-warning");
+      }
+    } else {
+      icon.classList.remove("icon-check");
+      icon.classList.add(defaultIcon);
+      btn.classList.remove("is-confirming");
+      btn.classList.remove("btn-warning");
+      btn.classList.remove("btn-danger");
+    }
+  });
+}
+
+function toggleImagesConfirm(key) {
+  if (!key) return;
+  if (imagesActionConfirming.has(key)) {
+    imagesActionConfirming.delete(key);
+  } else {
+    imagesActionConfirming.clear();
+    imagesActionConfirming.add(key);
+  }
+  updateImagesConfirmButtons();
+}
+
+function clearImagesConfirmations() {
+  if (imagesActionConfirming.size === 0) return;
+  imagesActionConfirming.clear();
+  updateImagesConfirmButtons();
+}
+
+function clearImagesSelection() {
+  if (!imagesSelectedId) return;
+  imagesSelectedId = "";
+  if (imagesRemoveBtn) {
+    imagesRemoveBtn.disabled = true;
+  }
+  if (imagesTableBody) {
+    imagesTableBody.querySelectorAll("tr.images-image-row").forEach((row) => {
+      row.classList.remove("is-selected");
+    });
+  }
+  clearImagesConfirmations();
+}
+
+function renderImages(list) {
+  if (!imagesTableBody) return;
+  if (!Array.isArray(list) || list.length === 0) {
+    clearImagesTable("No images found.");
+    return;
+  }
+  if (imagesEmptyEl) {
+    imagesEmptyEl.classList.add("hidden");
+  }
+  imagesCache = list;
+  updateImagesSummary(list);
+  const groups = buildImageGroups(list);
+  const [field, order] = String(imagesSortMode || "repository:asc").split(":");
+  const dir = order === "desc" ? -1 : 1;
+  const groupEntries = Array.from(groups.entries()).map(([repo, items]) => {
+    const groupSize = items.reduce((acc, image) => {
+      if (image && image.id && !acc.ids.has(image.id)) {
+        acc.ids.add(image.id);
+        acc.total += Number(image.size_bytes || 0);
+      }
+      return acc;
+    }, { total: 0, ids: new Set() }).total;
+    const isSingle = items.length === 1;
+    const firstImage = isSingle ? items[0] : null;
+    const groupState = isSingle && firstImage ? imageStateLabel(firstImage) : "Multiple";
+    const groupTag = isSingle && firstImage ? String(firstImage.tag || "") : "Multiple";
+    return {
+      repo,
+      items,
+      size: groupSize,
+      state: groupState,
+      tag: groupTag,
+    };
+  });
+  groupEntries.sort((a, b) => {
+    let aVal = "";
+    let bVal = "";
+    switch (field) {
+      case "tags":
+        aVal = a.tag;
+        bVal = b.tag;
+        break;
+      case "state":
+        aVal = normalizeQuery(a.state);
+        bVal = normalizeQuery(b.state);
+        break;
+      case "size":
+        aVal = a.size;
+        bVal = b.size;
+        break;
+      default:
+        aVal = a.repo;
+        bVal = b.repo;
+        break;
+    }
+    if (aVal === bVal) return 0;
+    return aVal > bVal ? dir : -dir;
+  });
+  const fragment = document.createDocumentFragment();
+  groupEntries.forEach((entry) => {
+    const repo = entry.repo;
+    const group = entry.items.slice();
+    const expanded = imagesExpandedRepos.has(repo);
+    const isSingle = group.length === 1;
+    const firstImage = isSingle ? group[0] : null;
+    const fieldForItems = field === "repository" ? "tags" : field;
+    group.sort((a, b) => {
+      const aVal = imagesSortKey(a, fieldForItems);
+      const bVal = imagesSortKey(b, fieldForItems);
+      if (aVal === bVal) return 0;
+      return aVal > bVal ? dir : -dir;
+    });
+    const row = document.createElement("tr");
+    row.className = "images-group-row images-row";
+    row.dataset.repo = repo;
+    const groupTags = group.map((image) => image && image.tag ? image.tag : "").filter(Boolean).join(" ");
+    const groupState = isSingle && firstImage ? imageStateLabel(firstImage) : "Multiple";
+    row.dataset.search = `${repo} ${groupTags} ${groupState}`;
+    for (let i = 0; i < 6; i += 1) {
+      row.appendChild(document.createElement("td"));
+    }
+    const cells = row.querySelectorAll("td");
+    const toggle = document.createElement("span");
+    toggle.className = `images-group-toggle ${expanded ? "is-expanded" : ""}`;
+    const icon = document.createElement("span");
+    icon.className = `icon-action ${expanded ? "icon-chevron-down" : "icon-chevron-right"}`;
+    icon.setAttribute("aria-hidden", "true");
+    toggle.appendChild(icon);
+    const label = document.createElement("span");
+    label.textContent = repo;
+    toggle.appendChild(label);
+    toggle.addEventListener("click", () => toggleImagesGroup(repo));
+    cells[0].textContent = "";
+    cells[0].appendChild(toggle);
+    if (isSingle && firstImage) {
+      cells[1].textContent = firstImage.tag || "—";
+      cells[2].textContent = "";
+      cells[2].appendChild(buildImageStateBadge(imageStateLabel(firstImage)));
+    } else {
+      cells[1].textContent = "Multiple";
+      cells[2].textContent = "";
+      cells[2].appendChild(buildImageStateBadge("Multiple"));
+    }
+    const uniqueSizes = new Map();
+    let latestCreated = 0;
+    group.forEach((image) => {
+      if (image && image.id && !uniqueSizes.has(image.id)) {
+        uniqueSizes.set(image.id, Number(image.size_bytes || 0));
+      }
+      const createdAt = new Date(image && image.created_at ? image.created_at : 0).getTime();
+      if (Number.isFinite(createdAt)) {
+        latestCreated = Math.max(latestCreated, createdAt);
+      }
+    });
+    const groupSize = Array.from(uniqueSizes.values()).reduce((acc, val) => acc + val, 0);
+    cells[3].textContent = formatBytes(groupSize);
+    cells[4].textContent = String(group.length);
+    cells[5].textContent = latestCreated ? formatImageCreated(new Date(latestCreated).toISOString()) : "—";
+    fragment.appendChild(row);
+    group.forEach((image) => {
+      if (!image) return;
+      const imageRow = document.createElement("tr");
+      imageRow.className = `images-image-row images-row${expanded ? "" : " images-row-hidden"}`;
+      imageRow.dataset.id = image.id;
+      imageRow.dataset.repo = repo;
+      imageRow.dataset.search = `${repo} ${image.tag || ""} ${image.id || ""} ${imageStateLabel(image)}`;
+      for (let i = 0; i < 6; i += 1) {
+        imageRow.appendChild(document.createElement("td"));
+      }
+      const imageCells = imageRow.querySelectorAll("td");
+      imageCells[0].textContent = "";
+      const imageIcon = document.createElement("span");
+      imageIcon.className = "icon-action icon-cube-3d-sphere name-leading-icon";
+      imageIcon.setAttribute("aria-hidden", "true");
+      imageCells[0].appendChild(imageIcon);
+      imageCells[0].appendChild(document.createTextNode(image.repository || repo));
+      imageCells[0].classList.add("images-child-cell");
+      imageCells[1].textContent = image.tag || "—";
+      imageCells[2].textContent = "";
+      imageCells[2].appendChild(buildImageStateBadge(imageStateLabel(image)));
+      imageCells[3].textContent = formatBytes(image.size_bytes || 0);
+      imageCells[4].textContent = "1";
+      imageCells[5].textContent = formatImageCreated(image.created_at);
+      if (imagesSelectedId && image.id === imagesSelectedId) {
+        imageRow.classList.add("is-selected");
+      }
+      imageRow.addEventListener("click", () => selectImageRow(image.id));
+      fragment.appendChild(imageRow);
+    });
+  });
+  imagesTableBody.innerHTML = "";
+  imagesTableBody.appendChild(fragment);
+  if (imagesSelectedId) {
+    const exists = list.some((image) => image && image.id === imagesSelectedId);
+    if (!exists) {
+      imagesSelectedId = "";
+      if (imagesRemoveBtn) imagesRemoveBtn.disabled = true;
+    }
+  }
+  if (sidebarSearch && sidebarSearch.value.trim()) {
+    applySidebarFilter(sidebarSearch.value);
+  } else {
+    updateContainersSearchCount();
+  }
+}
+
+async function refreshImages(options = {}) {
+  if (!imagesTableBody) return;
+  if (imagesUpdateInProgress) return;
+  imagesUpdateInProgress = true;
+  const scope = containersSelectedScope;
+  if (!scope) {
+    clearImagesTable("No servers configured. Add one in Servers.");
+    updateContainersStatus("", "");
+    imagesUpdateInProgress = false;
+    return;
+  }
+  containersSelectedScope = scope;
+  updateContainersStatus(scope, "");
+  try {
+    const payload = await fetchJSON(`/api/images?scope=${encodeURIComponent(scope)}`);
+    if (!payload || payload.error) {
+      const errorMessage = payload && payload.error ? payload.error : "Unable to load images.";
+      clearImagesTable("No images data available.");
+      updateContainersStatus(scope, errorMessage);
+      return;
+    }
+    const list = Array.isArray(payload.images) ? payload.images : [];
+    renderImages(list, scope);
+    updateContainersStatus(scope, "");
+  } catch (err) {
+    clearImagesTable("No images data available.");
+    updateContainersStatus(scope, err.message);
+  } finally {
+    imagesUpdateInProgress = false;
+  }
+}
+
+function openImagesPullModal() {
+  if (!imagesPullModal) return;
+  if (imagesPullRepoInput) imagesPullRepoInput.value = "";
+  if (imagesPullTagInput) imagesPullTagInput.value = "latest";
+  setImagesPullInProgress(false, "");
+  imagesPullModal.classList.remove("hidden");
+}
+
+function closeImagesPullModal() {
+  if (!imagesPullModal) return;
+  if (imagesPullInProgress) return;
+  stopImagesPullAutoClose();
+  imagesPullModal.classList.add("hidden");
+}
+
+function setImagesPullInProgress(inProgress, message, variant = "") {
+  imagesPullInProgress = Boolean(inProgress);
+  if (imagesPullRepoInput) imagesPullRepoInput.disabled = imagesPullInProgress;
+  if (imagesPullTagInput) imagesPullTagInput.disabled = imagesPullInProgress;
+  if (imagesPullCloseBtn) imagesPullCloseBtn.disabled = imagesPullInProgress;
+  if (imagesPullCancelBtn) imagesPullCancelBtn.disabled = imagesPullInProgress;
+  if (imagesPullBtn) imagesPullBtn.disabled = imagesPullInProgress;
+  if (imagesPruneUnusedBtn) imagesPruneUnusedBtn.disabled = imagesPullInProgress;
+  if (imagesPruneDanglingBtn) imagesPruneDanglingBtn.disabled = imagesPullInProgress;
+  if (imagesRemoveBtn) imagesRemoveBtn.disabled = imagesPullInProgress ? true : !imagesSelectedId;
+
+  if (imagesPullConfirmBtn) {
+    imagesPullConfirmBtn.disabled = imagesPullInProgress;
+    if (imagesPullInProgress) {
+      imagesPullConfirmBtn.innerHTML = '<span class="icon-action icon-reload icon-spin" aria-hidden="true"></span><span>Pulling…</span>';
+    } else {
+      imagesPullConfirmBtn.textContent = "Pull";
+    }
+  }
+
+  if (!imagesPullStatusEl) return;
+  const text = String(message || "").trim();
+  imagesPullStatusEl.classList.toggle("is-empty", !text);
+  imagesPullStatusEl.classList.toggle("is-error", variant === "error");
+  imagesPullStatusEl.classList.toggle("is-success", variant === "success");
+  if (text) {
+    imagesPullStatusEl.textContent = text;
+  } else {
+    imagesPullStatusEl.textContent = "";
+  }
+}
+
+function stopImagesPullAutoClose() {
+  if (!imagesPullAutoCloseTimer) return;
+  window.clearInterval(imagesPullAutoCloseTimer);
+  imagesPullAutoCloseTimer = null;
+  imagesPullAutoCloseRemainingSec = 0;
+  imagesPullLastRef = "";
+}
+
+function startImagesPullAutoClose(repository, tag, seconds = 3) {
+  stopImagesPullAutoClose();
+  imagesPullLastRef = `${repository}:${tag}`;
+  imagesPullAutoCloseRemainingSec = Math.max(1, Number(seconds) || 3);
+  const update = () => {
+    const suffix = imagesPullAutoCloseRemainingSec > 0
+      ? `Auto close in ${imagesPullAutoCloseRemainingSec}s (click to keep open).`
+      : "";
+    setImagesPullInProgress(false, `Pulled ${imagesPullLastRef}.\n${suffix}`.trim(), "success");
+  };
+  update();
+  imagesPullAutoCloseTimer = window.setInterval(() => {
+    imagesPullAutoCloseRemainingSec -= 1;
+    if (imagesPullAutoCloseRemainingSec <= 0) {
+      stopImagesPullAutoClose();
+      closeImagesPullModal();
+      return;
+    }
+    update();
+  }, 1000);
+}
+
+function cancelImagesPullAutoClose() {
+  if (!imagesPullAutoCloseTimer) return;
+  stopImagesPullAutoClose();
+  setImagesPullInProgress(false, "", "");
+  if (imagesPullRepoInput) imagesPullRepoInput.value = "";
+  if (imagesPullTagInput) imagesPullTagInput.value = "latest";
+  if (imagesPullRepoInput) imagesPullRepoInput.focus();
+}
+
+async function runImagePull() {
+  const scope = containersSelectedScope;
+  if (!scope) {
+    showToast("Select server first.");
+    return;
+  }
+  const repository = imagesPullRepoInput ? imagesPullRepoInput.value.trim() : "";
+  let tag = imagesPullTagInput ? imagesPullTagInput.value.trim() : "";
+  if (!repository) {
+    showToast("Repository is required.");
+    return;
+  }
+  if (!tag) tag = "latest";
+  try {
+    stopImagesPullAutoClose();
+    setImagesPullInProgress(true, `Pulling ${repository}:${tag}…`, "");
+    await fetchJSON("/api/images/pull", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ scope, repository, tag }),
+    });
+    startImagesPullAutoClose(repository, tag, 6);
+    await refreshImages({ silent: true });
+  } catch (err) {
+    stopImagesPullAutoClose();
+    setImagesPullInProgress(false, err.message || "Pull image failed.", "error");
+  }
+}
+
+async function runImagePrune(mode) {
+  const scope = containersSelectedScope;
+  if (!scope) {
+    showToast("Select server first.");
+    return;
+  }
+  try {
+    imagesActionConfirming.clear();
+    updateImagesConfirmButtons();
+    await fetchJSON("/api/images/prune", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ scope, mode }),
+    });
+    await refreshImages({ silent: true });
+  } catch (err) {
+    showToast(err.message || "Prune images failed.");
+  }
+}
+
+async function runImageRemove() {
+  const scope = containersSelectedScope;
+  if (!scope) {
+    showToast("Select server first.");
+    return;
+  }
+  if (!imagesSelectedId) {
+    showToast("Select an image first.");
+    return;
+  }
+  try {
+    imagesActionConfirming.clear();
+    updateImagesConfirmButtons();
+    await fetchJSON("/api/images/remove", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ scope, image_id: imagesSelectedId }),
+    });
+    imagesSelectedId = "";
+    if (imagesRemoveBtn) imagesRemoveBtn.disabled = true;
+    await refreshImages({ silent: true });
+  } catch (err) {
+    showToast(err.message || "Remove image failed.");
+  }
+}
+
+async function runStackAction(name, action) {
+  if (!name || !action) return;
+  const scope = containersSelectedScope;
+  if (!scope) {
+    showToast("Select server first.");
+    return;
+  }
+  const optimisticByAction = {
+    up: "deploying",
+    down: "tearing_down",
+    restart: "restarting",
+    start: "starting",
+    stop: "stopping",
+    kill: "killing",
+    rm: "removing",
+  };
+  if (optimisticByAction[action]) {
+    const cached = stacksCache.get(name);
+    setStackStatusOverride(name, action, optimisticByAction[action], cached ? cached.data : null);
+    if (cached && cached.data) {
+      updateStackRow(cached, cached.data);
+    }
+  }
+  try {
+    clearStacksActionConfirmations();
+    await fetchJSON("/api/stacks/action", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ scope, name, action }),
+    });
+    markStackStatusOverrideCompleted(name);
+    await refreshStacks({ silent: true });
+  } catch (err) {
+    stackStatusOverrides.delete(name);
+    showToast(err.message || "Stack action failed.");
+  }
+}
+
+function startStacksAutoRefresh() {
+  if (stacksRefreshTimer) return;
+  stacksRefreshTimer = window.setInterval(() => {
+    refreshStacks({ silent: true });
+  }, 6000);
+}
+
+function stopStacksAutoRefresh() {
+  if (!stacksRefreshTimer) return;
+  window.clearInterval(stacksRefreshTimer);
+  stacksRefreshTimer = null;
 }
 
 async function runContainerAction(scope, containerID, action) {
@@ -3566,6 +5205,41 @@ function flashButton(btn, text, className, durationMs = 2000) {
   }, durationMs);
 }
 
+const pulseStates = new WeakMap();
+
+function pulseButton(btn, durationMs = 2000) {
+  if (!btn) return;
+  const prevState = pulseStates.get(btn);
+  if (prevState && prevState.timer) {
+    window.clearTimeout(prevState.timer);
+  }
+  const icon = btn.querySelector(".icon-action");
+  let originalIconClass = prevState ? prevState.originalIconClass : "";
+  if (icon) {
+    if (!originalIconClass) {
+      originalIconClass = Array.from(icon.classList).find((name) => name.startsWith("icon-") && name !== "icon-action") || "";
+    }
+    if (originalIconClass) {
+      icon.classList.remove(originalIconClass);
+    }
+    icon.classList.add("icon-rotate-clockwise-2");
+  }
+  btn.classList.add("is-pulsing");
+  const timer = window.setTimeout(() => {
+    btn.classList.remove("is-pulsing");
+    const current = pulseStates.get(btn);
+    const currentIcon = btn.querySelector(".icon-action");
+    if (currentIcon) {
+      currentIcon.classList.remove("icon-rotate-clockwise-2");
+      if (current && current.originalIconClass) {
+        currentIcon.classList.add(current.originalIconClass);
+      }
+    }
+    pulseStates.delete(btn);
+  }, durationMs);
+  pulseStates.set(btn, { timer, originalIconClass });
+}
+
 
 function setScanningUI(isScanning) {
   const isActive = isScanning || scanActive;
@@ -3782,7 +5456,11 @@ function refreshViewData(view) {
   const tasks = [];
   tasks.push(refreshConfig().catch(() => {}));
   if (view === "containers") {
-    tasks.push(refreshContainers({ silent: true }).catch(() => {}));
+    if (containersViewMode === "stacks") {
+      tasks.push(refreshStacks({ silent: true }).catch(() => {}));
+    } else {
+      tasks.push(refreshContainers({ silent: true }).catch(() => {}));
+    }
   }
   if (view === "logs") {
     tasks.push(refreshLogs().catch(() => {}));
@@ -3815,6 +5493,29 @@ function updateMobileNavHeight() {
 mobileNavQuery.addEventListener("change", () => {
   updateMobileNavHeight();
 });
+
+function updateSidebarNavActive(nextView) {
+  if (!sidebar) return;
+  const hasVisibleContainersShortcuts = Array.from(sidebar.querySelectorAll(".containers-sidebar-link"))
+    .some((btn) => !btn.classList.contains("hidden"));
+  sidebar.querySelectorAll("[data-view]").forEach((btn) => {
+    const view = btn.getAttribute("data-view");
+    const mode = btn.getAttribute("data-containers-mode");
+    let active = false;
+    if (view !== nextView) {
+      active = false;
+    } else if (view === "containers") {
+      if (mode) {
+        active = containersViewMode === mode;
+      } else {
+        active = !hasVisibleContainersShortcuts || containersViewMode === "table";
+      }
+    } else {
+      active = true;
+    }
+    btn.classList.toggle("active", active);
+  });
+}
 
 function setView(nextView) {
   const prevView = currentView;
@@ -3871,30 +5572,29 @@ function setView(nextView) {
     requestAnimationFrame(resetScroll);
   }
 
-  sidebar.querySelectorAll("[data-view]").forEach((btn) => {
-    btn.classList.toggle("active", btn.getAttribute("data-view") === nextView);
-  });
-
   if (nextView === "logs") {
     startLogsAutoRefresh();
   } else {
     stopLogsAutoRefresh();
   }
   if (nextView === "containers") {
-    // Always start in table mode when entering Containers to avoid confusion.
+    const requestedMode = pendingContainersMode;
+    pendingContainersMode = "";
     if (prevView !== "containers") {
       containersShellSelectedId = "";
       containersLogsSelectedId = "";
+    }
+    if (requestedMode) {
+      setContainersViewMode(requestedMode);
+    } else if (prevView !== "containers") {
       setContainersViewMode("table");
     }
     if (containersViewMode === "table") {
-      startContainersAutoRefresh();
-    } else {
-      stopContainersAutoRefresh();
+      refreshContainers({ silent: true }).catch(() => {});
     }
-    refreshContainers({ silent: true }).catch(() => {});
   } else {
     stopContainersAutoRefresh();
+    stopStacksAutoRefresh();
     if (prevView === "containers") {
       closeContainersShellSession("leave containers view");
       closeContainersLogsSession("leave containers view");
@@ -3920,6 +5620,7 @@ function setView(nextView) {
       .then(() => refreshStatus())
       .catch(() => {});
   }
+  updateSidebarNavActive(nextView);
   refreshViewData(nextView);
 }
 
@@ -4032,6 +5733,7 @@ attachImmediateSave(discordStartupNotifyInput);
 attachImmediateSave(discordUpdateDetectedInput);
 attachImmediateSave(discordContainerUpdatedInput);
 attachImmediateSave(expContainersInput);
+attachImmediateSave(expContainersSidebarInput);
 attachImmediateSave(expContainerShellInput);
 attachImmediateSave(expContainerLogsInput);
 attachImmediateSave(expStacksInput);
@@ -4149,6 +5851,52 @@ if (remoteModalClose) {
   });
 }
 
+if (stacksNewBtn) {
+  stacksNewBtn.addEventListener("click", () => {
+    openStackModal("");
+  });
+}
+
+if (stackModalSave) {
+  stackModalSave.addEventListener("click", () => {
+    saveStackFromModal();
+  });
+}
+
+if (stackModalCancel) {
+  stackModalCancel.addEventListener("click", () => {
+    closeStackModal();
+  });
+}
+
+if (stackModalClose) {
+  stackModalClose.addEventListener("click", () => {
+    closeStackModal();
+  });
+}
+
+if (stackEnvToggle) {
+  stackEnvToggle.addEventListener("change", () => {
+    updateStackEnvState();
+  });
+}
+if (stackEnvToggleBtn && stackEnvToggle) {
+  stackEnvToggleBtn.addEventListener("click", () => {
+    stackEnvToggle.checked = !stackEnvToggle.checked;
+    updateStackEnvState();
+  });
+}
+if (stackComposeInput) {
+  stackComposeInput.addEventListener("input", () => {
+    clearStackModalError();
+  });
+}
+if (stackEnvInput) {
+  stackEnvInput.addEventListener("input", () => {
+    clearStackModalError();
+  });
+}
+
 if (remoteModalTokenCopy) {
   remoteModalTokenCopy.addEventListener("click", () => {
     copyToClipboard(remoteModalTokenInput ? remoteModalTokenInput.value : "", "Token");
@@ -4212,7 +5960,13 @@ async function init() {
       updateSidebarSearchUI();
     });
   }
+  initComposeEditor();
+  initEnvEditor();
+  enableYamlIndent(stackComposeInput);
+  enableYamlIndent(stackEnvInput);
   updateContainersSortUI();
+  updateStacksSortUI();
+  updateImagesSortUI();
 
   if (statusSelectiveToggleBtn) {
     statusSelectiveToggleBtn.addEventListener("click", () => {
@@ -4321,9 +6075,96 @@ async function init() {
       }
     });
   }
+  if (stacksNameSortBtn) {
+    stacksNameSortBtn.addEventListener("click", () => {
+      if (stacksSortMode !== "name:asc" && stacksSortMode !== "name:desc") {
+        stacksSortMode = "name:asc";
+      } else {
+        stacksSortMode = stacksSortMode === "name:asc" ? "name:desc" : "name:asc";
+      }
+      updateStacksSortUI();
+      const list = Array.from(stacksCache.values()).map((entry) => entry.data);
+      if (list.length > 0) {
+        renderStacks(list);
+      }
+    });
+  }
+  if (stacksStateSortBtn) {
+    stacksStateSortBtn.addEventListener("click", () => {
+      if (stacksSortMode !== "state:asc" && stacksSortMode !== "state:desc") {
+        stacksSortMode = "state:asc";
+      } else {
+        stacksSortMode = stacksSortMode === "state:asc" ? "state:desc" : "state:asc";
+      }
+      updateStacksSortUI();
+      const list = Array.from(stacksCache.values()).map((entry) => entry.data);
+      if (list.length > 0) {
+        renderStacks(list);
+      }
+    });
+  }
+  if (imagesRepoSortBtn) {
+    imagesRepoSortBtn.addEventListener("click", () => {
+      if (imagesSortMode !== "repository:asc" && imagesSortMode !== "repository:desc") {
+        imagesSortMode = "repository:asc";
+      } else {
+        imagesSortMode = imagesSortMode === "repository:asc" ? "repository:desc" : "repository:asc";
+      }
+      updateImagesSortUI();
+      if (imagesCache.length > 0) {
+        renderImages(imagesCache, containersSelectedScope);
+      }
+    });
+  }
+  if (imagesTagSortBtn) {
+    imagesTagSortBtn.addEventListener("click", () => {
+      if (imagesSortMode !== "tags:asc" && imagesSortMode !== "tags:desc") {
+        imagesSortMode = "tags:asc";
+      } else {
+        imagesSortMode = imagesSortMode === "tags:asc" ? "tags:desc" : "tags:asc";
+      }
+      updateImagesSortUI();
+      if (imagesCache.length > 0) {
+        renderImages(imagesCache, containersSelectedScope);
+      }
+    });
+  }
+  if (imagesStateSortBtn) {
+    imagesStateSortBtn.addEventListener("click", () => {
+      if (imagesSortMode !== "state:asc" && imagesSortMode !== "state:desc") {
+        imagesSortMode = "state:asc";
+      } else {
+        imagesSortMode = imagesSortMode === "state:asc" ? "state:desc" : "state:asc";
+      }
+      updateImagesSortUI();
+      if (imagesCache.length > 0) {
+        renderImages(imagesCache, containersSelectedScope);
+      }
+    });
+  }
+  if (imagesSizeSortBtn) {
+    imagesSizeSortBtn.addEventListener("click", () => {
+      if (imagesSortMode !== "size:asc" && imagesSortMode !== "size:desc") {
+        imagesSortMode = "size:asc";
+      } else {
+        imagesSortMode = imagesSortMode === "size:asc" ? "size:desc" : "size:asc";
+      }
+      updateImagesSortUI();
+      if (imagesCache.length > 0) {
+        renderImages(imagesCache, containersSelectedScope);
+      }
+    });
+  }
   if (topbarContainersRefreshBtn) {
     topbarContainersRefreshBtn.addEventListener("click", async () => {
-      await refreshContainers({ silent: true });
+      pulseButton(topbarContainersRefreshBtn, 2000);
+      if (containersViewMode === "stacks") {
+        await refreshStacks({ silent: true });
+      } else if (containersViewMode === "images") {
+        await refreshImages({ silent: true });
+      } else {
+        await refreshContainers({ silent: true });
+      }
     });
   }
   if (topbarContainersShellBtn) {
@@ -4359,7 +6200,7 @@ async function init() {
         showToast("Container stacks is disabled in Experimental features.");
         return;
       }
-      showToast("Container stacks view is not implemented yet.");
+      setContainersViewMode(containersViewMode === "stacks" ? "table" : "stacks");
     });
   }
   if (topbarContainersImagesBtn) {
@@ -4371,9 +6212,83 @@ async function init() {
         showToast("Container images is disabled in Experimental features.");
         return;
       }
-      showToast("Container images view is not implemented yet.");
+      setContainersViewMode(containersViewMode === "images" ? "table" : "images");
     });
   }
+
+  if (imagesPullBtn) {
+    imagesPullBtn.addEventListener("click", openImagesPullModal);
+  }
+  if (imagesPruneUnusedBtn) {
+    imagesPruneUnusedBtn.addEventListener("click", () => {
+      if (!imagesActionConfirming.has("prune-unused")) {
+        toggleImagesConfirm("prune-unused");
+        return;
+      }
+      runImagePrune("unused");
+    });
+  }
+  if (imagesPruneDanglingBtn) {
+    imagesPruneDanglingBtn.addEventListener("click", () => {
+      if (!imagesActionConfirming.has("prune-dangling")) {
+        toggleImagesConfirm("prune-dangling");
+        return;
+      }
+      runImagePrune("dangling");
+    });
+  }
+  if (imagesRemoveBtn) {
+    imagesRemoveBtn.addEventListener("click", () => {
+      if (!imagesActionConfirming.has("remove")) {
+        toggleImagesConfirm("remove");
+        return;
+      }
+      runImageRemove();
+    });
+  }
+  if (imagesPullConfirmBtn) {
+    imagesPullConfirmBtn.addEventListener("click", runImagePull);
+  }
+  if (imagesPullCloseBtn) {
+    imagesPullCloseBtn.addEventListener("click", closeImagesPullModal);
+  }
+  if (imagesPullCancelBtn) {
+    imagesPullCancelBtn.addEventListener("click", closeImagesPullModal);
+  }
+  if (imagesPullModal) {
+    imagesPullModal.addEventListener("click", (event) => {
+      if (event.target && event.target.dataset && event.target.dataset.close) {
+        closeImagesPullModal();
+      }
+    });
+    imagesPullModal.addEventListener("click", () => {
+      cancelImagesPullAutoClose();
+    });
+    imagesPullModal.addEventListener("keydown", () => {
+      cancelImagesPullAutoClose();
+    });
+  }
+
+  document.addEventListener("click", (event) => {
+    if (imagesActionConfirming.size === 0) return;
+    const target = event.target;
+    if (!target || !target.closest) return;
+    const inside = target.closest("#images-prune-unused, #images-prune-dangling, #images-remove");
+    if (!inside) {
+      clearImagesConfirmations();
+    }
+  });
+
+  document.addEventListener("click", (event) => {
+    if (currentView !== "containers" || containersViewMode !== "images") return;
+    if (!imagesSelectedId) return;
+    const target = event.target;
+    if (!target || !target.closest) return;
+    if (target.closest("#images-pull-modal")) return;
+    if (target.closest("#images-remove, #images-prune-unused, #images-prune-dangling, #images-pull")) return;
+    if (target.closest("#containers-images-view .containers-table-wrap")) return;
+    clearImagesSelection();
+  });
 
   if (containersLogsClearBtn) {
     containersLogsClearBtn.addEventListener("click", () => {
@@ -4410,6 +6325,11 @@ async function init() {
     btn.addEventListener("click", () => {
       const nextView = btn.getAttribute("data-view");
       if (nextView) {
+        if (nextView === "containers") {
+          pendingContainersMode = btn.getAttribute("data-containers-mode") || "table";
+        } else {
+          pendingContainersMode = "";
+        }
         setView(nextView);
       }
       // On touch devices, keep taps from leaving a "stuck" focused nav button,
@@ -4434,6 +6354,13 @@ async function init() {
     remoteModal.addEventListener("click", (event) => {
       if (event.target && event.target.dataset && event.target.dataset.close) {
         closeRemoteModal();
+      }
+    });
+  }
+  if (stackModal) {
+    stackModal.addEventListener("click", (event) => {
+      if (event.target && event.target.dataset && event.target.dataset.close) {
+        closeStackModal();
       }
     });
   }
@@ -4500,16 +6427,27 @@ async function init() {
     closeLogsLevelMenu();
   });
 
-  document.addEventListener(
-    "click",
-    (event) => {
-      if (containersKillConfirming.size === 0) return;
-      const target = event.target;
-      if (target && target.closest && target.closest(".containers-kill-btn")) return;
-      clearContainersKillConfirmations();
-    },
-    true
-  );
+	  document.addEventListener(
+	    "click",
+	    (event) => {
+	      if (containersKillConfirming.size === 0) return;
+	      const target = event.target;
+	      if (target && target.closest && target.closest(".containers-kill-btn")) return;
+	      clearContainersKillConfirmations();
+	    },
+	    true
+	  );
+
+	  document.addEventListener(
+	    "click",
+	    (event) => {
+	      if (stacksActionConfirming.size === 0) return;
+	      const target = event.target;
+	      if (target && target.closest && target.closest(".containers-kill-btn")) return;
+	      clearStacksActionConfirmations();
+	    },
+	    true
+	  );
 
   initThemeToggle();
   updateTopbarHeight();

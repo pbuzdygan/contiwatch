@@ -1,0 +1,19 @@
+{
+  "name": "contiwatch-web",
+  "private": true,
+  "scripts": {
+    "build:cm6": "esbuild web/static/cm6-compose.js --bundle --minify --format=iife --global-name=CM6Compose --outfile=web/static/vendor/cm6/compose.bundle.js"
+  },
+  "dependencies": {
+    "@codemirror/commands": "latest",
+    "@codemirror/autocomplete": "latest",
+    "@codemirror/lang-yaml": "latest",
+    "@codemirror/language": "latest",
+    "@codemirror/lint": "latest",
+    "@codemirror/state": "latest",
+    "@codemirror/view": "latest"
+  },
+  "devDependencies": {
+    "esbuild": "latest"
+  }
+}

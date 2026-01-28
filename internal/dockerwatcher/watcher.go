@@ -49,6 +49,16 @@ type ContainerInfo struct {
 	Stack     string `json:"stack"`
 }
 
+type ImageInfo struct {
+	ID              string `json:"id"`
+	Repository      string `json:"repository"`
+	Tag             string `json:"tag"`
+	SizeBytes       int64  `json:"size_bytes"`
+	CreatedAt       string `json:"created_at"`
+	ContainersCount int64  `json:"containers_count"`
+	Dangling        bool   `json:"dangling"`
+}
+
 type UpdateResult struct {
 	ID             string `json:"id"`
 	Name           string `json:"name"`
@@ -371,6 +381,97 @@ func (w *Watcher) pullImage(ctx context.Context, imageRef string) error {
 	return nil
 }
 
+func (w *Watcher) PullImage(ctx context.Context, repository, tag string) error {
+	repo := strings.TrimSpace(repository)
+	if repo == "" {
+		return errors.New("repository is required")
+	}
+	tag = strings.TrimSpace(tag)
+	if tag == "" {
+		tag = "latest"
+	}
+	return w.pullImage(ctx, fmt.Sprintf("%s:%s", repo, tag))
+}
+
+func (w *Watcher) ListImages(ctx context.Context) ([]ImageInfo, error) {
+	images, err := w.client.ImageList(ctx, types.ImageListOptions{All: true})
+	if err != nil {
+		return nil, err
+	}
+	containers, err := w.client.ContainerList(ctx, types.ContainerListOptions{All: true})
+	if err != nil {
+		return nil, err
+	}
+	usage := map[string]int64{}
+	for _, container := range containers {
+		if container.ImageID == "" {
+			continue
+		}
+		usage[container.ImageID] += 1
+	}
+	result := make([]ImageInfo, 0)
+	for _, image := range images {
+		createdAt := time.Unix(image.Created, 0).Format(time.RFC3339)
+		containersCount := usage[image.ID]
+		if len(image.RepoTags) == 0 {
+			result = append(result, ImageInfo{
+				ID:              image.ID,
+				Repository:      "<none>",
+				Tag:             "<none>",
+				SizeBytes:       image.Size,
+				CreatedAt:       createdAt,
+				ContainersCount: containersCount,
+				Dangling:        true,
+			})
+			continue
+		}
+		for _, ref := range image.RepoTags {
+			repo, tag := splitRepoTag(ref)
+			dangling := repo == "<none>" || tag == "<none>"
+			result = append(result, ImageInfo{
+				ID:              image.ID,
+				Repository:      repo,
+				Tag:             tag,
+				SizeBytes:       image.Size,
+				CreatedAt:       createdAt,
+				ContainersCount: containersCount,
+				Dangling:        dangling,
+			})
+		}
+	}
+	return result, nil
+}
+
+func (w *Watcher) RemoveImage(ctx context.Context, imageID string) error {
+	imageID = strings.TrimSpace(imageID)
+	if imageID == "" {
+		return errors.New("image id is required")
+	}
+	_, err := w.client.ImageRemove(ctx, imageID, types.ImageRemoveOptions{Force: false, PruneChildren: false})
+	return err
+}
+
+func (w *Watcher) PruneImages(ctx context.Context, mode string) (int, uint64, error) {
+	args := filters.NewArgs()
+	switch strings.ToLower(strings.TrimSpace(mode)) {
+	case "dangling":
+		args.Add("dangling", "true")
+	case "unused":
+		args.Add("dangling", "false")
+	default:
+		return 0, 0, errors.New("invalid prune mode")
+	}
+	report, err := w.client.ImagesPrune(ctx, args)
+	if err != nil {
+		return 0, 0, err
+	}
+	deleted := 0
+	if report.ImagesDeleted != nil {
+		deleted = len(report.ImagesDeleted)
+	}
+	return deleted, report.SpaceReclaimed, nil
+}
+
 func (w *Watcher) remoteImageDigest(ctx context.Context, imageRef string) (string, error) {
 	inspect, err := w.client.DistributionInspect(ctx, imageRef, "")
 	if err != nil {
@@ -409,6 +510,22 @@ func imageRepo(imageRef string) string {
 		return imageRef[:lastColon]
 	}
 	return imageRef
+}
+
+func splitRepoTag(imageRef string) (string, string) {
+	ref := strings.TrimSpace(imageRef)
+	if ref == "" {
+		return "<none>", "<none>"
+	}
+	if ref == "<none>:<none>" {
+		return "<none>", "<none>"
+	}
+	lastSlash := strings.LastIndex(ref, "/")
+	lastColon := strings.LastIndex(ref, ":")
+	if lastColon > lastSlash {
+		return ref[:lastColon], ref[lastColon+1:]
+	}
+	return ref, "<none>"
 }
 
 func digestFromRef(ref string) string {
