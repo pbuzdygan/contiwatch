@@ -19,7 +19,7 @@
 - Dark mode: improved editor theming (gutter/cursor/tooltips/autocomplete are theme-aware).
 - Containers UI: Shell/Logs/Stacks topbar title now reflects the current view.
 - Containers UI: consistent typography for container lists (table vs shell/logs list), including header styling.
-- Containers UI: name-leading icons added (containers use `box.svg`, stacks use `stack.svg`), plus spacing tweaks.
+- Containers UI: name-leading icons added plus spacing tweaks.
 - Logs UI: sidebar label updated to “Events” (container logs remain unchanged).
 - Settings: optional sidebar shortcuts for container subviews (Shell/Logs/Stacks/Images) via “Container features in side bar”.
 
