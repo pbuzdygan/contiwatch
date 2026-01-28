@@ -444,7 +444,6 @@
         </div>
         <div id="containers-stacks-view" class="containers-stacks-view hidden">
           <div class="containers-stacks-toolbar">
-            <div class="containers-stacks-title">Container stacks</div>
             <button id="stacks-new" class="secondary icon-action-btn has-tooltip" type="button" aria-label="New stack" data-tooltip="New stack">
               <span class="icon-action icon-plus" aria-hidden="true"></span>
             </button>
@@ -652,14 +651,14 @@
         <div class="modal-body">
           <div class="stack-modal-grid">
             <label id="stack-name-row">
-              Stack name
-              <input type="text" id="stack-name-input" placeholder="my_stack">
+              <input type="text" id="stack-name-input" placeholder="my_stack_name">
             </label>
-            <label class="stack-toggle">
-              <input type="checkbox" id="stack-env-toggle">
-              <span class="toggle-track" aria-hidden="true"><span class="toggle-thumb"></span></span>
-              <span>Use .env</span>
-            </label>
+            <div class="stack-env-action">
+              <input type="checkbox" id="stack-env-toggle" class="hidden">
+              <button id="stack-env-toggle-btn" class="secondary icon-action-btn has-tooltip stack-env-btn" type="button" aria-label="Use .env secrets" aria-pressed="false" data-enabled="false" data-tooltip="Use .env secrets">
+                <span class="icon-action icon-key" aria-hidden="true"></span>
+              </button>
+            </div>
           </div>
           <div class="stack-editor-grid">
             <div class="stack-editor-main">

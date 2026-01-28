@@ -130,6 +130,7 @@ const stackComposeInput = document.getElementById("stack-compose-input");
 const stackEnvEditorEl = document.getElementById("stack-env-editor");
 const stackEnvInput = document.getElementById("stack-env-input");
 const stackEnvToggle = document.getElementById("stack-env-toggle");
+const stackEnvToggleBtn = document.getElementById("stack-env-toggle-btn");
 const stackModalErrorEl = document.getElementById("stack-modal-error");
 
 let currentScanController = null;
@@ -808,6 +809,18 @@ function updateStackEnvState() {
   stackEnvInput.disabled = !enabled;
   if (envEditor && typeof envEditor.setReadOnly === "function") {
     envEditor.setReadOnly(!enabled);
+  }
+  if (stackEnvToggleBtn) {
+    stackEnvToggleBtn.dataset.enabled = enabled ? "true" : "false";
+    stackEnvToggleBtn.classList.toggle("is-active", enabled);
+    const icon = stackEnvToggleBtn.querySelector(".icon-action");
+    if (icon) {
+      icon.className = `icon-action ${enabled ? "icon-key-off" : "icon-key"}`;
+    }
+    const label = enabled ? "Disable .env secrets" : "Use .env secrets";
+    stackEnvToggleBtn.setAttribute("aria-label", label);
+    stackEnvToggleBtn.setAttribute("data-tooltip", label);
+    stackEnvToggleBtn.setAttribute("aria-pressed", enabled ? "true" : "false");
   }
   const current = getComposeValue();
   const next = enabled
@@ -2869,6 +2882,18 @@ function setContainersViewMode(mode) {
             ? "stacks"
             : "table";
   containersViewMode = next;
+  if (topbarContainersEl) {
+    const title = topbarContainersEl.querySelector("h2");
+    if (title) {
+      title.textContent = next === "shell"
+        ? "Containers Shell"
+        : next === "logs"
+            ? "Containers Logs"
+            : next === "stacks"
+                ? "Containers Stacks"
+                : "Containers";
+    }
+  }
   const isSplit = next === "shell" || next === "logs";
   if (viewContainersEl) {
     viewContainersEl.classList.toggle("shell-mode", isSplit);
@@ -2951,7 +2976,12 @@ function renderContainersShellList(list) {
     }
     button.dataset.id = container.id;
     button.dataset.search = `${container.name || ""} ${container.state || ""}`;
-    button.textContent = container.name || container.id.slice(0, 12);
+    button.textContent = "";
+    const icon = document.createElement("span");
+    icon.className = "icon-action icon-package name-leading-icon";
+    icon.setAttribute("aria-hidden", "true");
+    button.appendChild(icon);
+    button.appendChild(document.createTextNode(container.name || container.id.slice(0, 12)));
     button.addEventListener("click", () => {
       openContainersShell(container);
     });
@@ -2989,7 +3019,12 @@ function renderContainersLogsList(list) {
     }
     button.dataset.id = container.id;
     button.dataset.search = `${container.name || ""} ${container.state || ""}`;
-    button.textContent = container.name || container.id.slice(0, 12);
+    button.textContent = "";
+    const icon = document.createElement("span");
+    icon.className = "icon-action icon-package name-leading-icon";
+    icon.setAttribute("aria-hidden", "true");
+    button.appendChild(icon);
+    button.appendChild(document.createTextNode(container.name || container.id.slice(0, 12)));
     button.addEventListener("click", () => {
       openContainersLogs(container);
     });
@@ -3644,7 +3679,12 @@ function updateContainerRow(row, container, scope) {
   row.dataset.search = `${container.name || ""} ${container.image || ""} ${container.stack || ""} ${container.state || ""}`;
   const cells = row.querySelectorAll("td");
   if (cells.length < 6) return;
-  cells[0].textContent = container.name || container.id.slice(0, 12);
+  cells[0].textContent = "";
+  const nameIcon = document.createElement("span");
+  nameIcon.className = "icon-action icon-package name-leading-icon";
+  nameIcon.setAttribute("aria-hidden", "true");
+  cells[0].appendChild(nameIcon);
+  cells[0].appendChild(document.createTextNode(container.name || container.id.slice(0, 12)));
   cells[1].textContent = container.image || "";
   const stateValue = normalizeContainerState(container.state);
   const stateText = container.state || "unknown";
@@ -3979,7 +4019,12 @@ function updateStackRow(entry, stack) {
   row.dataset.search = `${stack.name || ""} ${stack.status || ""}`;
   const cells = row.querySelectorAll("td");
   if (cells.length < 4) return;
-  cells[0].textContent = stack.name;
+  cells[0].textContent = "";
+  const nameIcon = document.createElement("span");
+  nameIcon.className = "icon-action icon-stack name-leading-icon";
+  nameIcon.setAttribute("aria-hidden", "true");
+  cells[0].appendChild(nameIcon);
+  cells[0].appendChild(document.createTextNode(stack.name));
   cells[1].textContent = "";
   const optimistic = getStackStatusOverride(stack.name, stack);
   cells[1].appendChild(buildStackStatusBadge(optimistic || stack.status));
@@ -3995,8 +4040,8 @@ function updateStackRow(entry, stack) {
     actionsWrap.innerHTML = "";
   }
   const editBtn = buildStackActionButton("icon-edit", "Edit stack", () => openStackModal(stack.name));
-  const upBtn = buildStackActionButton("icon-play", "Compose up", () => runStackAction(stack.name, "up"), "btn-success");
-  const downBtn = buildStackActionButton("icon-stop", "Compose down", () => runStackAction(stack.name, "down"), "btn-warning");
+  const upBtn = buildStackActionButton("icon-chevrons-up", "Compose up", () => runStackAction(stack.name, "up"), "btn-success");
+  const downBtn = buildStackActionButton("icon-chevrons-down", "Compose down", () => runStackAction(stack.name, "down"), "btn-warning");
   const restartBtn = buildStackActionButton("icon-reload", "Restart stack", () => runStackAction(stack.name, "restart"), "btn-info");
   const startBtn = buildStackActionButton("icon-play", "Start stack", () => runStackAction(stack.name, "start"), "btn-success");
   const stopBtn = buildStackActionButton("icon-stop", "Stop stack", () => runStackAction(stack.name, "stop"), "btn-warning");
@@ -5060,6 +5105,12 @@ if (stackModalClose) {
 
 if (stackEnvToggle) {
   stackEnvToggle.addEventListener("change", () => {
+    updateStackEnvState();
+  });
+}
+if (stackEnvToggleBtn && stackEnvToggle) {
+  stackEnvToggleBtn.addEventListener("click", () => {
+    stackEnvToggle.checked = !stackEnvToggle.checked;
     updateStackEnvState();
   });
 }

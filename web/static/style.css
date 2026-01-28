@@ -1866,6 +1866,11 @@ input::placeholder {
   mask-image: url("/icons/ui/stack-3.svg");
 }
 
+.icon-stack {
+  -webkit-mask-image: url("/icons/ui/stack.svg");
+  mask-image: url("/icons/ui/stack.svg");
+}
+
 .icon-polaroid {
   -webkit-mask-image: url("/icons/ui/polaroid.svg");
   mask-image: url("/icons/ui/polaroid.svg");
@@ -1894,6 +1899,31 @@ input::placeholder {
 .icon-clear-all {
   -webkit-mask-image: url("/icons/ui/clear-all.svg");
   mask-image: url("/icons/ui/clear-all.svg");
+}
+
+.icon-package {
+  -webkit-mask-image: url("/icons/ui/box.svg");
+  mask-image: url("/icons/ui/box.svg");
+}
+
+.icon-key {
+  -webkit-mask-image: url("/icons/ui/key.svg");
+  mask-image: url("/icons/ui/key.svg");
+}
+
+.icon-key-off {
+  -webkit-mask-image: url("/icons/ui/key-off.svg");
+  mask-image: url("/icons/ui/key-off.svg");
+}
+
+.icon-chevrons-up {
+  -webkit-mask-image: url("/icons/ui/chevrons-up.svg");
+  mask-image: url("/icons/ui/chevrons-up.svg");
+}
+
+.icon-chevrons-down {
+  -webkit-mask-image: url("/icons/ui/chevrons-down.svg");
+  mask-image: url("/icons/ui/chevrons-down.svg");
 }
 
 .icon-stop {
@@ -2078,6 +2108,7 @@ input::placeholder {
 
 .containers-table th {
   font-size: 0.8rem;
+  font-weight: 600;
   color: var(--color-text-muted);
   background: color-mix(in srgb, var(--color-surface), var(--color-border) 8%);
   letter-spacing: 0.02em;
@@ -2118,9 +2149,11 @@ input::placeholder {
 .containers-shell-list-header {
   padding: var(--s-2) var(--s-3);
   font-size: 0.8rem;
+  font-weight: 600;
   color: var(--color-text-muted);
   background: color-mix(in srgb, var(--color-surface), var(--color-border) 8%);
   border-bottom: 1px solid var(--color-border);
+  letter-spacing: 0.02em;
 }
 
 .containers-shell-list-body {
@@ -2134,7 +2167,7 @@ input::placeholder {
   padding: 8px 12px;
   display: flex;
   align-items: center;
-  gap: var(--s-2);
+  gap: 6px;
   cursor: pointer;
   border-bottom: 1px solid color-mix(in srgb, var(--color-border), transparent 30%);
   background: transparent;
@@ -2145,6 +2178,22 @@ input::placeholder {
   text-align: left;
   color: var(--color-text);
   font: inherit;
+  font-size: 0.9rem;
+}
+
+.name-leading-icon {
+  display: inline-block;
+  margin-right: 6px;
+  vertical-align: -2px;
+}
+
+.containers-shell-item .icon-action {
+  width: 16px;
+  height: 16px;
+}
+
+.containers-shell-item .name-leading-icon {
+  margin-right: 0;
 }
 
 .containers-shell-item:last-child {
@@ -2233,13 +2282,12 @@ input::placeholder {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: var(--status-success);
 }
 
+.containers-logs-stream .icon-action,
 .containers-logs-stream svg {
   width: 20px;
   height: 20px;
-  stroke-width: 2;
 }
 
 .containers-logs-toggle {
@@ -2318,6 +2366,7 @@ input::placeholder {
   align-items: center;
   gap: 6px;
   white-space: nowrap;
+  line-height: 1;
 }
 
 .containers-sort-btn {
@@ -2328,6 +2377,8 @@ input::placeholder {
   align-items: center;
   justify-content: center;
   color: var(--color-text-muted);
+  line-height: 1;
+  height: 14px;
 }
 
 .containers-sort-btn:hover {
@@ -2388,13 +2439,10 @@ input::placeholder {
 .containers-stacks-toolbar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: var(--s-2);
 }
 
-.containers-stacks-title {
-  font-weight: 600;
-}
 
 .stacks-table th:nth-child(1),
 .stacks-table td:nth-child(1) {
@@ -2603,15 +2651,25 @@ input::placeholder {
 }
 
 .stack-modal-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: var(--s-3);
-  align-items: end;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  align-items: flex-start;
 }
 
 .stack-modal-grid input[type="text"] {
   max-width: 320px;
 }
+
+.stack-env-action {
+  display: flex;
+  align-items: center;
+}
+
+.stack-env-btn {
+  margin-left: 0;
+}
+
 
 .stack-editor-grid {
   display: grid;
@@ -2657,7 +2715,7 @@ input::placeholder {
   gap: var(--s-2);
   margin-top: 0;
   position: relative;
-  justify-self: end;
+  justify-self: start;
 }
 
 .stack-toggle input {

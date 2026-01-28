@@ -16,6 +16,9 @@
 - Container stacks: removed row expand/collapse (container list under a stack) to simplify the table UX (API `/api/stacks/containers` removed as well).
 - Editor UX: YAML-friendly defaults (2-space indent, word wrap, folding, indent guides) plus basic autocomplete for common Compose keys/values.
 - Dark mode: improved editor theming (gutter/cursor/tooltips/autocomplete are theme-aware).
+- Containers UI: Shell/Logs/Stacks topbar title now reflects the current view.
+- Containers UI: consistent typography for container lists (table vs shell/logs list), including header styling.
+- Containers UI: name-leading icons added (containers use `box.svg`, stacks use `stack.svg`), plus spacing tweaks.
 
 ## v1.2.0
 
