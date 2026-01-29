@@ -3,11 +3,15 @@ package dockerwatcher
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
+	"sort"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"contiwatch/internal/config"
@@ -47,6 +51,32 @@ type ContainerInfo struct {
 	State     string `json:"state"`
 	UptimeSec int64  `json:"uptime_sec"`
 	Stack     string `json:"stack"`
+}
+
+type ContainerIP struct {
+	Network string `json:"network"`
+	IP      string `json:"ip"`
+}
+
+type ContainerPortBinding struct {
+	Proto         string `json:"proto"`
+	ContainerPort int    `json:"container_port"`
+	HostIP        string `json:"host_ip"`
+	HostPort      int    `json:"host_port"`
+}
+
+type ContainerResource struct {
+	ID            string                 `json:"id"`
+	Name          string                 `json:"name"`
+	Image         string                 `json:"image,omitempty"`
+	State         string                 `json:"state"`
+	UptimeSec     int64                  `json:"uptime_sec"`
+	CPUPercent    float64                `json:"cpu_percent"`
+	MemUsageBytes uint64                 `json:"mem_usage_bytes"`
+	MemLimitBytes uint64                 `json:"mem_limit_bytes"`
+	MemPercent    float64                `json:"mem_percent"`
+	IPAddresses   []ContainerIP          `json:"ip_addresses,omitempty"`
+	Ports         []ContainerPortBinding `json:"ports,omitempty"`
 }
 
 type ImageInfo struct {
@@ -169,6 +199,142 @@ func (w *Watcher) Containers(ctx context.Context) ([]ContainerInfo, error) {
 	return containers, nil
 }
 
+func (w *Watcher) ContainerResources(ctx context.Context, ids []string) ([]ContainerResource, error) {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	type result struct {
+		index int
+		value ContainerResource
+	}
+	trimmed := make([]string, 0, len(ids))
+	for _, id := range ids {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		trimmed = append(trimmed, id)
+	}
+	if len(trimmed) == 0 {
+		return []ContainerResource{}, nil
+	}
+
+	results := make([]result, 0, len(trimmed))
+	var resultsMu sync.Mutex
+	var firstErr error
+	var errMu sync.Mutex
+
+	workers := 6
+	if len(trimmed) < workers {
+		workers = len(trimmed)
+	}
+	jobs := make(chan int, len(trimmed))
+	var wg sync.WaitGroup
+	workerFn := func() {
+		defer wg.Done()
+		for idx := range jobs {
+			if ctx.Err() != nil {
+				return
+			}
+			id := trimmed[idx]
+			resource, err := w.containerResource(ctx, id)
+			if err != nil {
+				errMu.Lock()
+				if firstErr == nil {
+					firstErr = err
+					cancel()
+				}
+				errMu.Unlock()
+				return
+			}
+			resultsMu.Lock()
+			results = append(results, result{index: idx, value: resource})
+			resultsMu.Unlock()
+		}
+	}
+	wg.Add(workers)
+	for i := 0; i < workers; i += 1 {
+		go workerFn()
+	}
+	for i := 0; i < len(trimmed); i += 1 {
+		jobs <- i
+	}
+	close(jobs)
+	wg.Wait()
+
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
+	}
+	if firstErr != nil {
+		return nil, firstErr
+	}
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].index < results[j].index
+	})
+	ordered := make([]ContainerResource, 0, len(results))
+	for _, item := range results {
+		ordered = append(ordered, item.value)
+	}
+	return ordered, nil
+}
+
+func (w *Watcher) containerResource(ctx context.Context, id string) (ContainerResource, error) {
+	inspect, err := w.client.ContainerInspect(ctx, id)
+	if err != nil {
+		return ContainerResource{}, err
+	}
+	name := strings.TrimPrefix(inspect.Name, "/")
+	if name == "" {
+		name = id
+		if len(name) > 12 {
+			name = name[:12]
+		}
+	}
+	state := "unknown"
+	uptimeSec := int64(0)
+	running := false
+	if inspect.State != nil {
+		state = normalizeContainerState(inspect.State)
+		uptimeSec = uptimeFromState(inspect.State)
+		running = inspect.State.Running
+	}
+	imageRef := ""
+	if inspect.Config != nil && inspect.Config.Image != "" {
+		imageRef = inspect.Config.Image
+	}
+	ipAddresses := extractContainerIPs(inspect.NetworkSettings)
+	ports := extractContainerPorts(inspect.NetworkSettings)
+	stats := types.StatsJSON{}
+	if running {
+		raw, err := w.client.ContainerStats(ctx, id, false)
+		if err != nil {
+			return ContainerResource{}, err
+		}
+		if err := json.NewDecoder(raw.Body).Decode(&stats); err != nil {
+			raw.Body.Close()
+			return ContainerResource{}, err
+		}
+		raw.Body.Close()
+	}
+	cpuPercent := computeContainerCPUPercent(stats)
+	memUsage := stats.MemoryStats.Usage
+	memLimit := stats.MemoryStats.Limit
+	memPercent := computeContainerMemPercent(memUsage, memLimit)
+	return ContainerResource{
+		ID:            id,
+		Name:          name,
+		Image:         imageRef,
+		State:         state,
+		UptimeSec:     uptimeSec,
+		CPUPercent:    cpuPercent,
+		MemUsageBytes: memUsage,
+		MemLimitBytes: memLimit,
+		MemPercent:    memPercent,
+		IPAddresses:   ipAddresses,
+		Ports:         ports,
+	}, nil
+}
+
 func (w *Watcher) containerInfo(ctx context.Context, item types.Container) (ContainerInfo, error) {
 	name := strings.TrimPrefix(firstOrEmpty(item.Names), "/")
 	inspect, err := w.client.ContainerInspect(ctx, item.ID)
@@ -197,6 +363,100 @@ func (w *Watcher) containerInfo(ctx context.Context, item types.Container) (Cont
 		UptimeSec: uptimeSec,
 		Stack:     stack,
 	}, nil
+}
+
+func extractContainerIPs(settings *types.NetworkSettings) []ContainerIP {
+	if settings == nil || settings.Networks == nil {
+		return nil
+	}
+	ips := make([]ContainerIP, 0, len(settings.Networks))
+	for name, network := range settings.Networks {
+		if network == nil || network.IPAddress == "" {
+			continue
+		}
+		ips = append(ips, ContainerIP{Network: name, IP: network.IPAddress})
+	}
+	sort.Slice(ips, func(i, j int) bool {
+		return ips[i].Network < ips[j].Network
+	})
+	return ips
+}
+
+func extractContainerPorts(settings *types.NetworkSettings) []ContainerPortBinding {
+	if settings == nil || settings.Ports == nil {
+		return nil
+	}
+	ports := make([]ContainerPortBinding, 0, len(settings.Ports))
+	for port, bindings := range settings.Ports {
+		containerPort := port.Int()
+		proto := port.Proto()
+		if len(bindings) == 0 {
+			ports = append(ports, ContainerPortBinding{
+				Proto:         proto,
+				ContainerPort: containerPort,
+				HostIP:        "",
+				HostPort:      0,
+			})
+			continue
+		}
+		for _, binding := range bindings {
+			if strings.Contains(binding.HostIP, ":") {
+				continue
+			}
+			hostPort := 0
+			if binding.HostPort != "" {
+				if parsed, err := strconv.Atoi(binding.HostPort); err == nil {
+					hostPort = parsed
+				}
+			}
+			ports = append(ports, ContainerPortBinding{
+				Proto:         proto,
+				ContainerPort: containerPort,
+				HostIP:        binding.HostIP,
+				HostPort:      hostPort,
+			})
+		}
+	}
+	sort.Slice(ports, func(i, j int) bool {
+		if ports[i].ContainerPort == ports[j].ContainerPort {
+			if ports[i].Proto == ports[j].Proto {
+				return ports[i].HostPort < ports[j].HostPort
+			}
+			return ports[i].Proto < ports[j].Proto
+		}
+		return ports[i].ContainerPort < ports[j].ContainerPort
+	})
+	return ports
+}
+
+func computeContainerCPUPercent(stats types.StatsJSON) float64 {
+	cpuDelta := float64(stats.CPUStats.CPUUsage.TotalUsage - stats.PreCPUStats.CPUUsage.TotalUsage)
+	systemDelta := float64(stats.CPUStats.SystemUsage - stats.PreCPUStats.SystemUsage)
+	if cpuDelta <= 0 || systemDelta <= 0 {
+		return 0
+	}
+	percent := (cpuDelta / systemDelta) * 100
+	if percent < 0 {
+		return 0
+	}
+	if percent > 100 {
+		return 100
+	}
+	return percent
+}
+
+func computeContainerMemPercent(usage, limit uint64) float64 {
+	if limit == 0 {
+		return 0
+	}
+	percent := (float64(usage) / float64(limit)) * 100
+	if percent < 0 {
+		return 0
+	}
+	if percent > 100 {
+		return 100
+	}
+	return percent
 }
 
 func normalizeContainerState(state *types.ContainerState) string {

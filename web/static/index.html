@@ -97,21 +97,30 @@
 	              <span class="icon-action icon-cube-3d-sphere" aria-hidden="true"></span>
 	            </button>
 	            <span class="topbar-separator" aria-hidden="true"></span>
-	            <button
-	              id="topbar-containers-logs"
-	              class="secondary icon-action-btn has-tooltip"
-	              type="button"
-	              aria-label="Container logs"
-	              data-tooltip="Container logs"
-	            >
-	              <span class="icon-action icon-logs" aria-hidden="true"></span>
-	            </button>
-	            <button
-	              id="topbar-containers-shell"
-	              class="secondary icon-action-btn has-tooltip"
-	              type="button"
-	              aria-label="Container shell"
-	              data-tooltip="Container shell"
+            <button
+              id="topbar-containers-logs"
+              class="secondary icon-action-btn has-tooltip"
+              type="button"
+              aria-label="Container logs"
+              data-tooltip="Container logs"
+            >
+              <span class="icon-action icon-logs" aria-hidden="true"></span>
+            </button>
+            <button
+              id="topbar-containers-resources"
+              class="secondary icon-action-btn has-tooltip"
+              type="button"
+              aria-label="Container resources"
+              data-tooltip="Container resources"
+            >
+              <span class="icon-action icon-device-desktop-analytics" aria-hidden="true"></span>
+            </button>
+            <button
+              id="topbar-containers-shell"
+              class="secondary icon-action-btn has-tooltip"
+              type="button"
+              aria-label="Container shell"
+              data-tooltip="Container shell"
 	            >
 	              <span class="icon-action icon-terminal-2" aria-hidden="true"></span>
 	            </button>
@@ -285,6 +294,10 @@
           <span class="sidebar-icon icon-action icon-logs" aria-hidden="true"></span>
           <span class="sidebar-label">Logs</span>
         </button>
+        <button type="button" class="sidebar-link containers-sidebar-link hidden" data-view="containers" data-containers-mode="resources" data-feature="container_resources">
+          <span class="sidebar-icon icon-action icon-device-desktop-analytics" aria-hidden="true"></span>
+          <span class="sidebar-label">Resources</span>
+        </button>
         <button type="button" class="sidebar-link containers-sidebar-link hidden" data-view="containers" data-containers-mode="shell" data-feature="container_shell">
           <span class="sidebar-icon icon-action icon-terminal-2" aria-hidden="true"></span>
           <span class="sidebar-label">Shell</span>
@@ -415,6 +428,11 @@
                 <input type="checkbox" id="exp-container-logs">
                 <span class="toggle-track" aria-hidden="true"><span class="toggle-thumb"></span></span>
                 <span>Container logs</span>
+              </label>
+              <label class="toggle-row">
+                <input type="checkbox" id="exp-container-resources">
+                <span class="toggle-track" aria-hidden="true"><span class="toggle-thumb"></span></span>
+                <span>Container resources</span>
               </label>
               <label class="toggle-row">
                 <input type="checkbox" id="exp-stacks">
@@ -605,6 +623,16 @@
             </div>
           </div>
         </div>
+        <div id="containers-resources-layout" class="containers-shell-layout containers-resources-layout hidden">
+          <div class="containers-shell-list">
+            <div class="containers-shell-list-header">Name</div>
+            <div id="containers-resources-list" class="containers-shell-list-body"></div>
+          </div>
+          <div class="containers-shell-terminal containers-resources-panel">
+            <div id="containers-resources-placeholder" class="containers-shell-placeholder">Select containers to view resources.</div>
+            <div id="containers-resources-cards" class="containers-resources-cards hidden"></div>
+          </div>
+        </div>
       </section>
 
 
@@ -693,20 +721,24 @@
             <button id="server-tab-local" class="secondary" type="button" role="tab" aria-selected="false" aria-controls="server-panel-local">Local server</button>
           </div>
 
-          <div id="server-panel-remote" class="server-modal-panel" role="tabpanel">
-            <div class="server-wizard-grid">
-              <label>
-                Name
-                <input type="text" id="remote-modal-name" placeholder="prod-01">
-              </label>
-              <label>
-                Host / IP
-                <input type="text" id="remote-modal-host" placeholder="10.0.0.10">
-              </label>
-              <label>
-                Port (host exposed)
-                <input type="text" id="remote-modal-port" placeholder="8080">
-              </label>
+	          <div id="server-panel-remote" class="server-modal-panel" role="tabpanel">
+	            <div class="server-wizard-grid">
+	              <label>
+	                Name
+	                <input type="text" id="remote-modal-name" placeholder="prod-01">
+	              </label>
+	              <label>
+	                Host / IP
+	                <input type="text" id="remote-modal-host" placeholder="10.0.0.10">
+	              </label>
+	              <label>
+	                Public IP (for opening services)
+	                <input type="text" id="remote-modal-public-ip" placeholder="203.0.113.10">
+	              </label>
+	              <label>
+	                Port (host exposed)
+	                <input type="text" id="remote-modal-port" placeholder="8080">
+	              </label>
               <label>
                 Generated API token
                 <div class="input-row">
@@ -739,6 +771,10 @@
                 Docker socket
                 <input type="text" id="local-modal-socket" placeholder="/var/run/docker.sock">
               </label>
+              <label>
+                Public IP (for opening services)
+                <input type="text" id="local-modal-public-ip" placeholder="203.0.113.10">
+              </label>
               <div class="settings-actions">
                 <button id="local-modal-save" type="submit">Save</button>
                 <button id="local-modal-cancel" class="secondary" type="button">Cancel</button>
@@ -756,24 +792,52 @@
           <h3 id="stack-modal-title">New stack</h3>
           <button id="stack-modal-close" class="secondary btn-small" type="button">Close</button>
         </div>
-        <div class="modal-body">
-          <div class="stack-modal-grid">
-            <label id="stack-name-row">
-              <input type="text" id="stack-name-input" placeholder="my_stack_name">
-            </label>
-            <div class="stack-env-action">
-              <input type="checkbox" id="stack-env-toggle" class="hidden">
-              <button id="stack-env-toggle-btn" class="secondary icon-action-btn has-tooltip stack-env-btn" type="button" aria-label="Use .env secrets" aria-pressed="false" data-enabled="false" data-tooltip="Use .env secrets">
-                <span class="icon-action icon-key" aria-hidden="true"></span>
-              </button>
-            </div>
-          </div>
-          <div class="stack-editor-grid">
-            <div class="stack-editor-main">
-              <label for="stack-compose-input">docker-compose.yml</label>
-              <div id="stack-compose-editor" class="stack-editor"></div>
-              <textarea id="stack-compose-input" class="stack-textarea hidden" rows="16" spellcheck="false" placeholder="services:"></textarea>
-            </div>
+	        <div class="modal-body">
+	          <div class="stack-modal-grid">
+	            <label id="stack-name-row">
+	              <input type="text" id="stack-name-input" placeholder="my_stack_name">
+	            </label>
+	            <div class="stack-env-action">
+	              <input type="checkbox" id="stack-env-toggle" class="hidden">
+	              <button id="stack-env-toggle-btn" class="secondary icon-action-btn has-tooltip stack-env-btn" type="button" aria-label="Use .env secrets" aria-pressed="false" data-enabled="false" data-tooltip="Use .env secrets">
+	                <span class="icon-action icon-key" aria-hidden="true"></span>
+	              </button>
+	            </div>
+	            <span class="topbar-separator" aria-hidden="true"></span>
+	            <button
+	              id="stack-modal-save-icon"
+	              class="secondary icon-action-btn has-tooltip"
+	              type="button"
+	              aria-label="Save stack"
+	              data-tooltip="Save stack"
+	            >
+	              <span class="icon-action icon-device-floppy" aria-hidden="true"></span>
+	            </button>
+	            <button
+	              id="stack-modal-compose-up"
+	              class="secondary icon-action-btn has-tooltip btn-success"
+	              type="button"
+	              aria-label="Compose up"
+	              data-tooltip="Compose up"
+	            >
+	              <span class="icon-action icon-chevrons-up" aria-hidden="true"></span>
+	            </button>
+	            <button
+	              id="stack-modal-compose-down"
+	              class="secondary icon-action-btn has-tooltip btn-warning"
+	              type="button"
+	              aria-label="Compose down"
+	              data-tooltip="Compose down"
+	            >
+	              <span class="icon-action icon-chevrons-down" aria-hidden="true"></span>
+	            </button>
+	          </div>
+	          <div class="stack-editor-grid">
+	            <div class="stack-editor-main">
+	              <label for="stack-compose-input">docker-compose.yml</label>
+	              <div id="stack-compose-editor" class="stack-editor"></div>
+	              <textarea id="stack-compose-input" class="stack-textarea hidden" rows="16" spellcheck="false" placeholder="services:"></textarea>
+	            </div>
             <div class="stack-editor-env">
               <div class="stack-env-label">
                 <label for="stack-env-input">.env</label>

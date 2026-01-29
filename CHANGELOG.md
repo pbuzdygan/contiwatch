@@ -1,5 +1,27 @@
 # Changelog
 
+## v1.2.2
+
+## Bug fixes
+
+## New features
+
+## Improvements
+- Container stacks: New stack modal now keeps the “Use .env secrets” button on the same row as the stack name input (with a matching separator for future actions).
+- Container stacks: stack name input alignment fixed and focus styling toned down (keeps focus ring for keyboard navigation).
+- Container stacks: New stack modal now includes quick actions (Save, Compose up/down) in the header row.
+- UI: icon-action glyph size increased to 24px (without changing button size).
+- Containers: new experimental Resources view with multi-select cards, pins, and 5s resource refresh.
+- Containers Resources: faster initial loading (parallel fetch), list scroll no longer jumps on refresh, IPv4-only port bindings, and a more compact card layout.
+- Servers: Remote server modal now includes optional `public_ip` field for opening container services.
+- Containers Resources: cards tightened further (single-line metrics), header sizes aligned to list, and pin icon sizing/state updated.
+- Servers: Local server modal now includes optional `public_ip` field for opening container services.
+- Containers Resources: metrics row now uses icons (CPU/RAM inline), status sizing aligned, and ports link to public host when available.
+- Containers Resources: metrics separators switched to slashes, uptime icon added, and tooltips bound to their icons.
+- Containers Resources: fixed 4-column card sizing, tighter CPU/RAM spacing, smaller status badge, and card-refresh no longer interrupts clicks.
+- Containers Resources: cards now use full available width (no max-width clamp) and status badge font size reduced further.
+- Containers Resources: pin button sizing adjusted and tooltip positioning fixed.
+
 ## v1.2.1
 
 ## Bug fixes

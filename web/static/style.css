@@ -312,7 +312,7 @@ body {
   flex-wrap: wrap;
 }
 
-.containers-topbar-actions .topbar-separator {
+.topbar-separator {
   width: 1px;
   height: 22px;
   background: color-mix(in srgb, var(--color-border), var(--color-text-muted) 35%);
@@ -416,8 +416,8 @@ body {
 }
 
 .sidebar-link .sidebar-icon {
-  width: 18px;
-  height: 18px;
+  width: 24px;
+  height: 24px;
   color: var(--color-primary);
   flex-shrink: 0;
 }
@@ -1862,6 +1862,15 @@ input::placeholder {
   justify-content: center;
 }
 
+.icon-action-btn.btn-small {
+  width: 34px;
+}
+
+.icon-action-btn.btn-small .icon-action {
+  width: 18px;
+  height: 18px;
+}
+
 .icon-action-btn.is-active {
   background: color-mix(in srgb, var(--color-surface), var(--color-primary) 10%);
   border-color: color-mix(in srgb, var(--color-primary), transparent 45%);
@@ -1888,8 +1897,8 @@ input::placeholder {
 }
 
 .icon-action {
-  width: 18px;
-  height: 18px;
+  width: 24px;
+  height: 24px;
   background: currentColor;
   -webkit-mask-repeat: no-repeat;
   -webkit-mask-position: center;
@@ -2022,6 +2031,46 @@ input::placeholder {
 .icon-chevrons-right {
   -webkit-mask-image: url("/icons/ui/chevrons-right.svg");
   mask-image: url("/icons/ui/chevrons-right.svg");
+}
+
+.icon-device-desktop-analytics {
+  -webkit-mask-image: url("/icons/ui/device-desktop-analytics.svg");
+  mask-image: url("/icons/ui/device-desktop-analytics.svg");
+}
+
+.icon-cpu {
+  -webkit-mask-image: url("/icons/ui/cpu.svg");
+  mask-image: url("/icons/ui/cpu.svg");
+}
+
+.icon-world-bolt {
+  -webkit-mask-image: url("/icons/ui/world-bolt.svg");
+  mask-image: url("/icons/ui/world-bolt.svg");
+}
+
+.icon-stopwatch {
+  -webkit-mask-image: url("/icons/ui/stopwatch.svg");
+  mask-image: url("/icons/ui/stopwatch.svg");
+}
+
+.icon-plug {
+  -webkit-mask-image: url("/icons/ui/plug.svg");
+  mask-image: url("/icons/ui/plug.svg");
+}
+
+.icon-pin {
+  -webkit-mask-image: url("/icons/ui/pin.svg");
+  mask-image: url("/icons/ui/pin.svg");
+}
+
+.icon-pinned-off {
+  -webkit-mask-image: url("/icons/ui/pinned-off.svg");
+  mask-image: url("/icons/ui/pinned-off.svg");
+}
+
+.icon-device-floppy {
+  -webkit-mask-image: url("/icons/ui/device-floppy.svg");
+  mask-image: url("/icons/ui/device-floppy.svg");
 }
 
 .icon-stop {
@@ -2357,6 +2406,175 @@ input::placeholder {
 .containers-shell-placeholder {
   padding: var(--s-3);
   color: var(--color-text-muted);
+}
+
+.containers-resources-cards {
+  padding: var(--s-3);
+  display: grid;
+  grid-template-columns: repeat(4, minmax(240px, 1fr));
+  gap: var(--s-3);
+  overflow: auto;
+  flex: 1;
+  align-items: start;
+  align-content: start;
+  width: 100%;
+}
+
+@media (max-width: 1200px) {
+  .containers-resources-cards {
+    grid-template-columns: repeat(3, minmax(240px, 1fr));
+  }
+}
+
+@media (max-width: 900px) {
+  .containers-resources-cards {
+    grid-template-columns: repeat(2, minmax(240px, 1fr));
+  }
+}
+
+@media (max-width: 620px) {
+  .containers-resources-cards {
+    grid-template-columns: 1fr;
+  }
+}
+
+.containers-resource-card {
+  border: 1px solid var(--color-border);
+  border-radius: var(--r-card);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-card);
+  padding: var(--s-2) var(--s-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+}
+
+.containers-resource-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-2);
+  font-size: 0.9rem;
+}
+
+.containers-resource-card-title {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.containers-resource-card-title .icon-action {
+  width: 16px;
+  height: 16px;
+}
+
+.containers-resource-card-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+}
+
+.containers-resource-card-actions .containers-state-badge {
+  padding: 2px 8px;
+  font-size: 0.75rem;
+  line-height: 1;
+  letter-spacing: 0.02em;
+}
+
+.containers-resource-card-actions .icon-action-btn.btn-small {
+  width: 24px;
+  height: 24px;
+}
+
+.containers-resource-card-actions .icon-action-btn.btn-small .icon-action {
+  width: 18px;
+  height: 18px;
+}
+
+.containers-resource-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+}
+
+.containers-resource-metric,
+.containers-resource-detail {
+  display: flex;
+  flex-direction: row;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.containers-resource-label {
+  color: var(--color-text-muted);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.containers-resource-value {
+  font-weight: 400;
+  font-size: 0.75rem;
+  color: var(--color-text);
+  word-break: break-word;
+}
+
+.containers-resource-details {
+  display: grid;
+  gap: var(--s-2);
+}
+
+.containers-resource-details .containers-resource-detail {
+  flex-direction: row;
+  align-items: center;
+  gap: var(--s-2);
+  white-space: normal;
+}
+
+.containers-resource-detail .icon-action {
+  width: 16px;
+  height: 16px;
+}
+
+.containers-resource-metrics-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  font-size: 0.85rem;
+  color: var(--color-text);
+}
+
+.containers-resource-metrics-line .icon-action {
+  width: 16px;
+  height: 16px;
+}
+
+.containers-resource-cpu-value {
+  min-width: 3.2ch;
+  display: inline-block;
+  text-align: right;
+}
+
+.containers-resource-separator {
+  color: var(--color-text-muted);
+  margin: 0;
+}
+
+.containers-resource-separator {
+  color: var(--color-text-muted);
+}
+
+.containers-resource-link {
+  color: var(--color-primary);
+  text-decoration: none;
+}
+
+.containers-resource-link:hover {
+  text-decoration: underline;
 }
 
 .containers-terminal {
@@ -2913,13 +3131,24 @@ input::placeholder {
 
 .stack-modal-grid {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   gap: var(--s-2);
-  align-items: flex-start;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.stack-modal-grid #stack-name-row {
+  margin-bottom: 0;
 }
 
 .stack-modal-grid input[type="text"] {
   max-width: 320px;
+}
+
+#stack-name-input:focus,
+#stack-name-input:focus-visible {
+  border-color: var(--color-border);
+  box-shadow: none;
 }
 
 .stack-env-action {

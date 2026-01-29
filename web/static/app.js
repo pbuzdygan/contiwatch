@@ -25,6 +25,7 @@ const expContainersInput = document.getElementById("exp-containers");
 const expContainersSidebarInput = document.getElementById("exp-containers-sidebar");
 const expContainerShellInput = document.getElementById("exp-container-shell");
 const expContainerLogsInput = document.getElementById("exp-container-logs");
+const expContainerResourcesInput = document.getElementById("exp-container-resources");
 const expStacksInput = document.getElementById("exp-stacks");
 const expImagesInput = document.getElementById("exp-images");
 const addServerBtn = document.getElementById("add-server");
@@ -39,6 +40,7 @@ const serversFilterMenu = document.getElementById("servers-filter-menu");
 const localModalForm = document.getElementById("local-modal-form");
 const localModalNameInput = document.getElementById("local-modal-name");
 const localModalSocketInput = document.getElementById("local-modal-socket");
+const localModalPublicIPInput = document.getElementById("local-modal-public-ip");
 const localModalSave = document.getElementById("local-modal-save");
 const localModalCancel = document.getElementById("local-modal-cancel");
 const remoteModal = document.getElementById("remote-modal");
@@ -50,6 +52,7 @@ const serverPanelRemote = document.getElementById("server-panel-remote");
 const serverPanelLocal = document.getElementById("server-panel-local");
 const remoteModalNameInput = document.getElementById("remote-modal-name");
 const remoteModalHostInput = document.getElementById("remote-modal-host");
+const remoteModalPublicIPInput = document.getElementById("remote-modal-public-ip");
 const remoteModalPortInput = document.getElementById("remote-modal-port");
 const remoteModalTokenInput = document.getElementById("remote-modal-token");
 const remoteModalTokenCopy = document.getElementById("remote-modal-token-copy");
@@ -80,6 +83,7 @@ const topbarContainersServerMenu = document.getElementById("topbar-containers-se
 const topbarContainersRefreshBtn = document.getElementById("topbar-containers-refresh");
 const topbarContainersShellBtn = document.getElementById("topbar-containers-shell");
 const topbarContainersLogsBtn = document.getElementById("topbar-containers-logs");
+const topbarContainersResourcesBtn = document.getElementById("topbar-containers-resources");
 const topbarContainersStatusEl = document.getElementById("topbar-containers-status");
 const containersNameSortBtn = document.getElementById("containers-name-sort");
 const containersStateSortBtn = document.getElementById("containers-state-sort");
@@ -126,6 +130,10 @@ const containersLogsStreamEl = document.getElementById("containers-logs-stream")
 const containersLogsPauseBtn = document.getElementById("containers-logs-pause");
 const containersLogsTimestampsBtn = document.getElementById("containers-logs-timestamps");
 const containersLogsClearBtn = document.getElementById("containers-logs-clear");
+const containersResourcesLayout = document.getElementById("containers-resources-layout");
+const containersResourcesList = document.getElementById("containers-resources-list");
+const containersResourcesPlaceholder = document.getElementById("containers-resources-placeholder");
+const containersResourcesCards = document.getElementById("containers-resources-cards");
 const refreshLogsBtn = document.getElementById("refresh-logs");
 const clearLogsBtn = document.getElementById("clear-logs");
 const logsLevelBtn = document.getElementById("logs-level-btn");
@@ -145,7 +153,10 @@ const stackModal = document.getElementById("stack-modal");
 const stackModalTitle = document.getElementById("stack-modal-title");
 const stackModalClose = document.getElementById("stack-modal-close");
 const stackModalSave = document.getElementById("stack-modal-save");
+const stackModalSaveIcon = document.getElementById("stack-modal-save-icon");
 const stackModalCancel = document.getElementById("stack-modal-cancel");
+const stackModalComposeUp = document.getElementById("stack-modal-compose-up");
+const stackModalComposeDown = document.getElementById("stack-modal-compose-down");
 const stackNameInput = document.getElementById("stack-name-input");
 const stackNameRow = document.getElementById("stack-name-row");
 const stackComposeEditorEl = document.getElementById("stack-compose-editor");
@@ -229,6 +240,13 @@ let containersLogsLineBuffer = "";
 let containersLogsBytes = 0;
 let containersLogsAutoScroll = true;
 let containersLogsPaused = false;
+let containersResourcesSelectedIds = new Set();
+let containersResourcesData = new Map();
+let containersResourcesRefreshTimer = null;
+let containersResourcesUpdateInProgress = false;
+const containersResourcesPinsKey = "contiwatch_container_resources_pins:v1";
+let containersResourcesPins = null;
+let containersResourcesLastInteractionAtMs = 0;
 let containersLogsTimestamps = false;
 const containersLogsMaxBytes = 300000;
 let containersLogsSilentClose = false;
@@ -471,6 +489,9 @@ function openLocalModal(mode, server) {
   if (localModalSocketInput) {
     localModalSocketInput.value = server ? server.socket || "/var/run/docker.sock" : "/var/run/docker.sock";
   }
+  if (localModalPublicIPInput) {
+    localModalPublicIPInput.value = server ? server.public_ip || "" : "";
+  }
   remoteModal.classList.remove("hidden");
   remoteModal.setAttribute("aria-hidden", "false");
   if (localModalNameInput) {
@@ -496,6 +517,9 @@ function openRemoteModal(mode, server) {
   }
   if (remoteModalPortInput) {
     remoteModalPortInput.value = parsed.port || "8080";
+  }
+  if (remoteModalPublicIPInput) {
+    remoteModalPublicIPInput.value = server ? server.public_ip || "" : "";
   }
   if (remoteModalTokenInput) {
     if (server && server.token) {
@@ -932,16 +956,16 @@ function closeStackModal() {
   editingStackName = "";
 }
 
-async function saveStackFromModal() {
+async function saveStackFromModal({ closeOnSuccess } = {}) {
   const scope = containersSelectedScope;
   if (!scope) {
     showToast("Select server first.");
-    return;
+    return false;
   }
   const name = editingStackName || (stackNameInput ? stackNameInput.value.trim() : "");
   if (!name || !isValidStackName(name)) {
     showToast("Stack name must match A-Z, a-z, 0-9, _ or -.");
-    return;
+    return false;
   }
   clearStackModalError();
   const composeYml = getComposeValue()
@@ -957,7 +981,7 @@ async function saveStackFromModal() {
   setComposeValue(composeYml);
   if (!composeYml) {
     showStackModalError("docker-compose.yml is required.");
-    return;
+    return false;
   }
   const useEnv = Boolean(stackEnvToggle && stackEnvToggle.checked);
   const env = useEnv ? getEnvValue() : "";
@@ -970,18 +994,38 @@ async function saveStackFromModal() {
     if (!validation || validation.valid !== true) {
       const message = validation && validation.error ? validation.error : "Compose validation failed.";
       showStackModalError(message);
-      return;
+      return false;
     }
     await fetchJSON("/api/stacks/save", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ scope, name, compose_yaml: composeYml, env, use_env: useEnv }),
     });
-    closeStackModal();
+    if (closeOnSuccess !== false) {
+      closeStackModal();
+    }
     await refreshStacks({ silent: true });
+    return true;
   } catch (err) {
     showStackModalError(err.message || "Stack save failed.");
+    return false;
   }
+}
+
+async function runStackActionFromModal(action) {
+  const scope = containersSelectedScope;
+  if (!scope) {
+    showToast("Select server first.");
+    return;
+  }
+  const name = editingStackName || (stackNameInput ? stackNameInput.value.trim() : "");
+  if (!name || !isValidStackName(name)) {
+    showToast("Stack name must match A-Z, a-z, 0-9, _ or -.");
+    return;
+  }
+  const ok = await saveStackFromModal({ closeOnSuccess: false });
+  if (!ok) return;
+  await runStackAction(name, action);
 }
 
 async function copyToClipboard(value, label) {
@@ -2239,6 +2283,14 @@ function applySidebarFilter(queryOverride) {
         const match = !query || haystack.includes(query);
         item.classList.toggle("filtered-out", !match);
       });
+    } else if (containersViewMode === "resources" && containersResourcesList) {
+      const items = Array.from(containersResourcesList.querySelectorAll(".containers-shell-item"));
+      items.forEach((item) => {
+        const source = item.dataset && item.dataset.search ? item.dataset.search : item.textContent;
+        const haystack = normalizeQuery(source);
+        const match = !query || haystack.includes(query);
+        item.classList.toggle("filtered-out", !match);
+      });
     } else if (containersViewMode === "stacks" && stacksTableBody) {
       const rows = Array.from(stacksTableBody.querySelectorAll("tr.stack-row"));
       rows.forEach((row) => {
@@ -2288,6 +2340,7 @@ function applyExperimentalFeatures(cfg) {
     containers: Boolean(exp.containers),
     container_shell: Boolean(exp.container_shell),
     container_logs: Boolean(exp.container_logs),
+    container_resources: Boolean(exp.container_resources),
     stacks: Boolean(exp.stacks),
     images: Boolean(exp.images),
     containers_sidebar: Boolean(exp.containers_sidebar),
@@ -2314,6 +2367,9 @@ function applyExperimentalFeatures(cfg) {
   if (topbarContainersLogsBtn) {
     topbarContainersLogsBtn.classList.toggle("hidden", !(flags.container_logs && flags.containers));
   }
+  if (topbarContainersResourcesBtn) {
+    topbarContainersResourcesBtn.classList.toggle("hidden", !(flags.container_resources && flags.containers));
+  }
   if (topbarContainersStacksBtn) {
     topbarContainersStacksBtn.classList.toggle("hidden", !(flags.stacks && flags.containers));
   }
@@ -2324,6 +2380,9 @@ function applyExperimentalFeatures(cfg) {
     setContainersViewMode("table");
   }
   if (!flags.container_logs && containersViewMode === "logs") {
+    setContainersViewMode("table");
+  }
+  if (!flags.container_resources && containersViewMode === "resources") {
     setContainersViewMode("table");
   }
   if (!flags.stacks && containersViewMode === "stacks") {
@@ -2426,7 +2485,7 @@ function updateServersFilterMenu(mode = serversFilterMode) {
 
 function updateContainersExperimentalToggles() {
   const enabled = expContainersInput ? expContainersInput.checked : false;
-  const dependents = [expContainersSidebarInput, expContainerShellInput, expContainerLogsInput, expStacksInput, expImagesInput];
+  const dependents = [expContainersSidebarInput, expContainerShellInput, expContainerLogsInput, expContainerResourcesInput, expStacksInput, expImagesInput];
   dependents.forEach((input) => {
     if (!input) return;
     input.disabled = !enabled;
@@ -2659,6 +2718,7 @@ async function refreshConfig() {
   if (expContainersSidebarInput) expContainersSidebarInput.checked = Boolean(exp.containers_sidebar);
   if (expContainerShellInput) expContainerShellInput.checked = Boolean(exp.container_shell);
   if (expContainerLogsInput) expContainerLogsInput.checked = Boolean(exp.container_logs);
+  if (expContainerResourcesInput) expContainerResourcesInput.checked = Boolean(exp.container_resources);
   if (expStacksInput) expStacksInput.checked = Boolean(exp.stacks);
   if (expImagesInput) expImagesInput.checked = Boolean(exp.images);
   currentTimeZone = cfg.time_zone ? String(cfg.time_zone).trim() : "";
@@ -2741,6 +2801,7 @@ function buildConfigPayload(options = {}) {
       containers_sidebar: expContainersSidebarInput ? expContainersSidebarInput.checked : false,
       container_shell: expContainerShellInput ? expContainerShellInput.checked : false,
       container_logs: expContainerLogsInput ? expContainerLogsInput.checked : false,
+      container_resources: expContainerResourcesInput ? expContainerResourcesInput.checked : false,
       stacks: expStacksInput ? expStacksInput.checked : false,
       images: expImagesInput ? expImagesInput.checked : false,
     },
@@ -2817,6 +2878,24 @@ function formatBytes(value) {
     unitIndex += 1;
   }
   return `${size.toFixed(size >= 10 || unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
+}
+
+function formatBytesMBOrGB(value) {
+  const total = Number(value);
+  if (!Number.isFinite(total) || total <= 0) return "0 MB";
+  const mb = total / (1024 * 1024);
+  if (mb < 1024) {
+    return `${mb.toFixed(mb >= 10 ? 0 : 1)} MB`;
+  }
+  const gb = mb / 1024;
+  return `${gb.toFixed(gb >= 10 ? 0 : 1)} GB`;
+}
+
+function formatPercent(value) {
+  const total = Number(value);
+  if (!Number.isFinite(total) || total <= 0) return "0%";
+  if (total >= 100) return "100%";
+  return `${total.toFixed(total >= 10 ? 0 : 1)}%`;
 }
 
 function formatImageCreated(value) {
@@ -3011,6 +3090,10 @@ function updateContainersSearchCount() {
     const items = Array.from(containersLogsList.querySelectorAll(".containers-shell-item"));
     total = items.length;
     visible = items.filter((item) => !item.classList.contains("filtered-out")).length;
+  } else if (containersViewMode === "resources" && containersResourcesList) {
+    const items = Array.from(containersResourcesList.querySelectorAll(".containers-shell-item"));
+    total = items.length;
+    visible = items.filter((item) => !item.classList.contains("filtered-out")).length;
   } else if (containersViewMode === "stacks" && stacksTableBody) {
     const rows = Array.from(stacksTableBody.querySelectorAll("tr.stack-row"));
     total = rows.length;
@@ -3040,11 +3123,13 @@ function setContainersViewMode(mode) {
     ? "shell"
     : mode === "logs"
         ? "logs"
-        : mode === "stacks"
-            ? "stacks"
-            : mode === "images"
-                ? "images"
-                : "table";
+        : mode === "resources"
+            ? "resources"
+            : mode === "stacks"
+                ? "stacks"
+                : mode === "images"
+                    ? "images"
+                    : "table";
   containersViewMode = next;
   if (topbarContainersEl) {
     const title = topbarContainersEl.querySelector("h2");
@@ -3053,14 +3138,16 @@ function setContainersViewMode(mode) {
         ? "Containers Shell"
         : next === "logs"
             ? "Containers Logs"
-            : next === "stacks"
-                ? "Containers Stacks"
-                : next === "images"
-                    ? "Containers Images"
-                    : "Containers";
+            : next === "resources"
+                ? "Containers Resources"
+                : next === "stacks"
+                    ? "Containers Stacks"
+                    : next === "images"
+                        ? "Containers Images"
+                        : "Containers";
     }
   }
-  const isSplit = next === "shell" || next === "logs";
+  const isSplit = next === "shell" || next === "logs" || next === "resources";
   if (viewContainersEl) {
     viewContainersEl.classList.toggle("shell-mode", isSplit);
   }
@@ -3079,11 +3166,17 @@ function setContainersViewMode(mode) {
   if (containersLogsLayout) {
     containersLogsLayout.classList.toggle("hidden", next !== "logs");
   }
+  if (containersResourcesLayout) {
+    containersResourcesLayout.classList.toggle("hidden", next !== "resources");
+  }
   if (topbarContainersShellBtn) {
     topbarContainersShellBtn.classList.toggle("is-active", next === "shell");
   }
   if (topbarContainersLogsBtn) {
     topbarContainersLogsBtn.classList.toggle("is-active", next === "logs");
+  }
+  if (topbarContainersResourcesBtn) {
+    topbarContainersResourcesBtn.classList.toggle("is-active", next === "resources");
   }
   if (topbarContainersStacksBtn) {
     topbarContainersStacksBtn.classList.toggle("is-active", next === "stacks");
@@ -3109,6 +3202,17 @@ function setContainersViewMode(mode) {
     stopContainersAutoRefresh();
     stopStacksAutoRefresh();
     refreshContainers({ silent: true }).catch(() => {});
+  } else if (next === "resources") {
+    closeContainersShellSession("switch to resources");
+    closeContainersLogsSession("switch to resources");
+    setContainersLogsPaused(false);
+    const list = Array.from(containersCache.values()).map((entry) => entry.data);
+    renderContainersResourcesList(list);
+    stopContainersAutoRefresh();
+    stopStacksAutoRefresh();
+    startContainersResourcesAutoRefresh();
+    refreshContainers({ silent: true }).catch(() => {});
+    refreshContainersResources({ silent: true }).catch(() => {});
   } else if (next === "stacks") {
     closeContainersShellSession("switch to stacks");
     closeContainersLogsSession("switch to stacks");
@@ -3128,6 +3232,11 @@ function setContainersViewMode(mode) {
     closeContainersLogsSession("switch to table");
     stopStacksAutoRefresh();
     startContainersAutoRefresh();
+  }
+  if (next !== "resources") {
+    stopContainersResourcesAutoRefresh();
+    containersResourcesSelectedIds.clear();
+    updateContainersResourcesPlaceholder();
   }
   if (sidebarSearch && sidebarSearch.value.trim()) {
     applySidebarFilter(sidebarSearch.value);
@@ -3221,6 +3330,315 @@ function renderContainersLogsList(list) {
   if (sidebarSearch && sidebarSearch.value.trim()) {
     applySidebarFilter(sidebarSearch.value);
   }
+}
+
+function loadContainersResourcesPins() {
+  if (containersResourcesPins) return containersResourcesPins;
+  try {
+    const raw = localStorage.getItem(containersResourcesPinsKey);
+    const parsed = raw ? JSON.parse(raw) : {};
+    if (!parsed || typeof parsed !== "object") {
+      containersResourcesPins = {};
+    } else {
+      containersResourcesPins = parsed;
+    }
+  } catch {
+    containersResourcesPins = {};
+  }
+  return containersResourcesPins;
+}
+
+function saveContainersResourcesPins() {
+  if (!containersResourcesPins) return;
+  try {
+    localStorage.setItem(containersResourcesPinsKey, JSON.stringify(containersResourcesPins));
+  } catch {
+    // ignore
+  }
+}
+
+function getContainersResourcesPins(scope) {
+  if (!scope) return new Set();
+  const store = loadContainersResourcesPins();
+  const list = Array.isArray(store[scope]) ? store[scope] : [];
+  return new Set(list);
+}
+
+function setContainersResourcesPins(scope, pins) {
+  if (!scope) return;
+  const store = loadContainersResourcesPins();
+  store[scope] = Array.from(pins || []);
+  containersResourcesPins = store;
+  saveContainersResourcesPins();
+}
+
+function updateContainersResourcesPlaceholder(message) {
+  if (!containersResourcesPlaceholder || !containersResourcesCards) return;
+  const hasCards = containersResourcesCards.children.length > 0;
+  if (hasCards) {
+    containersResourcesPlaceholder.classList.add("hidden");
+    containersResourcesCards.classList.remove("hidden");
+    return;
+  }
+  containersResourcesPlaceholder.textContent = message || "Select containers to view resources.";
+  containersResourcesPlaceholder.classList.remove("hidden");
+  containersResourcesCards.classList.add("hidden");
+}
+
+function toggleContainersResourcesSelection(containerId) {
+  if (!containerId) return;
+  containersResourcesLastInteractionAtMs = Date.now();
+  if (containersResourcesSelectedIds.has(containerId)) {
+    containersResourcesSelectedIds.delete(containerId);
+  } else {
+    containersResourcesSelectedIds.add(containerId);
+  }
+  const list = Array.from(containersCache.values()).map((entry) => entry.data);
+  renderContainersResourcesList(list);
+  refreshContainersResources({ silent: true }).catch(() => {});
+}
+
+function toggleContainersResourcesPin(container) {
+  const scope = containersSelectedScope;
+  if (!scope || !container || !container.name) return;
+  containersResourcesLastInteractionAtMs = Date.now();
+  const pins = getContainersResourcesPins(scope);
+  if (pins.has(container.name)) {
+    pins.delete(container.name);
+  } else {
+    pins.add(container.name);
+  }
+  setContainersResourcesPins(scope, pins);
+  renderContainersResourcesCards();
+  refreshContainersResources({ silent: true }).catch(() => {});
+}
+
+function renderContainersResourcesList(list) {
+  if (!containersResourcesList) return;
+  const prevScrollTop = containersResourcesList.scrollTop;
+  containersResourcesList.innerHTML = "";
+  if (!Array.isArray(list) || list.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "containers-shell-placeholder";
+    empty.textContent = "No containers found.";
+    containersResourcesList.appendChild(empty);
+    containersResourcesSelectedIds.clear();
+    renderContainersResourcesCards();
+    updateContainersResourcesPlaceholder();
+    return;
+  }
+  const sorted = containersSort(list, containersSortMode);
+  const existingIds = new Set();
+  sorted.forEach((container) => {
+    if (!container || !container.id) return;
+    existingIds.add(container.id);
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "containers-shell-item";
+    if (containersResourcesSelectedIds.has(container.id)) {
+      button.classList.add("active");
+    }
+    button.dataset.id = container.id;
+    button.dataset.search = `${container.name || ""} ${container.state || ""}`;
+    button.textContent = "";
+    const icon = document.createElement("span");
+    icon.className = "icon-action icon-package name-leading-icon";
+    icon.setAttribute("aria-hidden", "true");
+    button.appendChild(icon);
+    button.appendChild(document.createTextNode(container.name || container.id.slice(0, 12)));
+    button.addEventListener("click", () => {
+      toggleContainersResourcesSelection(container.id);
+    });
+    containersResourcesList.appendChild(button);
+  });
+  containersResourcesSelectedIds.forEach((id) => {
+    if (!existingIds.has(id)) {
+      containersResourcesSelectedIds.delete(id);
+    }
+  });
+  renderContainersResourcesCards();
+  updateContainersResourcesPlaceholder();
+  requestAnimationFrame(() => {
+    if (containersResourcesList) {
+      containersResourcesList.scrollTop = prevScrollTop;
+    }
+  });
+  if (sidebarSearch && sidebarSearch.value.trim()) {
+    applySidebarFilter(sidebarSearch.value);
+  }
+}
+
+function getResourcesHostPorts(ports) {
+  if (!Array.isArray(ports) || ports.length === 0) return [];
+  const unique = new Set();
+  ports.forEach((port) => {
+    if (!port) return;
+    const hostPort = Number(port.host_port || 0);
+    if (hostPort > 0) unique.add(hostPort);
+  });
+  return Array.from(unique).sort((a, b) => a - b);
+}
+
+function formatResourcesIPValue(ips) {
+  if (!Array.isArray(ips) || ips.length === 0) return "—";
+  return ips.map((ip) => ip.ip).filter(Boolean).join(", ");
+}
+
+function formatResourcesIPTooltip(ips) {
+  if (!Array.isArray(ips) || ips.length === 0) return "";
+  return ips.map((ip) => `${ip.network}: ${ip.ip}`).filter(Boolean).join(", ");
+}
+
+function renderContainersResourcesCards() {
+  if (!containersResourcesCards) return;
+  const scope = containersSelectedScope;
+  const list = Array.from(containersCache.values()).map((entry) => entry.data);
+  const byId = new Map(list.map((container) => [container.id, container]));
+  const byName = new Map(list.map((container) => [container.name, container]));
+  const pins = getContainersResourcesPins(scope);
+  const pinned = [];
+  pins.forEach((name) => {
+    const container = byName.get(name);
+    if (container) pinned.push(container);
+  });
+  pinned.sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
+  const selected = [];
+  containersResourcesSelectedIds.forEach((id) => {
+    const container = byId.get(id);
+    if (container && !pins.has(container.name)) {
+      selected.push(container);
+    }
+  });
+  selected.sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
+  const cards = [...pinned, ...selected];
+  containersResourcesCards.innerHTML = "";
+  if (cards.length === 0) {
+    updateContainersResourcesPlaceholder();
+    return;
+  }
+  cards.forEach((container) => {
+    const resource = containersResourcesData.get(container.id);
+    const stateValue = normalizeContainerState(resource && resource.state ? resource.state : container.state);
+    const stateText = (resource && resource.state) ? resource.state : (container.state || "unknown");
+    const card = document.createElement("div");
+    card.className = "containers-resource-card";
+    card.dataset.id = container.id;
+    const header = document.createElement("div");
+    header.className = "containers-resource-card-header";
+    const title = document.createElement("div");
+    title.className = "containers-resource-card-title";
+    const icon = document.createElement("span");
+    icon.className = "icon-action icon-package";
+    icon.setAttribute("aria-hidden", "true");
+    const name = document.createElement("span");
+    name.textContent = container.name || container.id.slice(0, 12);
+    title.append(icon, name);
+    const actions = document.createElement("div");
+    actions.className = "containers-resource-card-actions";
+    const badge = document.createElement("span");
+    badge.className = `containers-state-badge ${stateValue ? `containers-state-${stateValue}` : "containers-state-unknown"}`;
+    badge.textContent = stateText;
+    const pinBtn = document.createElement("button");
+    pinBtn.type = "button";
+    pinBtn.className = "secondary btn-small icon-action-btn has-tooltip";
+    const isPinned = pins.has(container.name);
+    if (isPinned) {
+      pinBtn.classList.add("is-active");
+    }
+    pinBtn.setAttribute("aria-label", isPinned ? "Unpin card" : "Pin card");
+    pinBtn.setAttribute("data-tooltip", isPinned ? "Unpin card" : "Pin card");
+    const pinIcon = document.createElement("span");
+    pinIcon.className = `icon-action ${isPinned ? "icon-pinned-off" : "icon-pin"}`;
+    pinIcon.setAttribute("aria-hidden", "true");
+    pinBtn.appendChild(pinIcon);
+    pinBtn.addEventListener("click", () => {
+      toggleContainersResourcesPin(container);
+    });
+    actions.append(badge, pinBtn);
+    header.append(title, actions);
+    const metrics = document.createElement("div");
+    metrics.className = "containers-resource-metrics-line";
+    const cpuIcon = document.createElement("span");
+    cpuIcon.className = "icon-action icon-cpu has-tooltip";
+    cpuIcon.setAttribute("aria-hidden", "true");
+    cpuIcon.setAttribute("data-tooltip", "CPU | RAM values");
+    cpuIcon.setAttribute("aria-label", "CPU | RAM values");
+    const cpuValue = document.createElement("span");
+    cpuValue.className = "containers-resource-cpu-value";
+    cpuValue.textContent = resource ? formatPercent(resource.cpu_percent) : "—";
+    const ramValue = document.createElement("span");
+    ramValue.className = "containers-resource-ram-value";
+    ramValue.textContent = resource ? formatBytesMBOrGB(resource.mem_usage_bytes) : "—";
+    const sep1 = document.createElement("span");
+    sep1.className = "containers-resource-separator";
+    sep1.textContent = "/";
+    const sep2 = document.createElement("span");
+    sep2.className = "containers-resource-separator";
+    sep2.textContent = "/";
+    const uptimeIcon = document.createElement("span");
+    uptimeIcon.className = "icon-action icon-stopwatch has-tooltip";
+    uptimeIcon.setAttribute("aria-hidden", "true");
+    uptimeIcon.setAttribute("data-tooltip", "Uptime");
+    uptimeIcon.setAttribute("aria-label", "Uptime");
+    const uptimeValue = document.createElement("span");
+    uptimeValue.className = "containers-resource-uptime-value";
+    uptimeValue.textContent = formatUptime(resource ? resource.uptime_sec : container.uptime_sec);
+    metrics.append(cpuIcon, cpuValue, sep1, ramValue, sep2, uptimeIcon, uptimeValue);
+    const details = document.createElement("div");
+    details.className = "containers-resource-details";
+    const ip = document.createElement("div");
+    ip.className = "containers-resource-detail";
+    const ipIcon = document.createElement("span");
+    ipIcon.className = "icon-action icon-world-bolt has-tooltip";
+    ipIcon.setAttribute("aria-hidden", "true");
+    const ipValue = document.createElement("span");
+    ipValue.className = "containers-resource-value";
+    ipValue.textContent = resource ? formatResourcesIPValue(resource.ip_addresses) : "—";
+    const ipTooltip = resource ? formatResourcesIPTooltip(resource.ip_addresses) : "";
+    if (ipTooltip) {
+      ipIcon.setAttribute("data-tooltip", ipTooltip);
+      ipIcon.setAttribute("aria-label", ipTooltip);
+    }
+    ip.append(ipIcon, ipValue);
+    const ports = document.createElement("div");
+    ports.className = "containers-resource-detail";
+    const portsIcon = document.createElement("span");
+    portsIcon.className = "icon-action icon-plug has-tooltip";
+    portsIcon.setAttribute("aria-hidden", "true");
+    portsIcon.setAttribute("data-tooltip", "Ports");
+    portsIcon.setAttribute("aria-label", "Ports");
+    const portsValue = document.createElement("span");
+    portsValue.className = "containers-resource-value";
+    const hostPorts = resource ? getResourcesHostPorts(resource.ports) : [];
+    const scopeInfo = getScopeInfo(containersSelectedScope);
+    const publicHost = scopeInfo && scopeInfo.server ? String(scopeInfo.server.public_ip || "").trim() : "";
+    if (hostPorts.length === 0) {
+      portsValue.textContent = "—";
+    } else {
+      hostPorts.forEach((port, index) => {
+        if (index > 0) {
+          portsValue.append(document.createTextNode(", "));
+        }
+        const text = String(port);
+        if (publicHost) {
+          const link = document.createElement("a");
+          link.href = `http://${publicHost}:${port}`;
+          link.target = "_blank";
+          link.rel = "noreferrer";
+          link.className = "containers-resource-link";
+          link.textContent = text;
+          portsValue.appendChild(link);
+        } else {
+          portsValue.appendChild(document.createTextNode(text));
+        }
+      });
+    }
+    ports.append(portsIcon, portsValue);
+    details.append(ip, ports);
+    card.append(header, metrics, details);
+    containersResourcesCards.appendChild(card);
+  });
+  updateContainersResourcesPlaceholder();
 }
 
 function showContainersShellPlaceholder(message) {
@@ -3772,19 +4190,29 @@ function updateContainersServerOptions() {
     nameEl.textContent = item.label;
     const typeIcon = buildServerTypeIcon(item.type, statusLabel);
 	    button.append(statusIcon, nameEl, typeIcon);
-	    button.addEventListener("click", async () => {
-	      containersSelectedScope = item.scope;
-	      topbarContainersServerMenu.querySelectorAll(".containers-server-option").forEach((el) => {
-	        el.classList.remove("active");
-	      });
-	      button.classList.add("active");
+      button.addEventListener("click", async () => {
+        containersSelectedScope = item.scope;
+        topbarContainersServerMenu.querySelectorAll(".containers-server-option").forEach((el) => {
+          el.classList.remove("active");
+        });
+        button.classList.add("active");
       renderContainersServerButton(info);
       closeContainersServerMenu();
       updateContainersLogsStreamIndicator();
+      if (containersViewMode === "resources") {
+        containersResourcesSelectedIds.clear();
+        containersResourcesData = new Map();
+        updateContainersResourcesPlaceholder("Select containers to view resources.");
+      }
       if (containersViewMode === "stacks") {
         await refreshStacks({ silent: true });
+      } else if (containersViewMode === "images") {
+        await refreshImages({ silent: true });
       } else {
         await refreshContainers({ silent: true });
+        if (containersViewMode === "resources") {
+          await refreshContainersResources({ silent: true });
+        }
       }
     });
     topbarContainersServerMenu.appendChild(button);
@@ -3805,6 +4233,9 @@ function updateContainersServerOptions() {
       refreshImages({ silent: true }).catch(() => {});
     } else {
       refreshContainers({ silent: true }).catch(() => {});
+      if (containersViewMode === "resources") {
+        refreshContainersResources({ silent: true }).catch(() => {});
+      }
     }
   }
 }
@@ -4041,6 +4472,8 @@ function renderContainers(list, scope) {
     renderContainersShellList(sorted);
   } else if (containersViewMode === "logs") {
     renderContainersLogsList(sorted);
+  } else if (containersViewMode === "resources") {
+    renderContainersResourcesList(sorted);
   }
   updateContainersSearchCount();
 }
@@ -4074,6 +4507,68 @@ async function refreshContainers(options = {}) {
     updateContainersStatus(scope, err.message);
   } finally {
     containersUpdateInProgress = false;
+  }
+}
+
+async function refreshContainersResources(options = {}) {
+  if (containersResourcesUpdateInProgress) return;
+  if (currentView !== "containers" || containersViewMode !== "resources") return;
+  if (Date.now() - containersResourcesLastInteractionAtMs < 450) return;
+  const scope = containersSelectedScope;
+  if (!scope) {
+    updateContainersResourcesPlaceholder("Select a server to view resources.");
+    return;
+  }
+  const list = Array.from(containersCache.values()).map((entry) => entry.data);
+  const byId = new Map(list.map((container) => [container.id, container]));
+  const byName = new Map(list.map((container) => [container.name, container]));
+  const pins = getContainersResourcesPins(scope);
+  const targetIds = [];
+  pins.forEach((name) => {
+    const container = byName.get(name);
+    if (container && container.id) {
+      targetIds.push(container.id);
+    }
+  });
+  containersResourcesSelectedIds.forEach((id) => {
+    if (byId.has(id) && !targetIds.includes(id)) {
+      targetIds.push(id);
+    }
+  });
+  if (targetIds.length === 0) {
+    containersResourcesData = new Map();
+    renderContainersResourcesCards();
+    updateContainersResourcesPlaceholder();
+    return;
+  }
+  containersResourcesUpdateInProgress = true;
+  try {
+    const payload = await fetchJSON("/api/containers/resources", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ scope, container_ids: targetIds }),
+    });
+    if (!payload || payload.error) {
+      if (!options.silent) {
+        showToast(payload && payload.error ? payload.error : "Unable to load container resources.");
+      }
+      containersResourcesData = new Map();
+      renderContainersResourcesCards();
+      updateContainersResourcesPlaceholder("Unable to load resources.");
+      return;
+    }
+    const resources = Array.isArray(payload.resources) ? payload.resources : [];
+    containersResourcesData = new Map(resources.map((item) => [item.id, item]));
+    renderContainersResourcesCards();
+  } catch (err) {
+    if (!options.silent) {
+      showToast(err.message || "Unable to load container resources.");
+    }
+    containersResourcesData = new Map();
+    renderContainersResourcesCards();
+    updateContainersResourcesPlaceholder("Unable to load resources.");
+  } finally {
+    containersResourcesUpdateInProgress = false;
   }
 }
 
@@ -4970,6 +5465,19 @@ function stopContainersAutoRefresh() {
   containersRefreshTimer = null;
 }
 
+function startContainersResourcesAutoRefresh() {
+  if (containersResourcesRefreshTimer) return;
+  containersResourcesRefreshTimer = window.setInterval(() => {
+    refreshContainersResources({ silent: true });
+  }, 5000);
+}
+
+function stopContainersResourcesAutoRefresh() {
+  if (!containersResourcesRefreshTimer) return;
+  window.clearInterval(containersResourcesRefreshTimer);
+  containersResourcesRefreshTimer = null;
+}
+
 function applyStatusResults(results) {
   if (Array.isArray(results)) {
     results.sort((a, b) => {
@@ -5595,10 +6103,15 @@ function setView(nextView) {
   } else {
     stopContainersAutoRefresh();
     stopStacksAutoRefresh();
+    stopContainersResourcesAutoRefresh();
     if (prevView === "containers") {
       closeContainersShellSession("leave containers view");
       closeContainersLogsSession("leave containers view");
       setContainersLogsPaused(false);
+      if (containersViewMode === "resources") {
+        containersResourcesSelectedIds.clear();
+        updateContainersResourcesPlaceholder();
+      }
     }
   }
   if (nextView === "servers" && sidebarSearch) {
@@ -5736,6 +6249,7 @@ attachImmediateSave(expContainersInput);
 attachImmediateSave(expContainersSidebarInput);
 attachImmediateSave(expContainerShellInput);
 attachImmediateSave(expContainerLogsInput);
+attachImmediateSave(expContainerResourcesInput);
 attachImmediateSave(expStacksInput);
 attachImmediateSave(expImagesInput);
 globalPolicySelect.addEventListener("change", async () => {
@@ -5786,6 +6300,7 @@ if (localModalForm) {
     const payload = {
       name: localModalNameInput ? localModalNameInput.value.trim() : "",
       socket: localModalSocketInput ? localModalSocketInput.value.trim() : "/var/run/docker.sock",
+      public_ip: localModalPublicIPInput ? localModalPublicIPInput.value.trim() : "",
     };
     if (editingLocalServer && editingLocalServer.maintenance) {
       payload.maintenance = true;
@@ -5813,14 +6328,15 @@ if (localModalCancel) {
 
 if (remoteModalSave) {
   remoteModalSave.addEventListener("click", async () => {
-    const payload = {
-      name: remoteModalNameInput ? remoteModalNameInput.value.trim() : "",
-      url: normalizeRemoteUrl(
-        remoteModalHostInput ? remoteModalHostInput.value.trim() : "",
-        remoteModalPortInput ? remoteModalPortInput.value.trim() : "8080"
-      ),
-      token: remoteModalTokenInput ? remoteModalTokenInput.value.trim() : "",
-    };
+	    const payload = {
+	      name: remoteModalNameInput ? remoteModalNameInput.value.trim() : "",
+	      url: normalizeRemoteUrl(
+	        remoteModalHostInput ? remoteModalHostInput.value.trim() : "",
+	        remoteModalPortInput ? remoteModalPortInput.value.trim() : "8080"
+	      ),
+	      token: remoteModalTokenInput ? remoteModalTokenInput.value.trim() : "",
+	      public_ip: remoteModalPublicIPInput ? remoteModalPublicIPInput.value.trim() : "",
+	    };
     if (editingRemoteServer && editingRemoteServer.maintenance) {
       payload.maintenance = true;
     }
@@ -5860,6 +6376,24 @@ if (stacksNewBtn) {
 if (stackModalSave) {
   stackModalSave.addEventListener("click", () => {
     saveStackFromModal();
+  });
+}
+
+if (stackModalSaveIcon) {
+  stackModalSaveIcon.addEventListener("click", () => {
+    saveStackFromModal({ closeOnSuccess: false });
+  });
+}
+
+if (stackModalComposeUp) {
+  stackModalComposeUp.addEventListener("click", () => {
+    runStackActionFromModal("up");
+  });
+}
+
+if (stackModalComposeDown) {
+  stackModalComposeDown.addEventListener("click", () => {
+    runStackActionFromModal("down");
   });
 }
 
@@ -6162,6 +6696,9 @@ async function init() {
         await refreshStacks({ silent: true });
       } else if (containersViewMode === "images") {
         await refreshImages({ silent: true });
+      } else if (containersViewMode === "resources") {
+        await refreshContainers({ silent: true });
+        await refreshContainersResources({ silent: true });
       } else {
         await refreshContainers({ silent: true });
       }
@@ -6189,6 +6726,18 @@ async function init() {
         return;
       }
       setContainersViewMode(containersViewMode === "logs" ? "table" : "logs");
+    });
+  }
+  if (topbarContainersResourcesBtn) {
+    topbarContainersResourcesBtn.addEventListener("click", () => {
+      const enabled = currentConfig && currentConfig.experimental_features
+        ? Boolean(currentConfig.experimental_features.container_resources)
+        : false;
+      if (!enabled) {
+        showToast("Container resources is disabled in Experimental features.");
+        return;
+      }
+      setContainersViewMode(containersViewMode === "resources" ? "table" : "resources");
     });
   }
   if (topbarContainersStacksBtn) {
