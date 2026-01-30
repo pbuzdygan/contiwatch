@@ -7,27 +7,20 @@
 ## New features
 
 ## Improvements
-- Container stacks: New stack modal now keeps the “Use .env secrets” button on the same row as the stack name input (with a matching separator for future actions).
-- Container stacks: stack name input alignment fixed and focus styling toned down (keeps focus ring for keyboard navigation).
-- Container stacks: New stack modal now includes quick actions (Save, Compose up/down) in the header row.
-- UI: icon-action glyph size increased to 24px (without changing button size).
-- Containers: new experimental Resources view with multi-select cards, pins, and 5s resource refresh.
+- Container Stacks: UI adjustment, space using optimisation.
+- Container Stacks: New/Edit stack modal now includes quick actions (Save, Compose up/down) in the header row.
+- UI: Improving user experience by icon-action increase (without changing button size).
+- Containers Resources: new experimental Resources view with multi-select cards, pins, and 5s resource refresh.
 - Containers Resources: faster initial loading (parallel fetch), list scroll no longer jumps on refresh, IPv4-only port bindings, and a more compact card layout.
-- Servers: Remote server modal now includes optional `public_ip` field for opening container services.
-- Containers Resources: cards tightened further (single-line metrics), header sizes aligned to list, and pin icon sizing/state updated.
-- Servers: Local server modal now includes optional `public_ip` field for opening container services.
-- Containers Resources: metrics row now uses icons (CPU/RAM inline), status sizing aligned, and ports link to public host when available.
-- Containers Resources: metrics separators switched to slashes, uptime icon added, and tooltips bound to their icons.
-- Containers Resources: fixed 4-column card sizing, tighter CPU/RAM spacing, smaller status badge, and card-refresh no longer interrupts clicks.
-- Containers Resources: cards now use full available width (no max-width clamp) and status badge font size reduced further.
-- Containers Resources: pin button sizing adjusted and tooltip positioning fixed.
+- Servers: Remote/Local server modal now includes optional `public_ip` field for opening container services.
+- Containers Resources: UI adjustment, space using optimisation, introducing icons
+- Containers Resources: hyperlink on ports - link to open container services.
 - Containers Resources: added Cards/Table view toggle with a Containers-style table (sortable columns, pinned rows section, default Name asc).
 - Containers: table view now includes CPU/RAM/IP/Port columns (sortable).
 - Images: repository grouping now only shows a group header when a repository has 2+ images.
 - UI: moved the global search field from the sidebar to the topbar (centered).
 - UI: added collapsible sidebar (icon-only mode with banner swapped to logo).
-- Servers: Add server modal no longer resizes when switching Remote/Local (Local reuses Remote layout; only Docker socket/Public IP stay editable).
-- Servers: Add server modal redesigned with Connection type selector (Remote agent vs Local Unix socket) plus inline help and consistent layout.
+- Servers: Add/Edit server modal redesigned with Connection type selector (Remote agent vs Local Unix socket) plus inline help and consistent layout.
 
 ## v1.2.1
 
