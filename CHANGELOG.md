@@ -1,5 +1,27 @@
 # Changelog
 
+## v1.2.2
+
+## Bug fixes
+
+## New features
+
+## Improvements
+- Container Stacks: UI adjustment, space using optimisation.
+- Container Stacks: New/Edit stack modal now includes quick actions (Save, Compose up/down) in the header row.
+- UI: Improving user experience by icon-action increase (without changing button size).
+- Containers Resources: new experimental Resources view with multi-select cards, pins, and 5s resource refresh.
+- Containers Resources: faster initial loading (parallel fetch), list scroll no longer jumps on refresh, IPv4-only port bindings, and a more compact card layout.
+- Servers: Remote/Local server modal now includes optional `public_ip` field for opening container services.
+- Containers Resources: UI adjustment, space using optimisation, introducing icons
+- Containers Resources: hyperlink on ports - link to open container services.
+- Containers Resources: added Cards/Table view toggle with a Containers-style table (sortable columns, pinned rows section, default Name asc).
+- Containers: table view now includes CPU/RAM/IP/Port columns (sortable).
+- Images: repository grouping now only shows a group header when a repository has 2+ images.
+- UI: moved the global search field from the sidebar to the topbar (centered).
+- UI: added collapsible sidebar (icon-only mode with banner swapped to logo).
+- Servers: Add/Edit server modal redesigned with Connection type selector (Remote agent vs Local Unix socket) plus inline help and consistent layout.
+
 ## v1.2.1
 
 ## Bug fixes

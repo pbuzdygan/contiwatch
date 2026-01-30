@@ -25,6 +25,7 @@ const expContainersInput = document.getElementById("exp-containers");
 const expContainersSidebarInput = document.getElementById("exp-containers-sidebar");
 const expContainerShellInput = document.getElementById("exp-container-shell");
 const expContainerLogsInput = document.getElementById("exp-container-logs");
+const expContainerResourcesInput = document.getElementById("exp-container-resources");
 const expStacksInput = document.getElementById("exp-stacks");
 const expImagesInput = document.getElementById("exp-images");
 const addServerBtn = document.getElementById("add-server");
@@ -36,20 +37,20 @@ const serversViewToggleBtn = document.getElementById("servers-view-toggle");
 const serversFilterResetBtn = document.getElementById("servers-filter-reset");
 const serversFilterBtn = document.getElementById("servers-filter-btn");
 const serversFilterMenu = document.getElementById("servers-filter-menu");
-const localModalForm = document.getElementById("local-modal-form");
-const localModalNameInput = document.getElementById("local-modal-name");
-const localModalSocketInput = document.getElementById("local-modal-socket");
-const localModalSave = document.getElementById("local-modal-save");
-const localModalCancel = document.getElementById("local-modal-cancel");
 const remoteModal = document.getElementById("remote-modal");
 const remoteModalTitle = document.getElementById("remote-modal-title");
 const remoteModalClose = document.getElementById("remote-modal-close");
-const serverTabRemote = document.getElementById("server-tab-remote");
-const serverTabLocal = document.getElementById("server-tab-local");
 const serverPanelRemote = document.getElementById("server-panel-remote");
-const serverPanelLocal = document.getElementById("server-panel-local");
 const remoteModalNameInput = document.getElementById("remote-modal-name");
 const remoteModalHostInput = document.getElementById("remote-modal-host");
+const serverModalHostLabel = document.getElementById("server-modal-host-label");
+const serverConnectionTypeSelect = document.getElementById("server-connection-type");
+const serverConnectionTypeHelpBtn = document.getElementById("server-connection-type-help");
+const serverRemotePortRow = document.getElementById("server-remote-port-row");
+const serverTokenRow = document.getElementById("server-token-row");
+const serverTokenHint = document.getElementById("server-token-hint");
+const serverComposePanel = document.getElementById("server-compose-panel");
+const remoteModalPublicIPInput = document.getElementById("remote-modal-public-ip");
 const remoteModalPortInput = document.getElementById("remote-modal-port");
 const remoteModalTokenInput = document.getElementById("remote-modal-token");
 const remoteModalTokenCopy = document.getElementById("remote-modal-token-copy");
@@ -60,6 +61,7 @@ const remoteModalCancel = document.getElementById("remote-modal-cancel");
 const sidebar = document.getElementById("sidebar");
 const sidebarSearch = document.getElementById("sidebar-search");
 const sidebarSearchCountEl = document.getElementById("sidebar-search-count");
+const sidebarCollapseToggleBtn = document.getElementById("sidebar-collapse-toggle");
 const themeToggleBtn = document.getElementById("theme-toggle");
 const themeLabel = document.getElementById("theme-label");
 const topbarEl = document.querySelector(".topbar");
@@ -80,9 +82,14 @@ const topbarContainersServerMenu = document.getElementById("topbar-containers-se
 const topbarContainersRefreshBtn = document.getElementById("topbar-containers-refresh");
 const topbarContainersShellBtn = document.getElementById("topbar-containers-shell");
 const topbarContainersLogsBtn = document.getElementById("topbar-containers-logs");
+const topbarContainersResourcesBtn = document.getElementById("topbar-containers-resources");
 const topbarContainersStatusEl = document.getElementById("topbar-containers-status");
 const containersNameSortBtn = document.getElementById("containers-name-sort");
 const containersStateSortBtn = document.getElementById("containers-state-sort");
+const containersCpuSortBtn = document.getElementById("containers-cpu-sort");
+const containersRamSortBtn = document.getElementById("containers-ram-sort");
+const containersIpSortBtn = document.getElementById("containers-ip-sort");
+const containersPortSortBtn = document.getElementById("containers-port-sort");
 const containersTableBody = document.getElementById("containers-body");
 const containersEmptyEl = document.getElementById("containers-empty");
 const containersTableView = document.getElementById("containers-table-view");
@@ -126,6 +133,20 @@ const containersLogsStreamEl = document.getElementById("containers-logs-stream")
 const containersLogsPauseBtn = document.getElementById("containers-logs-pause");
 const containersLogsTimestampsBtn = document.getElementById("containers-logs-timestamps");
 const containersLogsClearBtn = document.getElementById("containers-logs-clear");
+const containersResourcesLayout = document.getElementById("containers-resources-layout");
+const containersResourcesList = document.getElementById("containers-resources-list");
+const containersResourcesPlaceholder = document.getElementById("containers-resources-placeholder");
+const containersResourcesCards = document.getElementById("containers-resources-cards");
+const containersResourcesTableWrap = document.getElementById("containers-resources-table-wrap");
+const containersResourcesTableBody = document.getElementById("containers-resources-body");
+const containersResourcesViewToggleBtn = document.getElementById("containers-resources-view-toggle");
+const resourcesNameSortBtn = document.getElementById("resources-name-sort");
+const resourcesCpuSortBtn = document.getElementById("resources-cpu-sort");
+const resourcesRamSortBtn = document.getElementById("resources-ram-sort");
+const resourcesStatusSortBtn = document.getElementById("resources-status-sort");
+const resourcesUptimeSortBtn = document.getElementById("resources-uptime-sort");
+const resourcesIpSortBtn = document.getElementById("resources-ip-sort");
+const resourcesPortSortBtn = document.getElementById("resources-port-sort");
 const refreshLogsBtn = document.getElementById("refresh-logs");
 const clearLogsBtn = document.getElementById("clear-logs");
 const logsLevelBtn = document.getElementById("logs-level-btn");
@@ -145,7 +166,10 @@ const stackModal = document.getElementById("stack-modal");
 const stackModalTitle = document.getElementById("stack-modal-title");
 const stackModalClose = document.getElementById("stack-modal-close");
 const stackModalSave = document.getElementById("stack-modal-save");
+const stackModalSaveIcon = document.getElementById("stack-modal-save-icon");
 const stackModalCancel = document.getElementById("stack-modal-cancel");
+const stackModalComposeUp = document.getElementById("stack-modal-compose-up");
+const stackModalComposeDown = document.getElementById("stack-modal-compose-down");
 const stackNameInput = document.getElementById("stack-name-input");
 const stackNameRow = document.getElementById("stack-name-row");
 const stackComposeEditorEl = document.getElementById("stack-compose-editor");
@@ -179,9 +203,13 @@ let serversFilterMode = "all";
 let serversSearchQuery = "";
 let editingLocalServer = null;
 let editingRemoteServer = null;
+let serverModalTab = "remote";
 const schedulerAnchorKey = "contiwatch_scheduler_anchor";
 const serversViewStorageKey = "contiwatch_servers_view";
 let serversViewMode = "table";
+const containersResourcesViewStorageKey = "contiwatch_container_resources_view";
+let containersResourcesViewMode = "cards";
+const sidebarCollapsedStorageKey = "contiwatch_sidebar_collapsed";
 let lastSchedulerEnabled = null;
 let lastSchedulerIntervalSec = null;
 let serverStream = null;
@@ -196,6 +224,10 @@ let stacksSortMode = "name:asc";
 let imagesSortMode = "repository:asc";
 let containersRefreshTimer = null;
 let containersUpdateInProgress = false;
+let containersTableResourcesData = new Map();
+let containersTableResourcesUpdateInProgress = false;
+let containersTableResourcesRequestId = 0;
+let containersTableResourcesScope = "";
 let stacksRefreshTimer = null;
 let stacksUpdateInProgress = false;
 let imagesUpdateInProgress = false;
@@ -229,6 +261,14 @@ let containersLogsLineBuffer = "";
 let containersLogsBytes = 0;
 let containersLogsAutoScroll = true;
 let containersLogsPaused = false;
+let containersResourcesSelectedIds = new Set();
+let containersResourcesData = new Map();
+let containersResourcesRefreshTimer = null;
+let containersResourcesUpdateInProgress = false;
+let containersResourcesSortMode = "name:asc";
+const containersResourcesPinsKey = "contiwatch_container_resources_pins:v1";
+let containersResourcesPins = null;
+let containersResourcesLastInteractionAtMs = 0;
 let containersLogsTimestamps = false;
 const containersLogsMaxBytes = 300000;
 let containersLogsSilentClose = false;
@@ -438,22 +478,63 @@ function updateRemoteComposePreview() {
   remoteModalCompose.textContent = buildAgentCompose(token, port);
 }
 
+function applyServerModalTabState(tab) {
+  const mode = tab === "local" ? "local" : "remote";
+  serverModalTab = mode;
+  const isLocal = mode === "local";
+  if (serverConnectionTypeSelect) {
+    serverConnectionTypeSelect.value = isLocal ? "local" : "remote";
+  }
+  if (serverModalHostLabel) {
+    serverModalHostLabel.textContent = isLocal ? "Socket path" : "Host / IP";
+  }
+  if (remoteModalHostInput) {
+    remoteModalHostInput.placeholder = isLocal ? "/var/run/docker.sock" : "10.0.0.10";
+  }
+  if (serverRemotePortRow) {
+    serverRemotePortRow.classList.toggle("hidden", isLocal);
+  }
+  if (remoteModalPortInput) {
+    remoteModalPortInput.disabled = isLocal;
+  }
+  if (serverTokenRow) {
+    serverTokenRow.classList.toggle("hidden", isLocal);
+  }
+  if (serverTokenHint) {
+    serverTokenHint.classList.toggle("hidden", isLocal);
+  }
+  if (remoteModalTokenInput) {
+    remoteModalTokenInput.disabled = isLocal;
+  }
+  if (remoteModalTokenCopy) {
+    remoteModalTokenCopy.disabled = isLocal;
+  }
+  if (remoteModalComposeCopy) {
+    remoteModalComposeCopy.disabled = isLocal;
+  }
+  if (serverComposePanel) {
+    serverComposePanel.classList.toggle("is-disabled", isLocal);
+  }
+  if (remoteModalCompose) {
+    remoteModalCompose.classList.toggle("is-disabled", isLocal);
+    remoteModalCompose.setAttribute("aria-disabled", isLocal ? "true" : "false");
+  }
+  if (!isLocal && remoteModalTokenInput && !remoteModalTokenInput.value.trim()) {
+    remoteModalTokenInput.value = generateToken(32);
+    updateRemoteComposePreview();
+  }
+  if (isLocal) {
+    if (remoteModalTokenInput) remoteModalTokenInput.value = "";
+    if (remoteModalCompose) remoteModalCompose.textContent = "";
+  }
+}
+
 function setServerModalTab(tab) {
   const next = tab === "local" ? "local" : "remote";
-  if (serverPanelLocal) {
-    serverPanelLocal.classList.toggle("hidden", next !== "local");
-  }
   if (serverPanelRemote) {
-    serverPanelRemote.classList.toggle("hidden", next !== "remote");
+    serverPanelRemote.classList.remove("hidden");
   }
-  if (serverTabLocal) {
-    serverTabLocal.classList.toggle("is-active", next === "local");
-    serverTabLocal.setAttribute("aria-selected", next === "local" ? "true" : "false");
-  }
-  if (serverTabRemote) {
-    serverTabRemote.classList.toggle("is-active", next === "remote");
-    serverTabRemote.setAttribute("aria-selected", next === "remote" ? "true" : "false");
-  }
+  applyServerModalTabState(next);
 }
 
 function openLocalModal(mode, server) {
@@ -465,16 +546,31 @@ function openLocalModal(mode, server) {
   if (remoteModalTitle) {
     remoteModalTitle.textContent = isEdit ? "Edit local server" : "Add local server";
   }
-  if (localModalNameInput) {
-    localModalNameInput.value = server ? server.name || "" : "";
+  if (serverConnectionTypeSelect) {
+    serverConnectionTypeSelect.disabled = Boolean(isEdit);
   }
-  if (localModalSocketInput) {
-    localModalSocketInput.value = server ? server.socket || "/var/run/docker.sock" : "/var/run/docker.sock";
+  if (remoteModalNameInput) {
+    remoteModalNameInput.value = server ? server.name || "" : "";
+  }
+  if (remoteModalHostInput) {
+    remoteModalHostInput.value = server ? server.socket || "/var/run/docker.sock" : "/var/run/docker.sock";
+  }
+  if (remoteModalPublicIPInput) {
+    remoteModalPublicIPInput.value = server ? server.public_ip || "" : "";
+  }
+  if (remoteModalPortInput) {
+    remoteModalPortInput.value = "8080";
+  }
+  if (remoteModalTokenInput) {
+    remoteModalTokenInput.value = "";
+  }
+  if (remoteModalCompose) {
+    remoteModalCompose.textContent = "";
   }
   remoteModal.classList.remove("hidden");
   remoteModal.setAttribute("aria-hidden", "false");
-  if (localModalNameInput) {
-    localModalNameInput.focus();
+  if (remoteModalNameInput) {
+    remoteModalNameInput.focus();
   }
 }
 
@@ -487,6 +583,9 @@ function openRemoteModal(mode, server) {
   if (remoteModalTitle) {
     remoteModalTitle.textContent = isEdit ? "Edit remote server" : "Add remote server";
   }
+  if (serverConnectionTypeSelect) {
+    serverConnectionTypeSelect.disabled = Boolean(isEdit);
+  }
   const parsed = server ? parseRemoteUrl(server.url) : { host: "", port: "8080" };
   if (remoteModalNameInput) {
     remoteModalNameInput.value = server ? server.name || "" : "";
@@ -496,6 +595,9 @@ function openRemoteModal(mode, server) {
   }
   if (remoteModalPortInput) {
     remoteModalPortInput.value = parsed.port || "8080";
+  }
+  if (remoteModalPublicIPInput) {
+    remoteModalPublicIPInput.value = server ? server.public_ip || "" : "";
   }
   if (remoteModalTokenInput) {
     if (server && server.token) {
@@ -932,16 +1034,16 @@ function closeStackModal() {
   editingStackName = "";
 }
 
-async function saveStackFromModal() {
+async function saveStackFromModal({ closeOnSuccess } = {}) {
   const scope = containersSelectedScope;
   if (!scope) {
     showToast("Select server first.");
-    return;
+    return false;
   }
   const name = editingStackName || (stackNameInput ? stackNameInput.value.trim() : "");
   if (!name || !isValidStackName(name)) {
     showToast("Stack name must match A-Z, a-z, 0-9, _ or -.");
-    return;
+    return false;
   }
   clearStackModalError();
   const composeYml = getComposeValue()
@@ -957,7 +1059,7 @@ async function saveStackFromModal() {
   setComposeValue(composeYml);
   if (!composeYml) {
     showStackModalError("docker-compose.yml is required.");
-    return;
+    return false;
   }
   const useEnv = Boolean(stackEnvToggle && stackEnvToggle.checked);
   const env = useEnv ? getEnvValue() : "";
@@ -970,21 +1072,41 @@ async function saveStackFromModal() {
     if (!validation || validation.valid !== true) {
       const message = validation && validation.error ? validation.error : "Compose validation failed.";
       showStackModalError(message);
-      return;
+      return false;
     }
     await fetchJSON("/api/stacks/save", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ scope, name, compose_yaml: composeYml, env, use_env: useEnv }),
     });
-    closeStackModal();
+    if (closeOnSuccess !== false) {
+      closeStackModal();
+    }
     await refreshStacks({ silent: true });
+    return true;
   } catch (err) {
     showStackModalError(err.message || "Stack save failed.");
+    return false;
   }
 }
 
-async function copyToClipboard(value, label) {
+async function runStackActionFromModal(action) {
+  const scope = containersSelectedScope;
+  if (!scope) {
+    showToast("Select server first.");
+    return;
+  }
+  const name = editingStackName || (stackNameInput ? stackNameInput.value.trim() : "");
+  if (!name || !isValidStackName(name)) {
+    showToast("Stack name must match A-Z, a-z, 0-9, _ or -.");
+    return;
+  }
+  const ok = await saveStackFromModal({ closeOnSuccess: false });
+  if (!ok) return;
+  await runStackAction(name, action);
+}
+
+async function copyToClipboard(value, label, options = {}) {
   if (!value) return;
   try {
     if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -1000,9 +1122,14 @@ async function copyToClipboard(value, label) {
       document.execCommand("copy");
       document.body.removeChild(temp);
     }
-    showToast(`${label || "Copied"} to clipboard.`);
+    if (!options.silent) {
+      showToast(`${label || "Copied"} to clipboard.`);
+    }
   } catch {
-    showToast("Copy failed.");
+    if (!options.silent) {
+      showToast("Copy failed.");
+    }
+    throw new Error("copy failed");
   }
 }
 
@@ -2239,6 +2366,14 @@ function applySidebarFilter(queryOverride) {
         const match = !query || haystack.includes(query);
         item.classList.toggle("filtered-out", !match);
       });
+    } else if (containersViewMode === "resources" && containersResourcesList) {
+      const items = Array.from(containersResourcesList.querySelectorAll(".containers-shell-item"));
+      items.forEach((item) => {
+        const source = item.dataset && item.dataset.search ? item.dataset.search : item.textContent;
+        const haystack = normalizeQuery(source);
+        const match = !query || haystack.includes(query);
+        item.classList.toggle("filtered-out", !match);
+      });
     } else if (containersViewMode === "stacks" && stacksTableBody) {
       const rows = Array.from(stacksTableBody.querySelectorAll("tr.stack-row"));
       rows.forEach((row) => {
@@ -2288,6 +2423,7 @@ function applyExperimentalFeatures(cfg) {
     containers: Boolean(exp.containers),
     container_shell: Boolean(exp.container_shell),
     container_logs: Boolean(exp.container_logs),
+    container_resources: Boolean(exp.container_resources),
     stacks: Boolean(exp.stacks),
     images: Boolean(exp.images),
     containers_sidebar: Boolean(exp.containers_sidebar),
@@ -2314,6 +2450,9 @@ function applyExperimentalFeatures(cfg) {
   if (topbarContainersLogsBtn) {
     topbarContainersLogsBtn.classList.toggle("hidden", !(flags.container_logs && flags.containers));
   }
+  if (topbarContainersResourcesBtn) {
+    topbarContainersResourcesBtn.classList.toggle("hidden", !(flags.container_resources && flags.containers));
+  }
   if (topbarContainersStacksBtn) {
     topbarContainersStacksBtn.classList.toggle("hidden", !(flags.stacks && flags.containers));
   }
@@ -2324,6 +2463,9 @@ function applyExperimentalFeatures(cfg) {
     setContainersViewMode("table");
   }
   if (!flags.container_logs && containersViewMode === "logs") {
+    setContainersViewMode("table");
+  }
+  if (!flags.container_resources && containersViewMode === "resources") {
     setContainersViewMode("table");
   }
   if (!flags.stacks && containersViewMode === "stacks") {
@@ -2426,7 +2568,7 @@ function updateServersFilterMenu(mode = serversFilterMode) {
 
 function updateContainersExperimentalToggles() {
   const enabled = expContainersInput ? expContainersInput.checked : false;
-  const dependents = [expContainersSidebarInput, expContainerShellInput, expContainerLogsInput, expStacksInput, expImagesInput];
+  const dependents = [expContainersSidebarInput, expContainerShellInput, expContainerLogsInput, expContainerResourcesInput, expStacksInput, expImagesInput];
   dependents.forEach((input) => {
     if (!input) return;
     input.disabled = !enabled;
@@ -2510,6 +2652,60 @@ function updateServersViewButtons() {
   const label = next === "cards" ? "Switch to cards view" : "Switch to table view";
   serversViewToggleBtn.setAttribute("aria-label", label);
   serversViewToggleBtn.setAttribute("data-tooltip", label);
+}
+
+function updateContainersResourcesViewButtons() {
+  if (!containersResourcesViewToggleBtn) return;
+  const current = containersResourcesViewMode === "table" ? "table" : "cards";
+  const next = current === "cards" ? "table" : "cards";
+  containersResourcesViewToggleBtn.dataset.mode = next;
+  const label = next === "cards" ? "Switch to cards view" : "Switch to table view";
+  containersResourcesViewToggleBtn.setAttribute("aria-label", label);
+  containersResourcesViewToggleBtn.setAttribute("data-tooltip", label);
+}
+
+function setContainersResourcesViewMode(mode, persist = true) {
+  containersResourcesViewMode = mode === "table" ? "table" : "cards";
+  if (persist) {
+    try {
+      localStorage.setItem(containersResourcesViewStorageKey, containersResourcesViewMode);
+    } catch {
+      // ignore
+    }
+  }
+  updateContainersResourcesViewButtons();
+  renderContainersResourcesView();
+  updateContainersResourcesPlaceholder();
+}
+
+function updateContainersResourcesSortUI() {
+  const buttons = [
+    { key: "name", btn: resourcesNameSortBtn, label: "name" },
+    { key: "cpu", btn: resourcesCpuSortBtn, label: "CPU" },
+    { key: "ram", btn: resourcesRamSortBtn, label: "RAM" },
+    { key: "status", btn: resourcesStatusSortBtn, label: "status" },
+    { key: "uptime", btn: resourcesUptimeSortBtn, label: "uptime" },
+    { key: "ip", btn: resourcesIpSortBtn, label: "IP" },
+    { key: "port", btn: resourcesPortSortBtn, label: "port" },
+  ];
+  buttons.forEach(({ key, btn, label }) => {
+    if (!btn) return;
+    const icon = btn.querySelector(".icon-sort");
+    if (!icon) return;
+    icon.classList.remove("icon-sort-neutral", "icon-sort-asc", "icon-sort-desc");
+    if (containersResourcesSortMode === `${key}:asc`) {
+      icon.classList.add("icon-sort-asc");
+      btn.setAttribute("aria-label", `Sort ${label} A → Z`);
+      return;
+    }
+    if (containersResourcesSortMode === `${key}:desc`) {
+      icon.classList.add("icon-sort-desc");
+      btn.setAttribute("aria-label", `Sort ${label} Z → A`);
+      return;
+    }
+    icon.classList.add("icon-sort-neutral");
+    btn.setAttribute("aria-label", `Sort by ${label}`);
+  });
 }
 
 function setServersFilterMode(mode) {
@@ -2659,6 +2855,7 @@ async function refreshConfig() {
   if (expContainersSidebarInput) expContainersSidebarInput.checked = Boolean(exp.containers_sidebar);
   if (expContainerShellInput) expContainerShellInput.checked = Boolean(exp.container_shell);
   if (expContainerLogsInput) expContainerLogsInput.checked = Boolean(exp.container_logs);
+  if (expContainerResourcesInput) expContainerResourcesInput.checked = Boolean(exp.container_resources);
   if (expStacksInput) expStacksInput.checked = Boolean(exp.stacks);
   if (expImagesInput) expImagesInput.checked = Boolean(exp.images);
   currentTimeZone = cfg.time_zone ? String(cfg.time_zone).trim() : "";
@@ -2741,6 +2938,7 @@ function buildConfigPayload(options = {}) {
       containers_sidebar: expContainersSidebarInput ? expContainersSidebarInput.checked : false,
       container_shell: expContainerShellInput ? expContainerShellInput.checked : false,
       container_logs: expContainerLogsInput ? expContainerLogsInput.checked : false,
+      container_resources: expContainerResourcesInput ? expContainerResourcesInput.checked : false,
       stacks: expStacksInput ? expStacksInput.checked : false,
       images: expImagesInput ? expImagesInput.checked : false,
     },
@@ -2819,6 +3017,24 @@ function formatBytes(value) {
   return `${size.toFixed(size >= 10 || unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
 }
 
+function formatBytesMBOrGB(value) {
+  const total = Number(value);
+  if (!Number.isFinite(total) || total <= 0) return "0 MB";
+  const mb = total / (1024 * 1024);
+  if (mb < 1024) {
+    return `${mb.toFixed(mb >= 10 ? 0 : 1)} MB`;
+  }
+  const gb = mb / 1024;
+  return `${gb.toFixed(gb >= 10 ? 0 : 1)} GB`;
+}
+
+function formatPercent(value) {
+  const total = Number(value);
+  if (!Number.isFinite(total) || total <= 0) return "0%";
+  if (total >= 100) return "100%";
+  return `${total.toFixed(total >= 10 ? 0 : 1)}%`;
+}
+
 function formatImageCreated(value) {
   const date = new Date(value);
   if (!Number.isFinite(date.getTime())) return "—";
@@ -2837,12 +3053,36 @@ function normalizeContainerState(state) {
 
 function containersSort(list, mode) {
   const [field, order] = String(mode || "name:asc").split(":");
-  const dir = order === "desc" ? -1 : 1;
+  const dir = order === "desc" ? "desc" : "asc";
+  const getResourcesSortValue = (container) => {
+    const resource = containersTableResourcesData.get(container.id);
+    if (!resource) return null;
+    if (field === "cpu") return Number.isFinite(Number(resource.cpu_percent)) ? Number(resource.cpu_percent) : null;
+    if (field === "ram") return Number.isFinite(Number(resource.mem_usage_bytes)) ? Number(resource.mem_usage_bytes) : null;
+    if (field === "ip") {
+      const ips = Array.isArray(resource.ip_addresses) ? resource.ip_addresses : [];
+      return ips.length > 0 ? String(ips[0].ip || "") : null;
+    }
+    if (field === "port") {
+      const ports = getResourcesHostPorts(resource.ports);
+      return ports.length > 0 ? Number(ports[0]) : null;
+    }
+    return null;
+  };
+
   return list.slice().sort((a, b) => {
-    const aVal = field === "state" ? normalizeContainerState(a.state) : String(a.name || "");
-    const bVal = field === "state" ? normalizeContainerState(b.state) : String(b.name || "");
-    if (aVal === bVal) return 0;
-    return aVal > bVal ? dir : -dir;
+    const aVal = field === "state"
+      ? normalizeContainerState(a.state)
+      : field === "cpu" || field === "ram" || field === "ip" || field === "port"
+          ? getResourcesSortValue(a)
+          : String(a.name || "");
+    const bVal = field === "state"
+      ? normalizeContainerState(b.state)
+      : field === "cpu" || field === "ram" || field === "ip" || field === "port"
+          ? getResourcesSortValue(b)
+          : String(b.name || "");
+
+    return compareContainersResourcesValues(aVal, bVal, dir);
   });
 }
 
@@ -2927,6 +3167,10 @@ function updateContainersSortUI() {
   const buttons = [
     { key: "name", btn: containersNameSortBtn, label: "name" },
     { key: "state", btn: containersStateSortBtn, label: "state" },
+    { key: "cpu", btn: containersCpuSortBtn, label: "CPU" },
+    { key: "ram", btn: containersRamSortBtn, label: "RAM" },
+    { key: "ip", btn: containersIpSortBtn, label: "IP" },
+    { key: "port", btn: containersPortSortBtn, label: "port" },
   ];
   buttons.forEach(({ key, btn, label }) => {
     if (!btn) return;
@@ -3011,6 +3255,10 @@ function updateContainersSearchCount() {
     const items = Array.from(containersLogsList.querySelectorAll(".containers-shell-item"));
     total = items.length;
     visible = items.filter((item) => !item.classList.contains("filtered-out")).length;
+  } else if (containersViewMode === "resources" && containersResourcesList) {
+    const items = Array.from(containersResourcesList.querySelectorAll(".containers-shell-item"));
+    total = items.length;
+    visible = items.filter((item) => !item.classList.contains("filtered-out")).length;
   } else if (containersViewMode === "stacks" && stacksTableBody) {
     const rows = Array.from(stacksTableBody.querySelectorAll("tr.stack-row"));
     total = rows.length;
@@ -3040,11 +3288,13 @@ function setContainersViewMode(mode) {
     ? "shell"
     : mode === "logs"
         ? "logs"
-        : mode === "stacks"
-            ? "stacks"
-            : mode === "images"
-                ? "images"
-                : "table";
+        : mode === "resources"
+            ? "resources"
+            : mode === "stacks"
+                ? "stacks"
+                : mode === "images"
+                    ? "images"
+                    : "table";
   containersViewMode = next;
   if (topbarContainersEl) {
     const title = topbarContainersEl.querySelector("h2");
@@ -3053,14 +3303,16 @@ function setContainersViewMode(mode) {
         ? "Containers Shell"
         : next === "logs"
             ? "Containers Logs"
-            : next === "stacks"
-                ? "Containers Stacks"
-                : next === "images"
-                    ? "Containers Images"
-                    : "Containers";
+            : next === "resources"
+                ? "Containers Resources"
+                : next === "stacks"
+                    ? "Containers Stacks"
+                    : next === "images"
+                        ? "Containers Images"
+                        : "Containers";
     }
   }
-  const isSplit = next === "shell" || next === "logs";
+  const isSplit = next === "shell" || next === "logs" || next === "resources";
   if (viewContainersEl) {
     viewContainersEl.classList.toggle("shell-mode", isSplit);
   }
@@ -3079,11 +3331,17 @@ function setContainersViewMode(mode) {
   if (containersLogsLayout) {
     containersLogsLayout.classList.toggle("hidden", next !== "logs");
   }
+  if (containersResourcesLayout) {
+    containersResourcesLayout.classList.toggle("hidden", next !== "resources");
+  }
   if (topbarContainersShellBtn) {
     topbarContainersShellBtn.classList.toggle("is-active", next === "shell");
   }
   if (topbarContainersLogsBtn) {
     topbarContainersLogsBtn.classList.toggle("is-active", next === "logs");
+  }
+  if (topbarContainersResourcesBtn) {
+    topbarContainersResourcesBtn.classList.toggle("is-active", next === "resources");
   }
   if (topbarContainersStacksBtn) {
     topbarContainersStacksBtn.classList.toggle("is-active", next === "stacks");
@@ -3109,6 +3367,17 @@ function setContainersViewMode(mode) {
     stopContainersAutoRefresh();
     stopStacksAutoRefresh();
     refreshContainers({ silent: true }).catch(() => {});
+  } else if (next === "resources") {
+    closeContainersShellSession("switch to resources");
+    closeContainersLogsSession("switch to resources");
+    setContainersLogsPaused(false);
+    const list = Array.from(containersCache.values()).map((entry) => entry.data);
+    renderContainersResourcesList(list);
+    stopContainersAutoRefresh();
+    stopStacksAutoRefresh();
+    startContainersResourcesAutoRefresh();
+    refreshContainers({ silent: true }).catch(() => {});
+    refreshContainersResources({ silent: true, force: true }).catch(() => {});
   } else if (next === "stacks") {
     closeContainersShellSession("switch to stacks");
     closeContainersLogsSession("switch to stacks");
@@ -3128,6 +3397,11 @@ function setContainersViewMode(mode) {
     closeContainersLogsSession("switch to table");
     stopStacksAutoRefresh();
     startContainersAutoRefresh();
+  }
+  if (next !== "resources") {
+    stopContainersResourcesAutoRefresh();
+    containersResourcesSelectedIds.clear();
+    updateContainersResourcesPlaceholder();
   }
   if (sidebarSearch && sidebarSearch.value.trim()) {
     applySidebarFilter(sidebarSearch.value);
@@ -3221,6 +3495,506 @@ function renderContainersLogsList(list) {
   if (sidebarSearch && sidebarSearch.value.trim()) {
     applySidebarFilter(sidebarSearch.value);
   }
+}
+
+function loadContainersResourcesPins() {
+  if (containersResourcesPins) return containersResourcesPins;
+  try {
+    const raw = localStorage.getItem(containersResourcesPinsKey);
+    const parsed = raw ? JSON.parse(raw) : {};
+    if (!parsed || typeof parsed !== "object") {
+      containersResourcesPins = {};
+    } else {
+      containersResourcesPins = parsed;
+    }
+  } catch {
+    containersResourcesPins = {};
+  }
+  return containersResourcesPins;
+}
+
+function saveContainersResourcesPins() {
+  if (!containersResourcesPins) return;
+  try {
+    localStorage.setItem(containersResourcesPinsKey, JSON.stringify(containersResourcesPins));
+  } catch {
+    // ignore
+  }
+}
+
+function getContainersResourcesPins(scope) {
+  if (!scope) return new Set();
+  const store = loadContainersResourcesPins();
+  const list = Array.isArray(store[scope]) ? store[scope] : [];
+  return new Set(list);
+}
+
+function setContainersResourcesPins(scope, pins) {
+  if (!scope) return;
+  const store = loadContainersResourcesPins();
+  store[scope] = Array.from(pins || []);
+  containersResourcesPins = store;
+  saveContainersResourcesPins();
+}
+
+function updateContainersResourcesPlaceholder(message) {
+  if (!containersResourcesPlaceholder) return;
+  const hasCards = Boolean(containersResourcesCards && containersResourcesCards.children.length > 0);
+  const hasRows = Boolean(containersResourcesTableBody && containersResourcesTableBody.children.length > 0);
+  const hasContent = containersResourcesViewMode === "table" ? hasRows : hasCards;
+  if (hasContent) {
+    containersResourcesPlaceholder.classList.add("hidden");
+    if (containersResourcesCards) {
+      containersResourcesCards.classList.toggle("hidden", containersResourcesViewMode !== "cards");
+    }
+    if (containersResourcesTableWrap) {
+      containersResourcesTableWrap.classList.toggle("hidden", containersResourcesViewMode !== "table");
+    }
+    return;
+  }
+  containersResourcesPlaceholder.textContent = message || "Select containers to view resources.";
+  containersResourcesPlaceholder.classList.remove("hidden");
+  if (containersResourcesCards) {
+    containersResourcesCards.classList.add("hidden");
+  }
+  if (containersResourcesTableWrap) {
+    containersResourcesTableWrap.classList.add("hidden");
+  }
+}
+
+function toggleContainersResourcesSelection(containerId) {
+  if (!containerId) return;
+  containersResourcesLastInteractionAtMs = Date.now();
+  if (containersResourcesSelectedIds.has(containerId)) {
+    containersResourcesSelectedIds.delete(containerId);
+  } else {
+    containersResourcesSelectedIds.add(containerId);
+  }
+  const list = Array.from(containersCache.values()).map((entry) => entry.data);
+  renderContainersResourcesList(list);
+  refreshContainersResources({ silent: true, force: true }).catch(() => {});
+}
+
+function toggleContainersResourcesPin(container) {
+  const scope = containersSelectedScope;
+  if (!scope || !container || !container.name) return;
+  containersResourcesLastInteractionAtMs = Date.now();
+  const pins = getContainersResourcesPins(scope);
+  if (pins.has(container.name)) {
+    pins.delete(container.name);
+  } else {
+    pins.add(container.name);
+  }
+  setContainersResourcesPins(scope, pins);
+  renderContainersResourcesView();
+  refreshContainersResources({ silent: true, force: true }).catch(() => {});
+}
+
+function renderContainersResourcesList(list) {
+  if (!containersResourcesList) return;
+  const prevScrollTop = containersResourcesList.scrollTop;
+  containersResourcesList.innerHTML = "";
+  if (!Array.isArray(list) || list.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "containers-shell-placeholder";
+    empty.textContent = "No containers found.";
+    containersResourcesList.appendChild(empty);
+    containersResourcesSelectedIds.clear();
+    renderContainersResourcesView();
+    updateContainersResourcesPlaceholder();
+    return;
+  }
+  const sorted = containersSort(list, containersSortMode);
+  const existingIds = new Set();
+  sorted.forEach((container) => {
+    if (!container || !container.id) return;
+    existingIds.add(container.id);
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "containers-shell-item";
+    if (containersResourcesSelectedIds.has(container.id)) {
+      button.classList.add("active");
+    }
+    button.dataset.id = container.id;
+    button.dataset.search = `${container.name || ""} ${container.state || ""}`;
+    button.textContent = "";
+    const icon = document.createElement("span");
+    icon.className = "icon-action icon-package name-leading-icon";
+    icon.setAttribute("aria-hidden", "true");
+    button.appendChild(icon);
+    button.appendChild(document.createTextNode(container.name || container.id.slice(0, 12)));
+    button.addEventListener("click", () => {
+      toggleContainersResourcesSelection(container.id);
+    });
+    containersResourcesList.appendChild(button);
+  });
+  containersResourcesSelectedIds.forEach((id) => {
+    if (!existingIds.has(id)) {
+      containersResourcesSelectedIds.delete(id);
+    }
+  });
+  renderContainersResourcesView();
+  updateContainersResourcesPlaceholder();
+  requestAnimationFrame(() => {
+    if (containersResourcesList) {
+      containersResourcesList.scrollTop = prevScrollTop;
+    }
+  });
+  if (sidebarSearch && sidebarSearch.value.trim()) {
+    applySidebarFilter(sidebarSearch.value);
+  }
+}
+
+function getResourcesHostPorts(ports) {
+  if (!Array.isArray(ports) || ports.length === 0) return [];
+  const unique = new Set();
+  ports.forEach((port) => {
+    if (!port) return;
+    const hostPort = Number(port.host_port || 0);
+    if (hostPort > 0) unique.add(hostPort);
+  });
+  return Array.from(unique).sort((a, b) => a - b);
+}
+
+function formatResourcesIPValue(ips) {
+  if (!Array.isArray(ips) || ips.length === 0) return "—";
+  return ips.map((ip) => ip.ip).filter(Boolean).join(", ");
+}
+
+function formatResourcesIPTooltip(ips) {
+  if (!Array.isArray(ips) || ips.length === 0) return "";
+  return ips.map((ip) => `${ip.network}: ${ip.ip}`).filter(Boolean).join(", ");
+}
+
+function parseContainersResourcesSortMode(mode) {
+  const [key, dir] = String(mode || "").split(":");
+  const cleanKey = ["name", "cpu", "ram", "status", "uptime", "ip", "port"].includes(key) ? key : "name";
+  const cleanDir = dir === "desc" ? "desc" : "asc";
+  return { key: cleanKey, dir: cleanDir };
+}
+
+function compareContainersResourcesValues(a, b, dir) {
+  const missingA = a === null || a === undefined || a === "";
+  const missingB = b === null || b === undefined || b === "";
+  if (missingA && missingB) return 0;
+  if (missingA) return 1;
+  if (missingB) return -1;
+  if (typeof a === "number" && typeof b === "number") {
+    return dir === "desc" ? b - a : a - b;
+  }
+  return dir === "desc"
+    ? String(b).localeCompare(String(a), undefined, { numeric: true, sensitivity: "base" })
+    : String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: "base" });
+}
+
+function renderContainersResourcesTable() {
+  if (!containersResourcesTableBody) return;
+  const scope = containersSelectedScope;
+  const list = Array.from(containersCache.values()).map((entry) => entry.data);
+  const byId = new Map(list.map((container) => [container.id, container]));
+  const byName = new Map(list.map((container) => [container.name, container]));
+  const pins = getContainersResourcesPins(scope);
+  const pinned = [];
+  pins.forEach((name) => {
+    const container = byName.get(name);
+    if (container) pinned.push(container);
+  });
+  const selected = [];
+  containersResourcesSelectedIds.forEach((id) => {
+    const container = byId.get(id);
+    if (container && !pins.has(container.name)) {
+      selected.push(container);
+    }
+  });
+
+  const { key, dir } = parseContainersResourcesSortMode(containersResourcesSortMode);
+  const getSortValue = (container) => {
+    const resource = containersResourcesData.get(container.id);
+    if (key === "name") return String(container.name || container.id || "");
+    if (key === "cpu") return resource && Number.isFinite(Number(resource.cpu_percent)) ? Number(resource.cpu_percent) : null;
+    if (key === "ram") return resource && Number.isFinite(Number(resource.mem_usage_bytes)) ? Number(resource.mem_usage_bytes) : null;
+    if (key === "status") return String((resource && resource.state) ? resource.state : (container.state || ""));
+    if (key === "uptime") {
+      const val = resource && Number.isFinite(Number(resource.uptime_sec)) ? Number(resource.uptime_sec) : Number(container.uptime_sec);
+      return Number.isFinite(val) ? val : null;
+    }
+    if (key === "ip") {
+      const ips = resource && Array.isArray(resource.ip_addresses) ? resource.ip_addresses : [];
+      return ips.length > 0 ? String(ips[0].ip || "") : null;
+    }
+    if (key === "port") {
+      const ports = resource ? getResourcesHostPorts(resource.ports) : [];
+      return ports.length > 0 ? Number(ports[0]) : null;
+    }
+    return String(container.name || container.id || "");
+  };
+  const sorter = (a, b) => compareContainersResourcesValues(getSortValue(a), getSortValue(b), dir);
+  pinned.sort(sorter);
+  selected.sort(sorter);
+
+  containersResourcesTableBody.innerHTML = "";
+  const fragment = document.createDocumentFragment();
+  const renderRow = (container) => {
+    const resource = containersResourcesData.get(container.id);
+    const row = document.createElement("tr");
+    row.dataset.id = container.id;
+    row.dataset.search = `${container.name || ""} ${container.state || ""}`;
+
+    const pinCell = document.createElement("td");
+    pinCell.className = "containers-resources-pin-cell";
+    const pinBtn = document.createElement("button");
+    pinBtn.type = "button";
+    pinBtn.className = "secondary btn-small icon-action-btn has-tooltip containers-resources-pin-btn";
+    const isPinned = pins.has(container.name);
+    if (isPinned) {
+      pinBtn.classList.add("is-active");
+    }
+    pinBtn.setAttribute("aria-label", isPinned ? "Unpin row" : "Pin row");
+    pinBtn.setAttribute("data-tooltip", isPinned ? "Unpin row" : "Pin row");
+    const pinIcon = document.createElement("span");
+    pinIcon.className = `icon-action ${isPinned ? "icon-pinned-off" : "icon-pin"}`;
+    pinIcon.setAttribute("aria-hidden", "true");
+    pinBtn.appendChild(pinIcon);
+    pinBtn.addEventListener("click", () => {
+      toggleContainersResourcesPin(container);
+    });
+    pinCell.appendChild(pinBtn);
+
+    const nameCell = document.createElement("td");
+    nameCell.className = "containers-resources-name-cell";
+    const nameIcon = document.createElement("span");
+    nameIcon.className = "icon-action icon-package name-leading-icon";
+    nameIcon.setAttribute("aria-hidden", "true");
+    nameCell.appendChild(nameIcon);
+    nameCell.appendChild(document.createTextNode(container.name || container.id.slice(0, 12)));
+
+    const cpuCell = document.createElement("td");
+    cpuCell.textContent = resource ? formatPercent(resource.cpu_percent) : "—";
+
+    const ramCell = document.createElement("td");
+    ramCell.textContent = resource ? formatBytesMBOrGB(resource.mem_usage_bytes) : "—";
+
+    const statusCell = document.createElement("td");
+    const stateValue = normalizeContainerState(resource && resource.state ? resource.state : container.state);
+    const stateText = (resource && resource.state) ? resource.state : (container.state || "unknown");
+    statusCell.className = "containers-state-cell";
+    const badge = document.createElement("span");
+    badge.className = `containers-state-badge ${stateValue ? `containers-state-${stateValue}` : "containers-state-unknown"}`;
+    badge.textContent = stateText;
+    statusCell.appendChild(badge);
+
+    const uptimeCell = document.createElement("td");
+    uptimeCell.textContent = formatUptime(resource ? resource.uptime_sec : container.uptime_sec);
+
+    const ipCell = document.createElement("td");
+    ipCell.textContent = resource ? formatResourcesIPValue(resource.ip_addresses) : "—";
+
+    const portCell = document.createElement("td");
+    const hostPorts = resource ? getResourcesHostPorts(resource.ports) : [];
+    const scopeInfo = getScopeInfo(containersSelectedScope);
+    const publicHost = scopeInfo && scopeInfo.server ? String(scopeInfo.server.public_ip || "").trim() : "";
+    if (hostPorts.length === 0) {
+      portCell.textContent = "—";
+    } else {
+      hostPorts.forEach((port, index) => {
+        if (index > 0) {
+          portCell.appendChild(document.createTextNode(", "));
+        }
+        const text = String(port);
+        if (publicHost) {
+          const link = document.createElement("a");
+          link.href = `http://${publicHost}:${port}`;
+          link.target = "_blank";
+          link.rel = "noreferrer";
+          link.className = "containers-resource-link";
+          link.textContent = text;
+          portCell.appendChild(link);
+        } else {
+          portCell.appendChild(document.createTextNode(text));
+        }
+      });
+    }
+
+    row.append(pinCell, nameCell, cpuCell, ramCell, statusCell, uptimeCell, ipCell, portCell);
+    return row;
+  };
+
+  pinned.forEach((container) => fragment.appendChild(renderRow(container)));
+  if (pinned.length > 0 && selected.length > 0) {
+    const dividerRow = document.createElement("tr");
+    dividerRow.className = "containers-resources-pinned-divider";
+    const cell = document.createElement("td");
+    cell.colSpan = 8;
+    const line = document.createElement("div");
+    line.className = "containers-resources-pinned-divider-line";
+    cell.appendChild(line);
+    dividerRow.appendChild(cell);
+    fragment.appendChild(dividerRow);
+  }
+  selected.forEach((container) => fragment.appendChild(renderRow(container)));
+  containersResourcesTableBody.appendChild(fragment);
+}
+
+function renderContainersResourcesCards() {
+  if (!containersResourcesCards) return;
+  const scope = containersSelectedScope;
+  const list = Array.from(containersCache.values()).map((entry) => entry.data);
+  const byId = new Map(list.map((container) => [container.id, container]));
+  const byName = new Map(list.map((container) => [container.name, container]));
+  const pins = getContainersResourcesPins(scope);
+  const pinned = [];
+  pins.forEach((name) => {
+    const container = byName.get(name);
+    if (container) pinned.push(container);
+  });
+  pinned.sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
+  const selected = [];
+  containersResourcesSelectedIds.forEach((id) => {
+    const container = byId.get(id);
+    if (container && !pins.has(container.name)) {
+      selected.push(container);
+    }
+  });
+  selected.sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
+  const cards = [...pinned, ...selected];
+  containersResourcesCards.innerHTML = "";
+  if (cards.length === 0) {
+    updateContainersResourcesPlaceholder();
+    return;
+  }
+  cards.forEach((container) => {
+    const resource = containersResourcesData.get(container.id);
+    const stateValue = normalizeContainerState(resource && resource.state ? resource.state : container.state);
+    const stateText = (resource && resource.state) ? resource.state : (container.state || "unknown");
+    const card = document.createElement("div");
+    card.className = "containers-resource-card";
+    card.dataset.id = container.id;
+    const header = document.createElement("div");
+    header.className = "containers-resource-card-header";
+    const title = document.createElement("div");
+    title.className = "containers-resource-card-title";
+    const icon = document.createElement("span");
+    icon.className = "icon-action icon-package";
+    icon.setAttribute("aria-hidden", "true");
+    const name = document.createElement("span");
+    name.textContent = container.name || container.id.slice(0, 12);
+    title.append(icon, name);
+    const actions = document.createElement("div");
+    actions.className = "containers-resource-card-actions";
+    const badge = document.createElement("span");
+    badge.className = `containers-state-badge ${stateValue ? `containers-state-${stateValue}` : "containers-state-unknown"}`;
+    badge.textContent = stateText;
+    const pinBtn = document.createElement("button");
+    pinBtn.type = "button";
+    pinBtn.className = "secondary btn-small icon-action-btn has-tooltip";
+    const isPinned = pins.has(container.name);
+    if (isPinned) {
+      pinBtn.classList.add("is-active");
+    }
+    pinBtn.setAttribute("aria-label", isPinned ? "Unpin card" : "Pin card");
+    pinBtn.setAttribute("data-tooltip", isPinned ? "Unpin card" : "Pin card");
+    const pinIcon = document.createElement("span");
+    pinIcon.className = `icon-action ${isPinned ? "icon-pinned-off" : "icon-pin"}`;
+    pinIcon.setAttribute("aria-hidden", "true");
+    pinBtn.appendChild(pinIcon);
+    pinBtn.addEventListener("click", () => {
+      toggleContainersResourcesPin(container);
+    });
+    actions.append(badge, pinBtn);
+    header.append(title, actions);
+    const metrics = document.createElement("div");
+    metrics.className = "containers-resource-metrics-line";
+    const cpuIcon = document.createElement("span");
+    cpuIcon.className = "icon-action icon-cpu has-tooltip";
+    cpuIcon.setAttribute("aria-hidden", "true");
+    cpuIcon.setAttribute("data-tooltip", "CPU | RAM values");
+    cpuIcon.setAttribute("aria-label", "CPU | RAM values");
+    const cpuValue = document.createElement("span");
+    cpuValue.className = "containers-resource-cpu-value";
+    cpuValue.textContent = resource ? formatPercent(resource.cpu_percent) : "—";
+    const ramValue = document.createElement("span");
+    ramValue.className = "containers-resource-ram-value";
+    ramValue.textContent = resource ? formatBytesMBOrGB(resource.mem_usage_bytes) : "—";
+    const sep1 = document.createElement("span");
+    sep1.className = "containers-resource-separator";
+    sep1.textContent = "/";
+    const sep2 = document.createElement("span");
+    sep2.className = "containers-resource-separator";
+    sep2.textContent = "/";
+    const uptimeIcon = document.createElement("span");
+    uptimeIcon.className = "icon-action icon-stopwatch has-tooltip";
+    uptimeIcon.setAttribute("aria-hidden", "true");
+    uptimeIcon.setAttribute("data-tooltip", "Uptime");
+    uptimeIcon.setAttribute("aria-label", "Uptime");
+    const uptimeValue = document.createElement("span");
+    uptimeValue.className = "containers-resource-uptime-value";
+    uptimeValue.textContent = formatUptime(resource ? resource.uptime_sec : container.uptime_sec);
+    metrics.append(cpuIcon, cpuValue, sep1, ramValue, sep2, uptimeIcon, uptimeValue);
+    const details = document.createElement("div");
+    details.className = "containers-resource-details";
+    const ip = document.createElement("div");
+    ip.className = "containers-resource-detail";
+    const ipIcon = document.createElement("span");
+    ipIcon.className = "icon-action icon-world-bolt has-tooltip";
+    ipIcon.setAttribute("aria-hidden", "true");
+    const ipValue = document.createElement("span");
+    ipValue.className = "containers-resource-value";
+    ipValue.textContent = resource ? formatResourcesIPValue(resource.ip_addresses) : "—";
+    const ipTooltip = resource ? formatResourcesIPTooltip(resource.ip_addresses) : "";
+    if (ipTooltip) {
+      ipIcon.setAttribute("data-tooltip", ipTooltip);
+      ipIcon.setAttribute("aria-label", ipTooltip);
+    }
+    ip.append(ipIcon, ipValue);
+    const ports = document.createElement("div");
+    ports.className = "containers-resource-detail";
+    const portsIcon = document.createElement("span");
+    portsIcon.className = "icon-action icon-plug has-tooltip";
+    portsIcon.setAttribute("aria-hidden", "true");
+    portsIcon.setAttribute("data-tooltip", "Ports");
+    portsIcon.setAttribute("aria-label", "Ports");
+    const portsValue = document.createElement("span");
+    portsValue.className = "containers-resource-value";
+    const hostPorts = resource ? getResourcesHostPorts(resource.ports) : [];
+    const scopeInfo = getScopeInfo(containersSelectedScope);
+    const publicHost = scopeInfo && scopeInfo.server ? String(scopeInfo.server.public_ip || "").trim() : "";
+    if (hostPorts.length === 0) {
+      portsValue.textContent = "—";
+    } else {
+      hostPorts.forEach((port, index) => {
+        if (index > 0) {
+          portsValue.append(document.createTextNode(", "));
+        }
+        const text = String(port);
+        if (publicHost) {
+          const link = document.createElement("a");
+          link.href = `http://${publicHost}:${port}`;
+          link.target = "_blank";
+          link.rel = "noreferrer";
+          link.className = "containers-resource-link";
+          link.textContent = text;
+          portsValue.appendChild(link);
+        } else {
+          portsValue.appendChild(document.createTextNode(text));
+        }
+      });
+    }
+    ports.append(portsIcon, portsValue);
+    details.append(ip, ports);
+    card.append(header, metrics, details);
+    containersResourcesCards.appendChild(card);
+  });
+}
+
+function renderContainersResourcesView() {
+  if (containersResourcesViewMode === "table") {
+    if (containersResourcesCards) containersResourcesCards.innerHTML = "";
+    renderContainersResourcesTable();
+  } else {
+    if (containersResourcesTableBody) containersResourcesTableBody.innerHTML = "";
+    renderContainersResourcesCards();
+  }
+  updateContainersResourcesPlaceholder();
 }
 
 function showContainersShellPlaceholder(message) {
@@ -3772,19 +4546,29 @@ function updateContainersServerOptions() {
     nameEl.textContent = item.label;
     const typeIcon = buildServerTypeIcon(item.type, statusLabel);
 	    button.append(statusIcon, nameEl, typeIcon);
-	    button.addEventListener("click", async () => {
-	      containersSelectedScope = item.scope;
-	      topbarContainersServerMenu.querySelectorAll(".containers-server-option").forEach((el) => {
-	        el.classList.remove("active");
-	      });
-	      button.classList.add("active");
+      button.addEventListener("click", async () => {
+        containersSelectedScope = item.scope;
+        topbarContainersServerMenu.querySelectorAll(".containers-server-option").forEach((el) => {
+          el.classList.remove("active");
+        });
+        button.classList.add("active");
       renderContainersServerButton(info);
       closeContainersServerMenu();
       updateContainersLogsStreamIndicator();
+      if (containersViewMode === "resources") {
+        containersResourcesSelectedIds.clear();
+        containersResourcesData = new Map();
+        updateContainersResourcesPlaceholder("Select containers to view resources.");
+      }
       if (containersViewMode === "stacks") {
         await refreshStacks({ silent: true });
+      } else if (containersViewMode === "images") {
+        await refreshImages({ silent: true });
       } else {
         await refreshContainers({ silent: true });
+        if (containersViewMode === "resources") {
+          await refreshContainersResources({ silent: true });
+        }
       }
     });
     topbarContainersServerMenu.appendChild(button);
@@ -3805,6 +4589,9 @@ function updateContainersServerOptions() {
       refreshImages({ silent: true }).catch(() => {});
     } else {
       refreshContainers({ silent: true }).catch(() => {});
+      if (containersViewMode === "resources") {
+        refreshContainersResources({ silent: true }).catch(() => {});
+      }
     }
   }
 }
@@ -3862,9 +4649,12 @@ function clearStacksActionConfirmations() {
 
 function updateContainerRow(row, container, scope) {
   row.dataset.id = container.id;
-  row.dataset.search = `${container.name || ""} ${container.image || ""} ${container.stack || ""} ${container.state || ""}`;
+  const resource = containersTableResourcesData.get(container.id);
+  const hostPorts = resource ? getResourcesHostPorts(resource.ports) : [];
+  const ipValue = resource ? formatResourcesIPValue(resource.ip_addresses) : "";
+  row.dataset.search = `${container.name || ""} ${container.image || ""} ${container.stack || ""} ${container.state || ""} ${ipValue || ""} ${hostPorts.join(" ")}`;
   const cells = row.querySelectorAll("td");
-  if (cells.length < 6) return;
+  if (cells.length < 10) return;
   cells[0].textContent = "";
   const nameIcon = document.createElement("span");
   nameIcon.className = "icon-action icon-package name-leading-icon";
@@ -3872,18 +4662,44 @@ function updateContainerRow(row, container, scope) {
   cells[0].appendChild(nameIcon);
   cells[0].appendChild(document.createTextNode(container.name || container.id.slice(0, 12)));
   cells[1].textContent = container.image || "";
+  cells[2].textContent = resource ? formatPercent(resource.cpu_percent) : "—";
+  cells[3].textContent = resource ? formatBytesMBOrGB(resource.mem_usage_bytes) : "—";
   const stateValue = normalizeContainerState(container.state);
   const stateText = container.state || "unknown";
-  cells[2].textContent = "";
+  cells[4].textContent = "";
   const stateBadge = document.createElement("span");
   stateBadge.className = `containers-state-badge ${stateValue ? `containers-state-${stateValue}` : "containers-state-unknown"}`;
   stateBadge.textContent = stateText;
-  cells[2].className = "containers-state-cell";
-  cells[2].appendChild(stateBadge);
-  cells[3].textContent = formatUptime(container.uptime_sec);
-  cells[4].textContent = container.stack || "-";
+  cells[4].className = "containers-state-cell";
+  cells[4].appendChild(stateBadge);
+  cells[5].textContent = formatUptime(container.uptime_sec);
+  cells[6].textContent = resource ? formatResourcesIPValue(resource.ip_addresses) : "—";
+  cells[7].textContent = "";
+  if (!resource || hostPorts.length === 0) {
+    cells[7].textContent = "—";
+  } else {
+    const scopeInfo = getScopeInfo(scope);
+    const publicHost = scopeInfo && scopeInfo.server ? String(scopeInfo.server.public_ip || "").trim() : "";
+    hostPorts.forEach((port, index) => {
+      if (index > 0) {
+        cells[7].appendChild(document.createTextNode(", "));
+      }
+      if (publicHost) {
+        const link = document.createElement("a");
+        link.href = `http://${publicHost}:${port}`;
+        link.target = "_blank";
+        link.rel = "noreferrer";
+        link.className = "containers-resource-link";
+        link.textContent = String(port);
+        cells[7].appendChild(link);
+      } else {
+        cells[7].appendChild(document.createTextNode(String(port)));
+      }
+    });
+  }
+  cells[8].textContent = container.stack || "-";
   row.dataset.state = stateValue;
-  const actionsCell = cells[5];
+  const actionsCell = cells[9];
   let actionsWrap = actionsCell.querySelector(".containers-actions");
   if (!actionsWrap) {
     actionsWrap = document.createElement("div");
@@ -3969,6 +4785,8 @@ function clearContainersTable(message) {
   }
   containersCache = new Map();
   containersKillConfirming.clear();
+  containersTableResourcesData = new Map();
+  containersTableResourcesScope = "";
   if (containersShellList) {
     containersShellList.innerHTML = "";
     if (containersViewMode === "shell") {
@@ -4015,7 +4833,7 @@ function renderContainers(list, scope) {
     let row = entry ? entry.row : null;
     if (!row) {
       row = document.createElement("tr");
-      for (let i = 0; i < 6; i += 1) {
+      for (let i = 0; i < 10; i += 1) {
         row.appendChild(document.createElement("td"));
       }
     }
@@ -4041,6 +4859,8 @@ function renderContainers(list, scope) {
     renderContainersShellList(sorted);
   } else if (containersViewMode === "logs") {
     renderContainersLogsList(sorted);
+  } else if (containersViewMode === "resources") {
+    renderContainersResourcesList(sorted);
   }
   updateContainersSearchCount();
 }
@@ -4067,13 +4887,127 @@ async function refreshContainers(options = {}) {
       return;
     }
     const list = Array.isArray(payload.containers) ? payload.containers : [];
+    if (containersTableResourcesScope !== scope) {
+      containersTableResourcesData = new Map();
+      containersTableResourcesScope = scope;
+    }
     renderContainers(list, scope);
+    if (currentView === "containers" && containersViewMode === "table") {
+      refreshContainersTableResources(scope, list, { silent: true }).catch(() => {});
+    }
     updateContainersStatus(scope, "");
   } catch (err) {
     clearContainersTable("No containers data available.");
     updateContainersStatus(scope, err.message);
   } finally {
     containersUpdateInProgress = false;
+  }
+}
+
+async function refreshContainersTableResources(scope, list, options = {}) {
+  if (!scope) return;
+  if (!Array.isArray(list) || list.length === 0) {
+    containersTableResourcesData = new Map();
+    containersTableResourcesScope = scope;
+    return;
+  }
+  if (containersTableResourcesUpdateInProgress && containersTableResourcesScope === scope) return;
+  containersTableResourcesUpdateInProgress = true;
+  containersTableResourcesScope = scope;
+  const requestId = (containersTableResourcesRequestId += 1);
+  try {
+    const containerIds = list.map((c) => c && c.id).filter(Boolean);
+    const payload = await fetchJSON("/api/containers/resources", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ scope, container_ids: containerIds }),
+    });
+    if (requestId !== containersTableResourcesRequestId) return;
+    if (!payload || payload.error) {
+      if (!options.silent) {
+        showToast(payload && payload.error ? payload.error : "Unable to load container resources.");
+      }
+      containersTableResourcesData = new Map();
+      return;
+    }
+    const resources = Array.isArray(payload.resources) ? payload.resources : [];
+    containersTableResourcesData = new Map(resources.map((item) => [item.id, item]));
+    if (currentView === "containers" && containersViewMode === "table" && containersSelectedScope === scope) {
+      const currentList = Array.from(containersCache.values()).map((entry) => entry.data);
+      renderContainers(currentList, scope);
+    }
+  } catch (err) {
+    if (requestId !== containersTableResourcesRequestId) return;
+    if (!options.silent) {
+      showToast(err.message || "Unable to load container resources.");
+    }
+    containersTableResourcesData = new Map();
+  } finally {
+    if (requestId === containersTableResourcesRequestId) {
+      containersTableResourcesUpdateInProgress = false;
+    }
+  }
+}
+
+async function refreshContainersResources(options = {}) {
+  if (containersResourcesUpdateInProgress) return;
+  if (currentView !== "containers" || containersViewMode !== "resources") return;
+  if (!options.force && Date.now() - containersResourcesLastInteractionAtMs < 450) return;
+  const scope = containersSelectedScope;
+  if (!scope) {
+    updateContainersResourcesPlaceholder("Select a server to view resources.");
+    return;
+  }
+  const list = Array.from(containersCache.values()).map((entry) => entry.data);
+  const byId = new Map(list.map((container) => [container.id, container]));
+  const byName = new Map(list.map((container) => [container.name, container]));
+  const pins = getContainersResourcesPins(scope);
+  const targetIds = [];
+  pins.forEach((name) => {
+    const container = byName.get(name);
+    if (container && container.id) {
+      targetIds.push(container.id);
+    }
+  });
+  containersResourcesSelectedIds.forEach((id) => {
+    if (byId.has(id) && !targetIds.includes(id)) {
+      targetIds.push(id);
+    }
+  });
+  if (targetIds.length === 0) {
+    containersResourcesData = new Map();
+    renderContainersResourcesView();
+    updateContainersResourcesPlaceholder();
+    return;
+  }
+  containersResourcesUpdateInProgress = true;
+  try {
+    const payload = await fetchJSON("/api/containers/resources", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ scope, container_ids: targetIds }),
+    });
+    if (!payload || payload.error) {
+      if (!options.silent) {
+        showToast(payload && payload.error ? payload.error : "Unable to load container resources.");
+      }
+      containersResourcesData = new Map();
+      renderContainersResourcesView();
+      updateContainersResourcesPlaceholder("Unable to load resources.");
+      return;
+    }
+    const resources = Array.isArray(payload.resources) ? payload.resources : [];
+    containersResourcesData = new Map(resources.map((item) => [item.id, item]));
+    renderContainersResourcesView();
+  } catch (err) {
+    if (!options.silent) {
+      showToast(err.message || "Unable to load container resources.");
+    }
+    containersResourcesData = new Map();
+    renderContainersResourcesView();
+    updateContainersResourcesPlaceholder("Unable to load resources.");
+  } finally {
+    containersResourcesUpdateInProgress = false;
   }
 }
 
@@ -4598,12 +5532,41 @@ function renderImages(list) {
       if (aVal === bVal) return 0;
       return aVal > bVal ? dir : -dir;
     });
+    if (isSingle && firstImage) {
+      const image = firstImage;
+      const imageRow = document.createElement("tr");
+      imageRow.className = "images-image-row images-row";
+      imageRow.dataset.id = image.id;
+      imageRow.dataset.repo = repo;
+      imageRow.dataset.search = `${repo} ${image.tag || ""} ${image.id || ""} ${imageStateLabel(image)}`;
+      for (let i = 0; i < 6; i += 1) {
+        imageRow.appendChild(document.createElement("td"));
+      }
+      const imageCells = imageRow.querySelectorAll("td");
+      imageCells[0].textContent = "";
+      const imageIcon = document.createElement("span");
+      imageIcon.className = "icon-action icon-cube-3d-sphere name-leading-icon";
+      imageIcon.setAttribute("aria-hidden", "true");
+      imageCells[0].appendChild(imageIcon);
+      imageCells[0].appendChild(document.createTextNode(image.repository || repo));
+      imageCells[1].textContent = image.tag || "—";
+      imageCells[2].textContent = "";
+      imageCells[2].appendChild(buildImageStateBadge(imageStateLabel(image)));
+      imageCells[3].textContent = formatBytes(image.size_bytes || 0);
+      imageCells[4].textContent = "1";
+      imageCells[5].textContent = formatImageCreated(image.created_at);
+      if (imagesSelectedId && image.id === imagesSelectedId) {
+        imageRow.classList.add("is-selected");
+      }
+      imageRow.addEventListener("click", () => selectImageRow(image.id));
+      fragment.appendChild(imageRow);
+      return;
+    }
     const row = document.createElement("tr");
     row.className = "images-group-row images-row";
     row.dataset.repo = repo;
     const groupTags = group.map((image) => image && image.tag ? image.tag : "").filter(Boolean).join(" ");
-    const groupState = isSingle && firstImage ? imageStateLabel(firstImage) : "Multiple";
-    row.dataset.search = `${repo} ${groupTags} ${groupState}`;
+    row.dataset.search = `${repo} ${groupTags} Multiple`;
     for (let i = 0; i < 6; i += 1) {
       row.appendChild(document.createElement("td"));
     }
@@ -4620,15 +5583,9 @@ function renderImages(list) {
     toggle.addEventListener("click", () => toggleImagesGroup(repo));
     cells[0].textContent = "";
     cells[0].appendChild(toggle);
-    if (isSingle && firstImage) {
-      cells[1].textContent = firstImage.tag || "—";
-      cells[2].textContent = "";
-      cells[2].appendChild(buildImageStateBadge(imageStateLabel(firstImage)));
-    } else {
-      cells[1].textContent = "Multiple";
-      cells[2].textContent = "";
-      cells[2].appendChild(buildImageStateBadge("Multiple"));
-    }
+    cells[1].textContent = "Multiple";
+    cells[2].textContent = "";
+    cells[2].appendChild(buildImageStateBadge("Multiple"));
     const uniqueSizes = new Map();
     let latestCreated = 0;
     group.forEach((image) => {
@@ -4968,6 +5925,19 @@ function stopContainersAutoRefresh() {
   if (!containersRefreshTimer) return;
   window.clearInterval(containersRefreshTimer);
   containersRefreshTimer = null;
+}
+
+function startContainersResourcesAutoRefresh() {
+  if (containersResourcesRefreshTimer) return;
+  containersResourcesRefreshTimer = window.setInterval(() => {
+    refreshContainersResources({ silent: true });
+  }, 5000);
+}
+
+function stopContainersResourcesAutoRefresh() {
+  if (!containersResourcesRefreshTimer) return;
+  window.clearInterval(containersResourcesRefreshTimer);
+  containersResourcesRefreshTimer = null;
 }
 
 function applyStatusResults(results) {
@@ -5386,6 +6356,7 @@ function showTooltip(target) {
   }
   const text = target?.dataset?.tooltip || target?.getAttribute("aria-label") || "";
   if (!text) return;
+  tooltipEl.classList.toggle("tooltip-compact", target?.dataset?.tooltipCompact === "true");
   tooltipEl.textContent = text;
   tooltipEl.classList.add("visible");
 
@@ -5416,6 +6387,38 @@ function showTooltip(target) {
 function hideTooltip() {
   tooltipEl.classList.remove("visible");
   tooltipTarget = null;
+}
+
+function showCopiedFeedback(button) {
+  if (!button) return;
+  const previousTooltip = button.dataset ? button.dataset.tooltip : "";
+  const previousAria = button.getAttribute("aria-label") || "";
+  const icon = button.querySelector(".icon-action");
+  if (icon) {
+    icon.classList.remove("icon-copy");
+    icon.classList.add("icon-copy-check");
+  }
+  if (button.dataset) {
+    button.dataset.tooltip = "Copied!";
+  } else {
+    button.setAttribute("data-tooltip", "Copied!");
+  }
+  button.setAttribute("aria-label", "Copied!");
+  tooltipTarget = button;
+  showTooltip(button);
+  window.setTimeout(() => {
+    if (tooltipTarget === button) hideTooltip();
+    if (button.dataset) {
+      button.dataset.tooltip = previousTooltip;
+    } else {
+      button.setAttribute("data-tooltip", previousTooltip);
+    }
+    button.setAttribute("aria-label", previousAria);
+    if (icon) {
+      icon.classList.remove("icon-copy-check");
+      icon.classList.add("icon-copy");
+    }
+  }, 950);
 }
 
 document.addEventListener("mouseover", (event) => {
@@ -5517,6 +6520,42 @@ function updateSidebarNavActive(nextView) {
   });
 }
 
+function isSidebarCollapsed() {
+  return document.body && document.body.dataset && document.body.dataset.sidebar === "collapsed";
+}
+
+function updateSidebarCollapseUI() {
+  if (!sidebarCollapseToggleBtn) return;
+  const collapsed = isSidebarCollapsed();
+  const icon = sidebarCollapseToggleBtn.querySelector(".icon-action");
+  if (icon) {
+    icon.classList.toggle("icon-layout-sidebar-left-collapse", !collapsed);
+    icon.classList.toggle("icon-layout-sidebar-left-expand", collapsed);
+  }
+  const label = collapsed ? "Expand sidebar" : "Collapse sidebar";
+  sidebarCollapseToggleBtn.setAttribute("aria-label", label);
+  sidebarCollapseToggleBtn.setAttribute("data-tooltip", label);
+}
+
+function setSidebarCollapsed(collapsed, persist = true) {
+  if (!document.body) return;
+  if (collapsed) {
+    document.body.dataset.sidebar = "collapsed";
+  } else if (document.body.dataset && document.body.dataset.sidebar) {
+    delete document.body.dataset.sidebar;
+  }
+  if (persist) {
+    try {
+      localStorage.setItem(sidebarCollapsedStorageKey, collapsed ? "1" : "0");
+    } catch {
+      // ignore
+    }
+  }
+  updateSidebarCollapseUI();
+  updateTopbarHeight();
+  updateMobileNavHeight();
+}
+
 function setView(nextView) {
   const prevView = currentView;
   if (["containers", "stacks", "images"].includes(nextView) && !isExperimentalEnabled(nextView)) {
@@ -5595,10 +6634,15 @@ function setView(nextView) {
   } else {
     stopContainersAutoRefresh();
     stopStacksAutoRefresh();
+    stopContainersResourcesAutoRefresh();
     if (prevView === "containers") {
       closeContainersShellSession("leave containers view");
       closeContainersLogsSession("leave containers view");
       setContainersLogsPaused(false);
+      if (containersViewMode === "resources") {
+        containersResourcesSelectedIds.clear();
+        updateContainersResourcesPlaceholder();
+      }
     }
   }
   if (nextView === "servers" && sidebarSearch) {
@@ -5736,6 +6780,7 @@ attachImmediateSave(expContainersInput);
 attachImmediateSave(expContainersSidebarInput);
 attachImmediateSave(expContainerShellInput);
 attachImmediateSave(expContainerLogsInput);
+attachImmediateSave(expContainerResourcesInput);
 attachImmediateSave(expStacksInput);
 attachImmediateSave(expImagesInput);
 globalPolicySelect.addEventListener("change", async () => {
@@ -5780,39 +6825,32 @@ configForm.addEventListener("submit", async (event) => {
   }
 });
 
-if (localModalForm) {
-  localModalForm.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const payload = {
-      name: localModalNameInput ? localModalNameInput.value.trim() : "",
-      socket: localModalSocketInput ? localModalSocketInput.value.trim() : "/var/run/docker.sock",
-    };
-    if (editingLocalServer && editingLocalServer.maintenance) {
-      payload.maintenance = true;
-    }
-    try {
-      await fetchJSON("/api/locals", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      closeRemoteModal();
-      await refreshServers();
-      await refreshStatus();
-    } catch (err) {
-      alert(err.message);
-    }
-  });
-}
-
-if (localModalCancel) {
-  localModalCancel.addEventListener("click", () => {
-    closeRemoteModal();
-  });
-}
-
 if (remoteModalSave) {
   remoteModalSave.addEventListener("click", async () => {
+    const isLocal = serverModalTab === "local";
+    if (isLocal) {
+      const payload = {
+        name: remoteModalNameInput ? remoteModalNameInput.value.trim() : "",
+        socket: remoteModalHostInput ? remoteModalHostInput.value.trim() : "/var/run/docker.sock",
+        public_ip: remoteModalPublicIPInput ? remoteModalPublicIPInput.value.trim() : "",
+      };
+      if (editingLocalServer && editingLocalServer.maintenance) {
+        payload.maintenance = true;
+      }
+      try {
+        await fetchJSON("/api/locals", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        closeRemoteModal();
+        await refreshServers();
+        await refreshStatus();
+      } catch (err) {
+        alert(err.message);
+      }
+      return;
+    }
     const payload = {
       name: remoteModalNameInput ? remoteModalNameInput.value.trim() : "",
       url: normalizeRemoteUrl(
@@ -5820,6 +6858,7 @@ if (remoteModalSave) {
         remoteModalPortInput ? remoteModalPortInput.value.trim() : "8080"
       ),
       token: remoteModalTokenInput ? remoteModalTokenInput.value.trim() : "",
+      public_ip: remoteModalPublicIPInput ? remoteModalPublicIPInput.value.trim() : "",
     };
     if (editingRemoteServer && editingRemoteServer.maintenance) {
       payload.maintenance = true;
@@ -5863,6 +6902,24 @@ if (stackModalSave) {
   });
 }
 
+if (stackModalSaveIcon) {
+  stackModalSaveIcon.addEventListener("click", () => {
+    saveStackFromModal({ closeOnSuccess: false });
+  });
+}
+
+if (stackModalComposeUp) {
+  stackModalComposeUp.addEventListener("click", () => {
+    runStackActionFromModal("up");
+  });
+}
+
+if (stackModalComposeDown) {
+  stackModalComposeDown.addEventListener("click", () => {
+    runStackActionFromModal("down");
+  });
+}
+
 if (stackModalCancel) {
   stackModalCancel.addEventListener("click", () => {
     closeStackModal();
@@ -5899,13 +6956,18 @@ if (stackEnvInput) {
 
 if (remoteModalTokenCopy) {
   remoteModalTokenCopy.addEventListener("click", () => {
-    copyToClipboard(remoteModalTokenInput ? remoteModalTokenInput.value : "", "Token");
+    copyToClipboard(remoteModalTokenInput ? remoteModalTokenInput.value : "", "Token", { silent: true })
+      .then(() => showCopiedFeedback(remoteModalTokenCopy))
+      .catch(() => showToast("Copy failed."));
   });
 }
 
 if (remoteModalComposeCopy) {
   remoteModalComposeCopy.addEventListener("click", () => {
-    copyToClipboard(remoteModalCompose ? remoteModalCompose.textContent : "", "Compose");
+    if (serverModalTab === "local") return;
+    copyToClipboard(remoteModalCompose ? remoteModalCompose.textContent : "", "Compose", { silent: true })
+      .then(() => showCopiedFeedback(remoteModalComposeCopy))
+      .catch(() => showToast("Copy failed."));
   });
 }
 
@@ -5915,36 +6977,27 @@ if (remoteModalPortInput) {
   });
 }
 
-if (serverTabLocal) {
-  serverTabLocal.addEventListener("click", () => {
-    setServerModalTab("local");
+if (serverConnectionTypeSelect) {
+  serverConnectionTypeSelect.addEventListener("change", () => {
+    const value = serverConnectionTypeSelect.value === "local" ? "local" : "remote";
+    setServerModalTab(value);
     if (remoteModalTitle) {
-      remoteModalTitle.textContent = editingLocalServer ? "Edit local server" : "Add local server";
+      remoteModalTitle.textContent = value === "local"
+        ? (editingLocalServer ? "Edit local server" : "Add local server")
+        : (editingRemoteServer ? "Edit remote server" : "Add remote server");
     }
-    if (!editingLocalServer && localModalSocketInput && !localModalSocketInput.value.trim()) {
-      localModalSocketInput.value = "/var/run/docker.sock";
-    }
-    if (localModalNameInput) {
-      localModalNameInput.focus();
+    if (value === "local") {
+      if (!editingLocalServer && remoteModalHostInput && !remoteModalHostInput.value.trim()) {
+        remoteModalHostInput.value = "/var/run/docker.sock";
+      }
+    } else if (!editingRemoteServer && remoteModalTokenInput && !remoteModalTokenInput.value.trim()) {
+      remoteModalTokenInput.value = generateToken(32);
+      updateRemoteComposePreview();
     }
   });
 }
 
-if (serverTabRemote) {
-  serverTabRemote.addEventListener("click", () => {
-    setServerModalTab("remote");
-    if (remoteModalTitle) {
-      remoteModalTitle.textContent = editingRemoteServer ? "Edit remote server" : "Add remote server";
-    }
-    if (!editingRemoteServer && remoteModalTokenInput && !remoteModalTokenInput.value.trim()) {
-      remoteModalTokenInput.value = generateToken(32);
-      updateRemoteComposePreview();
-    }
-    if (remoteModalNameInput) {
-      remoteModalNameInput.focus();
-    }
-  });
-}
+// Connection type help uses tooltip (no modal)
 
 async function init() {
   sidebar.setAttribute("aria-hidden", "false");
@@ -5960,6 +7013,11 @@ async function init() {
       updateSidebarSearchUI();
     });
   }
+  if (sidebarCollapseToggleBtn) {
+    sidebarCollapseToggleBtn.addEventListener("click", () => {
+      setSidebarCollapsed(!isSidebarCollapsed());
+    });
+  }
   initComposeEditor();
   initEnvEditor();
   enableYamlIndent(stackComposeInput);
@@ -5967,6 +7025,8 @@ async function init() {
   updateContainersSortUI();
   updateStacksSortUI();
   updateImagesSortUI();
+  updateContainersResourcesSortUI();
+  updateContainersResourcesViewButtons();
 
   if (statusSelectiveToggleBtn) {
     statusSelectiveToggleBtn.addEventListener("click", () => {
@@ -5989,6 +7049,13 @@ async function init() {
     serversViewToggleBtn.addEventListener("click", () => {
       const next = serversViewMode === "cards" ? "table" : "cards";
       setServersViewMode(next);
+    });
+  }
+
+  if (containersResourcesViewToggleBtn) {
+    containersResourcesViewToggleBtn.addEventListener("click", () => {
+      const next = containersResourcesViewMode === "table" ? "cards" : "table";
+      setContainersResourcesViewMode(next);
     });
   }
 
@@ -6060,6 +7127,68 @@ async function init() {
         renderContainers(list, containersSelectedScope);
       }
     });
+  }
+  const toggleContainersSortMode = (key) => {
+    if (!key) return;
+    const asc = `${key}:asc`;
+    const desc = `${key}:desc`;
+    if (containersSortMode !== asc && containersSortMode !== desc) {
+      containersSortMode = asc;
+    } else {
+      containersSortMode = containersSortMode === asc ? desc : asc;
+    }
+    updateContainersSortUI();
+    const list = Array.from(containersCache.values()).map((entry) => entry.data);
+    if (list.length > 0 && containersSelectedScope) {
+      renderContainers(list, containersSelectedScope);
+    }
+  };
+  if (containersCpuSortBtn) {
+    containersCpuSortBtn.addEventListener("click", () => toggleContainersSortMode("cpu"));
+  }
+  if (containersRamSortBtn) {
+    containersRamSortBtn.addEventListener("click", () => toggleContainersSortMode("ram"));
+  }
+  if (containersIpSortBtn) {
+    containersIpSortBtn.addEventListener("click", () => toggleContainersSortMode("ip"));
+  }
+  if (containersPortSortBtn) {
+    containersPortSortBtn.addEventListener("click", () => toggleContainersSortMode("port"));
+  }
+  const toggleResourcesSort = (key) => {
+    if (!key) return;
+    const asc = `${key}:asc`;
+    const desc = `${key}:desc`;
+    if (containersResourcesSortMode !== asc && containersResourcesSortMode !== desc) {
+      containersResourcesSortMode = asc;
+    } else {
+      containersResourcesSortMode = containersResourcesSortMode === asc ? desc : asc;
+    }
+    updateContainersResourcesSortUI();
+    if (currentView === "containers" && containersViewMode === "resources") {
+      renderContainersResourcesView();
+    }
+  };
+  if (resourcesNameSortBtn) {
+    resourcesNameSortBtn.addEventListener("click", () => toggleResourcesSort("name"));
+  }
+  if (resourcesCpuSortBtn) {
+    resourcesCpuSortBtn.addEventListener("click", () => toggleResourcesSort("cpu"));
+  }
+  if (resourcesRamSortBtn) {
+    resourcesRamSortBtn.addEventListener("click", () => toggleResourcesSort("ram"));
+  }
+  if (resourcesStatusSortBtn) {
+    resourcesStatusSortBtn.addEventListener("click", () => toggleResourcesSort("status"));
+  }
+  if (resourcesUptimeSortBtn) {
+    resourcesUptimeSortBtn.addEventListener("click", () => toggleResourcesSort("uptime"));
+  }
+  if (resourcesIpSortBtn) {
+    resourcesIpSortBtn.addEventListener("click", () => toggleResourcesSort("ip"));
+  }
+  if (resourcesPortSortBtn) {
+    resourcesPortSortBtn.addEventListener("click", () => toggleResourcesSort("port"));
   }
   if (containersStateSortBtn) {
     containersStateSortBtn.addEventListener("click", () => {
@@ -6162,6 +7291,9 @@ async function init() {
         await refreshStacks({ silent: true });
       } else if (containersViewMode === "images") {
         await refreshImages({ silent: true });
+      } else if (containersViewMode === "resources") {
+        await refreshContainers({ silent: true });
+        await refreshContainersResources({ silent: true });
       } else {
         await refreshContainers({ silent: true });
       }
@@ -6189,6 +7321,18 @@ async function init() {
         return;
       }
       setContainersViewMode(containersViewMode === "logs" ? "table" : "logs");
+    });
+  }
+  if (topbarContainersResourcesBtn) {
+    topbarContainersResourcesBtn.addEventListener("click", () => {
+      const enabled = currentConfig && currentConfig.experimental_features
+        ? Boolean(currentConfig.experimental_features.container_resources)
+        : false;
+      if (!enabled) {
+        showToast("Container resources is disabled in Experimental features.");
+        return;
+      }
+      setContainersViewMode(containersViewMode === "resources" ? "table" : "resources");
     });
   }
   if (topbarContainersStacksBtn) {
@@ -6452,10 +7596,26 @@ async function init() {
   initThemeToggle();
   updateTopbarHeight();
   updateMobileNavHeight();
+  try {
+    const stored = localStorage.getItem(sidebarCollapsedStorageKey);
+    if (stored === "1") {
+      setSidebarCollapsed(true, false);
+    } else if (stored === "0") {
+      setSidebarCollapsed(false, false);
+    }
+  } catch {
+    // ignore
+  }
+  updateSidebarCollapseUI();
   const storedServersView = localStorage.getItem(serversViewStorageKey);
   if (storedServersView === "cards" || storedServersView === "table") {
     serversViewMode = storedServersView;
   }
+  const storedResourcesView = localStorage.getItem(containersResourcesViewStorageKey);
+  if (storedResourcesView === "cards" || storedResourcesView === "table") {
+    containersResourcesViewMode = storedResourcesView;
+  }
+  updateContainersResourcesViewButtons();
   setView("status");
   setScanningUI(false);
   await refreshConfig();

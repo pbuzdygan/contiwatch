@@ -97,21 +97,30 @@
 	              <span class="icon-action icon-cube-3d-sphere" aria-hidden="true"></span>
 	            </button>
 	            <span class="topbar-separator" aria-hidden="true"></span>
-	            <button
-	              id="topbar-containers-logs"
-	              class="secondary icon-action-btn has-tooltip"
-	              type="button"
-	              aria-label="Container logs"
-	              data-tooltip="Container logs"
-	            >
-	              <span class="icon-action icon-logs" aria-hidden="true"></span>
-	            </button>
-	            <button
-	              id="topbar-containers-shell"
-	              class="secondary icon-action-btn has-tooltip"
-	              type="button"
-	              aria-label="Container shell"
-	              data-tooltip="Container shell"
+            <button
+              id="topbar-containers-logs"
+              class="secondary icon-action-btn has-tooltip"
+              type="button"
+              aria-label="Container logs"
+              data-tooltip="Container logs"
+            >
+              <span class="icon-action icon-logs" aria-hidden="true"></span>
+            </button>
+            <button
+              id="topbar-containers-resources"
+              class="secondary icon-action-btn has-tooltip"
+              type="button"
+              aria-label="Container resources"
+              data-tooltip="Container resources"
+            >
+              <span class="icon-action icon-device-desktop-analytics" aria-hidden="true"></span>
+            </button>
+            <button
+              id="topbar-containers-shell"
+              class="secondary icon-action-btn has-tooltip"
+              type="button"
+              aria-label="Container shell"
+              data-tooltip="Container shell"
 	            >
 	              <span class="icon-action icon-terminal-2" aria-hidden="true"></span>
 	            </button>
@@ -230,6 +239,15 @@
           </div>
         </div>
       </div>
+      <div class="topbar-center">
+        <label class="topbar-search" aria-label="Search">
+          <span class="search-field">
+            <svg xmlns="http://www.w3.org/2000/svg" class="search-icon icon icon-tabler icons-tabler-outline icon-tabler-search" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M3 10a7 7 0 1 0 14 0a7 7 0 1 0 -14 0" /><path d="M21 21l-6 -6" /></svg>
+            <input type="search" id="sidebar-search" placeholder="Servers / containers">
+          </span>
+          <span id="sidebar-search-count" class="search-count hidden" aria-hidden="true"></span>
+        </label>
+      </div>
       <div class="topbar-right">
         <div id="toast" class="toast toast-top hidden" role="status" aria-live="polite"></div>
         <button id="theme-toggle" class="secondary theme-toggle has-tooltip" type="button" aria-label="Switch to Dark theme" data-tooltip="Switch to Dark theme">
@@ -241,25 +259,22 @@
 
     <aside id="sidebar" class="sidebar" aria-hidden="false">
       <div class="sidebar-header">
-        <picture class="sidebar-brand">
-          <source
-            media="(max-width: 720px)"
-            srcset="/icons/contiwatch_logo_small.png"
+        <div class="sidebar-brand">
+          <img class="sidebar-banner" src="/icons/contiwatch_banner_small.png" alt="Contiwatch">
+          <img class="sidebar-logo" src="/icons/contiwatch_logo_small.png" alt="Contiwatch">
+        </div>
+        <div class="sidebar-header-actions">
+          <button
+            id="sidebar-collapse-toggle"
+            class="sidebar-link sidebar-collapse-toggle has-tooltip"
+            type="button"
+            aria-label="Collapse sidebar"
+            data-tooltip="Collapse sidebar"
           >
-          <img
-            class="sidebar-banner"
-            src="/icons/contiwatch_banner_small.png"
-            alt="Contiwatch"
-          >
-        </picture>
+            <span class="sidebar-icon icon-action icon-layout-sidebar-left-collapse" aria-hidden="true"></span>
+          </button>
+        </div>
       </div>
-      <label class="sidebar-search">
-        <span class="search-field">
-          <svg xmlns="http://www.w3.org/2000/svg" class="search-icon icon icon-tabler icons-tabler-outline icon-tabler-search" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M3 10a7 7 0 1 0 14 0a7 7 0 1 0 -14 0" /><path d="M21 21l-6 -6" /></svg>
-          <input type="search" id="sidebar-search" placeholder="Servers / containers">
-        </span>
-        <span id="sidebar-search-count" class="search-count hidden" aria-hidden="true"></span>
-      </label>
       <nav class="sidebar-nav">
         <button type="button" class="sidebar-link" data-view="status">
           <svg xmlns="http://www.w3.org/2000/svg" class="sidebar-icon icon icon-tabler icons-tabler-outline icon-tabler-home-spark" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M5 12h-2l9 -9l9 9h-2" /><path d="M5 12v7a2 2 0 0 0 2 2h5" /><path d="M9 21v-6a2 2 0 0 1 2 -2h2a2 2 0 0 1 2 2" /><path d="M19 22.5a4.75 4.75 0 0 1 3.5 -3.5a4.75 4.75 0 0 1 -3.5 -3.5a4.75 4.75 0 0 1 -3.5 3.5a4.75 4.75 0 0 1 3.5 3.5" /></svg>
@@ -284,6 +299,10 @@
         <button type="button" class="sidebar-link containers-sidebar-link hidden" data-view="containers" data-containers-mode="logs" data-feature="container_logs">
           <span class="sidebar-icon icon-action icon-logs" aria-hidden="true"></span>
           <span class="sidebar-label">Logs</span>
+        </button>
+        <button type="button" class="sidebar-link containers-sidebar-link hidden" data-view="containers" data-containers-mode="resources" data-feature="container_resources">
+          <span class="sidebar-icon icon-action icon-device-desktop-analytics" aria-hidden="true"></span>
+          <span class="sidebar-label">Resources</span>
         </button>
         <button type="button" class="sidebar-link containers-sidebar-link hidden" data-view="containers" data-containers-mode="shell" data-feature="container_shell">
           <span class="sidebar-icon icon-action icon-terminal-2" aria-hidden="true"></span>
@@ -417,6 +436,11 @@
                 <span>Container logs</span>
               </label>
               <label class="toggle-row">
+                <input type="checkbox" id="exp-container-resources">
+                <span class="toggle-track" aria-hidden="true"><span class="toggle-thumb"></span></span>
+                <span>Container resources</span>
+              </label>
+              <label class="toggle-row">
                 <input type="checkbox" id="exp-stacks">
                 <span class="toggle-track" aria-hidden="true"><span class="toggle-thumb"></span></span>
                 <span>Container stacks</span>
@@ -434,7 +458,7 @@
       <section id="view-containers" class="hidden">
         <div id="containers-table-view">
           <div class="containers-table-wrap">
-            <table class="containers-table">
+            <table class="containers-table containers-main-table">
               <thead>
                 <tr>
                   <th class="containers-th-name">
@@ -446,6 +470,22 @@
                     </span>
                   </th>
                   <th>Image</th>
+                  <th>
+                    <span class="containers-th-name-inner">
+                      <span>CPU</span>
+                      <button id="containers-cpu-sort" class="containers-sort-btn" type="button" aria-label="Sort by CPU">
+                        <span class="icon-sort icon-sort-neutral" aria-hidden="true"></span>
+                      </button>
+                    </span>
+                  </th>
+                  <th>
+                    <span class="containers-th-name-inner">
+                      <span>RAM</span>
+                      <button id="containers-ram-sort" class="containers-sort-btn" type="button" aria-label="Sort by RAM">
+                        <span class="icon-sort icon-sort-neutral" aria-hidden="true"></span>
+                      </button>
+                    </span>
+                  </th>
                   <th class="containers-th-state">
                     <span class="containers-th-name-inner">
                       <span>State</span>
@@ -455,6 +495,22 @@
                     </span>
                   </th>
                   <th>Uptime</th>
+                  <th>
+                    <span class="containers-th-name-inner">
+                      <span>IP</span>
+                      <button id="containers-ip-sort" class="containers-sort-btn" type="button" aria-label="Sort by IP">
+                        <span class="icon-sort icon-sort-neutral" aria-hidden="true"></span>
+                      </button>
+                    </span>
+                  </th>
+                  <th>
+                    <span class="containers-th-name-inner">
+                      <span>Port</span>
+                      <button id="containers-port-sort" class="containers-sort-btn" type="button" aria-label="Sort by port">
+                        <span class="icon-sort icon-sort-neutral" aria-hidden="true"></span>
+                      </button>
+                    </span>
+                  </th>
                   <th>Stack</th>
                   <th>Actions</th>
                 </tr>
@@ -605,6 +661,96 @@
             </div>
           </div>
         </div>
+        <div id="containers-resources-layout" class="containers-shell-layout containers-resources-layout hidden">
+          <div class="containers-shell-list">
+            <div class="containers-shell-list-header">Name</div>
+            <div id="containers-resources-list" class="containers-shell-list-body"></div>
+          </div>
+          <div class="containers-shell-terminal containers-resources-panel">
+            <div class="containers-resources-toolbar">
+              <div class="servers-view-toggle" role="group" aria-label="Resources view">
+                <button
+                  class="secondary servers-view-toggle-btn has-tooltip"
+                  id="containers-resources-view-toggle"
+                  type="button"
+                  data-mode="table"
+                  aria-label="Switch to table view"
+                  data-tooltip="Switch to table view"
+                >
+                  <span class="servers-view-icon" aria-hidden="true"></span>
+                </button>
+              </div>
+            </div>
+            <div id="containers-resources-placeholder" class="containers-shell-placeholder">Select containers to view resources.</div>
+            <div id="containers-resources-cards" class="containers-resources-cards hidden"></div>
+            <div id="containers-resources-table-wrap" class="containers-table-wrap hidden">
+              <table class="containers-table">
+                <thead>
+                  <tr>
+                    <th class="containers-th-pin">Pin</th>
+                    <th class="containers-th-name">
+                      <span class="containers-th-name-inner">
+                        <span>Name</span>
+                        <button id="resources-name-sort" class="containers-sort-btn" type="button" aria-label="Sort by name">
+                          <span class="icon-sort icon-sort-neutral" aria-hidden="true"></span>
+                        </button>
+                      </span>
+                    </th>
+                    <th>
+                      <span class="containers-th-name-inner">
+                        <span>CPU</span>
+                        <button id="resources-cpu-sort" class="containers-sort-btn" type="button" aria-label="Sort by CPU">
+                          <span class="icon-sort icon-sort-neutral" aria-hidden="true"></span>
+                        </button>
+                      </span>
+                    </th>
+                    <th>
+                      <span class="containers-th-name-inner">
+                        <span>RAM</span>
+                        <button id="resources-ram-sort" class="containers-sort-btn" type="button" aria-label="Sort by RAM">
+                          <span class="icon-sort icon-sort-neutral" aria-hidden="true"></span>
+                        </button>
+                      </span>
+                    </th>
+                    <th class="containers-th-state">
+                      <span class="containers-th-name-inner">
+                        <span>Status</span>
+                        <button id="resources-status-sort" class="containers-sort-btn" type="button" aria-label="Sort by status">
+                          <span class="icon-sort icon-sort-neutral" aria-hidden="true"></span>
+                        </button>
+                      </span>
+                    </th>
+                    <th>
+                      <span class="containers-th-name-inner">
+                        <span>Uptime</span>
+                        <button id="resources-uptime-sort" class="containers-sort-btn" type="button" aria-label="Sort by uptime">
+                          <span class="icon-sort icon-sort-neutral" aria-hidden="true"></span>
+                        </button>
+                      </span>
+                    </th>
+                    <th>
+                      <span class="containers-th-name-inner">
+                        <span>IP</span>
+                        <button id="resources-ip-sort" class="containers-sort-btn" type="button" aria-label="Sort by IP">
+                          <span class="icon-sort icon-sort-neutral" aria-hidden="true"></span>
+                        </button>
+                      </span>
+                    </th>
+                    <th>
+                      <span class="containers-th-name-inner">
+                        <span>Port</span>
+                        <button id="resources-port-sort" class="containers-sort-btn" type="button" aria-label="Sort by port">
+                          <span class="icon-sort icon-sort-neutral" aria-hidden="true"></span>
+                        </button>
+                      </span>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody id="containers-resources-body"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
       </section>
 
 
@@ -688,62 +834,81 @@
           <button id="remote-modal-close" class="secondary btn-small" type="button">Close</button>
         </div>
         <div class="modal-body">
-          <div class="modal-tabs" role="tablist" aria-label="Server type">
-            <button id="server-tab-remote" class="secondary is-active" type="button" role="tab" aria-selected="true" aria-controls="server-panel-remote">Remote server</button>
-            <button id="server-tab-local" class="secondary" type="button" role="tab" aria-selected="false" aria-controls="server-panel-local">Local server</button>
-          </div>
-
           <div id="server-panel-remote" class="server-modal-panel" role="tabpanel">
-            <div class="server-wizard-grid">
-              <label>
-                Name
-                <input type="text" id="remote-modal-name" placeholder="prod-01">
-              </label>
-              <label>
-                Host / IP
-                <input type="text" id="remote-modal-host" placeholder="10.0.0.10">
-              </label>
-              <label>
-                Port (host exposed)
-                <input type="text" id="remote-modal-port" placeholder="8080">
-              </label>
-              <label>
-                Generated API token
-                <div class="input-row">
-                  <input type="text" id="remote-modal-token" readonly>
-                  <button id="remote-modal-token-copy" class="secondary" type="button">Copy</button>
-                </div>
-              </label>
-            </div>
-            <p class="settings-hint"><strong>Save this API key securely.</strong> It will not be shown again.</p>
-            <label>
-              docker compose.yml
-              <div class="server-compose-actions">
-                <button id="remote-modal-compose-copy" class="secondary" type="button">Copy compose</button>
+            <div class="server-modal-layout">
+              <div class="server-modal-fields">
+                <label>
+                  Name
+                  <input type="text" id="remote-modal-name" placeholder="prod-01">
+                </label>
+                <label class="server-connection-type">
+                  <span class="server-connection-type-label">
+                    <span>Connection type</span>
+                    <button
+                      id="server-connection-type-help"
+                      class="secondary icon-action-btn has-tooltip btn-small"
+                      type="button"
+                      aria-label="Connection type help"
+                      data-tooltip="Remote Contiwatch Agent: connect via host/IP + port.\nLocal Unix socket: connect to local Docker via socket path.\nPublic IP is optional and is used for opening services."
+                      data-tooltip-compact="true"
+                    >
+                      <span class="icon-action icon-info-circle" aria-hidden="true"></span>
+                    </button>
+                  </span>
+                  <select id="server-connection-type">
+                    <option value="remote">Remote Contiwatch Agent</option>
+                    <option value="local">Local Unix socket</option>
+                  </select>
+                </label>
+                <label>
+                  <span id="server-modal-host-label">Host / IP</span>
+                  <input type="text" id="remote-modal-host" placeholder="10.0.0.10">
+                </label>
+                <label id="server-remote-port-row">
+                  Port (host exposed)
+                  <input type="text" id="remote-modal-port" placeholder="8080">
+                </label>
+                <label id="server-token-row">
+                  Generated API token
+                  <div class="input-row">
+                    <input type="text" id="remote-modal-token" readonly>
+                    <button
+                      id="remote-modal-token-copy"
+                      class="secondary icon-action-btn has-tooltip btn-small"
+                      type="button"
+                      aria-label="Copy token"
+                      data-tooltip="Copy"
+                    >
+                      <span class="icon-action icon-copy" aria-hidden="true"></span>
+                    </button>
+                  </div>
+                  <span id="server-token-hint" class="settings-hint server-token-hint">Save this API key securely. It will not be shown again.</span>
+                </label>
+                <label class="server-modal-public-ip">
+                  Public IP (for opening services)
+                  <input type="text" id="remote-modal-public-ip" placeholder="203.0.113.10">
+                </label>
               </div>
-              <pre id="remote-modal-compose" class="server-compose"></pre>
-            </label>
+              <div id="server-compose-panel" class="server-modal-compose-panel">
+                <div class="server-compose-header">
+                  <span>docker compose.yml</span>
+                  <button
+                    id="remote-modal-compose-copy"
+                    class="secondary icon-action-btn has-tooltip btn-small"
+                    type="button"
+                    aria-label="Copy compose"
+                    data-tooltip="Copy"
+                  >
+                    <span class="icon-action icon-copy" aria-hidden="true"></span>
+                  </button>
+                </div>
+                <pre id="remote-modal-compose" class="server-compose"></pre>
+              </div>
+            </div>
             <div class="settings-actions">
               <button id="remote-modal-save" type="button">Save</button>
               <button id="remote-modal-cancel" class="secondary" type="button">Cancel</button>
             </div>
-          </div>
-
-          <div id="server-panel-local" class="server-modal-panel hidden" role="tabpanel">
-            <form id="local-modal-form" class="server-modal-local-form">
-              <label>
-                Name
-                <input type="text" id="local-modal-name" placeholder="local">
-              </label>
-              <label>
-                Docker socket
-                <input type="text" id="local-modal-socket" placeholder="/var/run/docker.sock">
-              </label>
-              <div class="settings-actions">
-                <button id="local-modal-save" type="submit">Save</button>
-                <button id="local-modal-cancel" class="secondary" type="button">Cancel</button>
-              </div>
-            </form>
           </div>
         </div>
       </div>
@@ -756,24 +921,52 @@
           <h3 id="stack-modal-title">New stack</h3>
           <button id="stack-modal-close" class="secondary btn-small" type="button">Close</button>
         </div>
-        <div class="modal-body">
-          <div class="stack-modal-grid">
-            <label id="stack-name-row">
-              <input type="text" id="stack-name-input" placeholder="my_stack_name">
-            </label>
-            <div class="stack-env-action">
-              <input type="checkbox" id="stack-env-toggle" class="hidden">
-              <button id="stack-env-toggle-btn" class="secondary icon-action-btn has-tooltip stack-env-btn" type="button" aria-label="Use .env secrets" aria-pressed="false" data-enabled="false" data-tooltip="Use .env secrets">
-                <span class="icon-action icon-key" aria-hidden="true"></span>
-              </button>
-            </div>
-          </div>
-          <div class="stack-editor-grid">
-            <div class="stack-editor-main">
-              <label for="stack-compose-input">docker-compose.yml</label>
-              <div id="stack-compose-editor" class="stack-editor"></div>
-              <textarea id="stack-compose-input" class="stack-textarea hidden" rows="16" spellcheck="false" placeholder="services:"></textarea>
-            </div>
+	        <div class="modal-body">
+	          <div class="stack-modal-grid">
+	            <label id="stack-name-row">
+	              <input type="text" id="stack-name-input" placeholder="my_stack_name">
+	            </label>
+	            <div class="stack-env-action">
+	              <input type="checkbox" id="stack-env-toggle" class="hidden">
+	              <button id="stack-env-toggle-btn" class="secondary icon-action-btn has-tooltip stack-env-btn" type="button" aria-label="Use .env secrets" aria-pressed="false" data-enabled="false" data-tooltip="Use .env secrets">
+	                <span class="icon-action icon-key" aria-hidden="true"></span>
+	              </button>
+	            </div>
+	            <span class="topbar-separator" aria-hidden="true"></span>
+	            <button
+	              id="stack-modal-save-icon"
+	              class="secondary icon-action-btn has-tooltip"
+	              type="button"
+	              aria-label="Save stack"
+	              data-tooltip="Save stack"
+	            >
+	              <span class="icon-action icon-device-floppy" aria-hidden="true"></span>
+	            </button>
+	            <button
+	              id="stack-modal-compose-up"
+	              class="secondary icon-action-btn has-tooltip btn-success"
+	              type="button"
+	              aria-label="Compose up"
+	              data-tooltip="Compose up"
+	            >
+	              <span class="icon-action icon-chevrons-up" aria-hidden="true"></span>
+	            </button>
+	            <button
+	              id="stack-modal-compose-down"
+	              class="secondary icon-action-btn has-tooltip btn-warning"
+	              type="button"
+	              aria-label="Compose down"
+	              data-tooltip="Compose down"
+	            >
+	              <span class="icon-action icon-chevrons-down" aria-hidden="true"></span>
+	            </button>
+	          </div>
+	          <div class="stack-editor-grid">
+	            <div class="stack-editor-main">
+	              <label for="stack-compose-input">docker-compose.yml</label>
+	              <div id="stack-compose-editor" class="stack-editor"></div>
+	              <textarea id="stack-compose-input" class="stack-textarea hidden" rows="16" spellcheck="false" placeholder="services:"></textarea>
+	            </div>
             <div class="stack-editor-env">
               <div class="stack-env-label">
                 <label for="stack-env-input">.env</label>

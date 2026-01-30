@@ -12,12 +12,14 @@ type RemoteServer struct {
 	Name        string `json:"name"`
 	URL         string `json:"url"`
 	Token       string `json:"token"`
+	PublicIP    string `json:"public_ip,omitempty"`
 	Maintenance bool   `json:"maintenance"`
 }
 
 type LocalServer struct {
 	Name        string `json:"name"`
 	Socket      string `json:"socket"`
+	PublicIP    string `json:"public_ip,omitempty"`
 	Maintenance bool   `json:"maintenance"`
 }
 
@@ -44,6 +46,7 @@ type ExperimentalFeatures struct {
 	Images            bool `json:"images"`
 	ContainerShell    bool `json:"container_shell"`
 	ContainerLogs     bool `json:"container_logs"`
+	ContainerResources bool `json:"container_resources"`
 	ContainersSidebar bool `json:"containers_sidebar"`
 }
 
