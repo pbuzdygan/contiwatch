@@ -129,6 +129,7 @@ docker pull ghcr.io/<owner>/<repo>:dev_<version>
 - `POST /api/containers/action` run container action (`start`, `stop`, `restart`, `pause`, `unpause`, `kill`)
 - `GET /api/containers/shell` (WebSocket) interactive shell for a container
 - `GET /api/containers/logs` (WebSocket) stream logs for a container
+- `POST /api/containers/resources` fetch resource metrics for selected containers (`scope`, `container_ids`)
 - `GET /api/images?scope=local:{name}|remote:{name}` list images for a selected server
 - `POST /api/images/pull` pull image (`repository`, optional `tag`)
 - `POST /api/images/prune` prune images (`mode=unused|dangling`)

@@ -21,6 +21,13 @@
 - Containers Resources: fixed 4-column card sizing, tighter CPU/RAM spacing, smaller status badge, and card-refresh no longer interrupts clicks.
 - Containers Resources: cards now use full available width (no max-width clamp) and status badge font size reduced further.
 - Containers Resources: pin button sizing adjusted and tooltip positioning fixed.
+- Containers Resources: added Cards/Table view toggle with a Containers-style table (sortable columns, pinned rows section, default Name asc).
+- Containers: table view now includes CPU/RAM/IP/Port columns (sortable).
+- Images: repository grouping now only shows a group header when a repository has 2+ images.
+- UI: moved the global search field from the sidebar to the topbar (centered).
+- UI: added collapsible sidebar (icon-only mode with banner swapped to logo).
+- Servers: Add server modal no longer resizes when switching Remote/Local (Local reuses Remote layout; only Docker socket/Public IP stay editable).
+- Servers: Add server modal redesigned with Connection type selector (Remote agent vs Local Unix socket) plus inline help and consistent layout.
 
 ## v1.2.1
 
