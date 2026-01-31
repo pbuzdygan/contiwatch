@@ -457,67 +457,67 @@
 
       <section id="view-containers" class="hidden">
         <div id="containers-table-view">
-          <div class="containers-table-wrap">
-            <table class="containers-table containers-main-table">
-              <thead>
-                <tr>
-                  <th class="containers-th-name">
-                    <span class="containers-th-name-inner">
-                      <span>Name</span>
-                      <button id="containers-name-sort" class="containers-sort-btn" type="button" aria-label="Sort by name">
-                        <span class="icon-sort icon-sort-neutral" aria-hidden="true"></span>
-                      </button>
-                    </span>
-                  </th>
-                  <th>Image</th>
-                  <th>
-                    <span class="containers-th-name-inner">
-                      <span>CPU</span>
-                      <button id="containers-cpu-sort" class="containers-sort-btn" type="button" aria-label="Sort by CPU">
-                        <span class="icon-sort icon-sort-neutral" aria-hidden="true"></span>
-                      </button>
-                    </span>
-                  </th>
-                  <th>
-                    <span class="containers-th-name-inner">
-                      <span>RAM</span>
-                      <button id="containers-ram-sort" class="containers-sort-btn" type="button" aria-label="Sort by RAM">
-                        <span class="icon-sort icon-sort-neutral" aria-hidden="true"></span>
-                      </button>
-                    </span>
-                  </th>
-                  <th class="containers-th-state">
-                    <span class="containers-th-name-inner">
-                      <span>State</span>
-                      <button id="containers-state-sort" class="containers-sort-btn" type="button" aria-label="Sort by state">
-                        <span class="icon-sort icon-sort-neutral" aria-hidden="true"></span>
-                      </button>
-                    </span>
-                  </th>
-                  <th>Uptime</th>
-                  <th>
-                    <span class="containers-th-name-inner">
-                      <span>IP</span>
-                      <button id="containers-ip-sort" class="containers-sort-btn" type="button" aria-label="Sort by IP">
-                        <span class="icon-sort icon-sort-neutral" aria-hidden="true"></span>
-                      </button>
-                    </span>
-                  </th>
-                  <th>
-                    <span class="containers-th-name-inner">
-                      <span>Port</span>
-                      <button id="containers-port-sort" class="containers-sort-btn" type="button" aria-label="Sort by port">
-                        <span class="icon-sort icon-sort-neutral" aria-hidden="true"></span>
-                      </button>
-                    </span>
-                  </th>
-                  <th>Stack</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody id="containers-body"></tbody>
-            </table>
-          </div>
+	          <div class="containers-table-wrap">
+	            <table class="containers-table containers-main-table">
+	              <thead>
+	                <tr>
+	                  <th class="containers-th-name">
+	                    <span class="containers-th-name-inner">
+	                      <span>Name</span>
+	                      <button id="containers-name-sort" class="containers-sort-btn" type="button" aria-label="Sort by name">
+	                        <span class="icon-sort icon-sort-neutral" aria-hidden="true"></span>
+	                      </button>
+	                    </span>
+	                  </th>
+	                  <th>Image</th>
+	                  <th class="containers-th-state">
+	                    <span class="containers-th-name-inner">
+	                      <span>State</span>
+	                      <button id="containers-state-sort" class="containers-sort-btn" type="button" aria-label="Sort by state">
+	                        <span class="icon-sort icon-sort-neutral" aria-hidden="true"></span>
+	                      </button>
+	                    </span>
+	                  </th>
+	                  <th>Uptime</th>
+	                  <th>
+	                    <span class="containers-th-name-inner">
+	                      <span>CPU</span>
+	                      <button id="containers-cpu-sort" class="containers-sort-btn" type="button" aria-label="Sort by CPU">
+	                        <span class="icon-sort icon-sort-neutral" aria-hidden="true"></span>
+	                      </button>
+	                    </span>
+	                  </th>
+	                  <th>
+	                    <span class="containers-th-name-inner">
+	                      <span>RAM</span>
+	                      <button id="containers-ram-sort" class="containers-sort-btn" type="button" aria-label="Sort by RAM">
+	                        <span class="icon-sort icon-sort-neutral" aria-hidden="true"></span>
+	                      </button>
+	                    </span>
+	                  </th>
+	                  <th>
+	                    <span class="containers-th-name-inner">
+	                      <span>IP</span>
+	                      <button id="containers-ip-sort" class="containers-sort-btn" type="button" aria-label="Sort by IP">
+	                        <span class="icon-sort icon-sort-neutral" aria-hidden="true"></span>
+	                      </button>
+	                    </span>
+	                  </th>
+	                  <th>
+	                    <span class="containers-th-name-inner">
+	                      <span>Port</span>
+	                      <button id="containers-port-sort" class="containers-sort-btn" type="button" aria-label="Sort by port">
+	                        <span class="icon-sort icon-sort-neutral" aria-hidden="true"></span>
+	                      </button>
+	                    </span>
+	                  </th>
+	                  <th>Stack</th>
+	                  <th>Actions</th>
+	                </tr>
+	              </thead>
+	              <tbody id="containers-body"></tbody>
+	            </table>
+	          </div>
           <div id="containers-empty" class="hint hidden"></div>
         </div>
         <div id="containers-stacks-view" class="containers-stacks-view hidden">
@@ -696,6 +696,22 @@
                         </button>
                       </span>
                     </th>
+                    <th class="containers-th-state">
+                      <span class="containers-th-name-inner">
+                        <span>State</span>
+                        <button id="resources-status-sort" class="containers-sort-btn" type="button" aria-label="Sort by state">
+                          <span class="icon-sort icon-sort-neutral" aria-hidden="true"></span>
+                        </button>
+                      </span>
+                    </th>
+                    <th>
+                      <span class="containers-th-name-inner">
+                        <span>Uptime</span>
+                        <button id="resources-uptime-sort" class="containers-sort-btn" type="button" aria-label="Sort by uptime">
+                          <span class="icon-sort icon-sort-neutral" aria-hidden="true"></span>
+                        </button>
+                      </span>
+                    </th>
                     <th>
                       <span class="containers-th-name-inner">
                         <span>CPU</span>
@@ -708,22 +724,6 @@
                       <span class="containers-th-name-inner">
                         <span>RAM</span>
                         <button id="resources-ram-sort" class="containers-sort-btn" type="button" aria-label="Sort by RAM">
-                          <span class="icon-sort icon-sort-neutral" aria-hidden="true"></span>
-                        </button>
-                      </span>
-                    </th>
-                    <th class="containers-th-state">
-                      <span class="containers-th-name-inner">
-                        <span>Status</span>
-                        <button id="resources-status-sort" class="containers-sort-btn" type="button" aria-label="Sort by status">
-                          <span class="icon-sort icon-sort-neutral" aria-hidden="true"></span>
-                        </button>
-                      </span>
-                    </th>
-                    <th>
-                      <span class="containers-th-name-inner">
-                        <span>Uptime</span>
-                        <button id="resources-uptime-sort" class="containers-sort-btn" type="button" aria-label="Sort by uptime">
                           <span class="icon-sort icon-sort-neutral" aria-hidden="true"></span>
                         </button>
                       </span>

@@ -3021,7 +3021,8 @@ function formatBytesMBOrGB(value) {
   const total = Number(value);
   if (!Number.isFinite(total) || total <= 0) return "0 MB";
   const mb = total / (1024 * 1024);
-  if (mb < 1024) {
+  // UX: keep the RAM column narrow. Above ~999 MB we switch to GB so the value stays compact.
+  if (mb < 1000) {
     return `${mb.toFixed(mb >= 10 ? 0 : 1)} MB`;
   }
   const gb = mb / 1024;
@@ -3056,15 +3057,18 @@ function containersSort(list, mode) {
   const dir = order === "desc" ? "desc" : "asc";
   const getResourcesSortValue = (container) => {
     const resource = containersTableResourcesData.get(container.id);
-    if (!resource) return null;
-    if (field === "cpu") return Number.isFinite(Number(resource.cpu_percent)) ? Number(resource.cpu_percent) : null;
-    if (field === "ram") return Number.isFinite(Number(resource.mem_usage_bytes)) ? Number(resource.mem_usage_bytes) : null;
+    if (field === "cpu") return resource && Number.isFinite(Number(resource.cpu_percent)) ? Number(resource.cpu_percent) : null;
+    if (field === "ram") return resource && Number.isFinite(Number(resource.mem_usage_bytes)) ? Number(resource.mem_usage_bytes) : null;
     if (field === "ip") {
-      const ips = Array.isArray(resource.ip_addresses) ? resource.ip_addresses : [];
+      const ips = Array.isArray(resource && resource.ip_addresses)
+        ? resource.ip_addresses
+        : Array.isArray(container.ip_addresses)
+            ? container.ip_addresses
+            : [];
       return ips.length > 0 ? String(ips[0].ip || "") : null;
     }
     if (field === "port") {
-      const ports = getResourcesHostPorts(resource.ports);
+      const ports = getResourcesHostPorts(resource ? resource.ports : container.ports);
       return ports.length > 0 ? Number(ports[0]) : null;
     }
     return null;
@@ -3397,6 +3401,7 @@ function setContainersViewMode(mode) {
     closeContainersLogsSession("switch to table");
     stopStacksAutoRefresh();
     startContainersAutoRefresh();
+    refreshContainers({ silent: true }).catch(() => {});
   }
   if (next !== "resources") {
     stopContainersResourcesAutoRefresh();
@@ -3719,11 +3724,15 @@ function renderContainersResourcesTable() {
       return Number.isFinite(val) ? val : null;
     }
     if (key === "ip") {
-      const ips = resource && Array.isArray(resource.ip_addresses) ? resource.ip_addresses : [];
+      const ips = resource && Array.isArray(resource.ip_addresses)
+        ? resource.ip_addresses
+        : Array.isArray(container.ip_addresses)
+            ? container.ip_addresses
+            : [];
       return ips.length > 0 ? String(ips[0].ip || "") : null;
     }
     if (key === "port") {
-      const ports = resource ? getResourcesHostPorts(resource.ports) : [];
+      const ports = getResourcesHostPorts(resource ? resource.ports : container.ports);
       return ports.length > 0 ? Number(ports[0]) : null;
     }
     return String(container.name || container.id || "");
@@ -3787,10 +3796,15 @@ function renderContainersResourcesTable() {
     uptimeCell.textContent = formatUptime(resource ? resource.uptime_sec : container.uptime_sec);
 
     const ipCell = document.createElement("td");
-    ipCell.textContent = resource ? formatResourcesIPValue(resource.ip_addresses) : "—";
+    const ipAddresses = resource && Array.isArray(resource.ip_addresses)
+      ? resource.ip_addresses
+      : Array.isArray(container.ip_addresses)
+          ? container.ip_addresses
+          : [];
+    ipCell.textContent = ipAddresses.length > 0 ? formatResourcesIPValue(ipAddresses) : "—";
 
     const portCell = document.createElement("td");
-    const hostPorts = resource ? getResourcesHostPorts(resource.ports) : [];
+    const hostPorts = getResourcesHostPorts(resource ? resource.ports : container.ports);
     const scopeInfo = getScopeInfo(containersSelectedScope);
     const publicHost = scopeInfo && scopeInfo.server ? String(scopeInfo.server.public_ip || "").trim() : "";
     if (hostPorts.length === 0) {
@@ -3815,7 +3829,7 @@ function renderContainersResourcesTable() {
       });
     }
 
-    row.append(pinCell, nameCell, cpuCell, ramCell, statusCell, uptimeCell, ipCell, portCell);
+    row.append(pinCell, nameCell, statusCell, uptimeCell, cpuCell, ramCell, ipCell, portCell);
     return row;
   };
 
@@ -3939,8 +3953,13 @@ function renderContainersResourcesCards() {
     ipIcon.setAttribute("aria-hidden", "true");
     const ipValue = document.createElement("span");
     ipValue.className = "containers-resource-value";
-    ipValue.textContent = resource ? formatResourcesIPValue(resource.ip_addresses) : "—";
-    const ipTooltip = resource ? formatResourcesIPTooltip(resource.ip_addresses) : "";
+    const ipAddresses = resource && Array.isArray(resource.ip_addresses)
+      ? resource.ip_addresses
+      : Array.isArray(container.ip_addresses)
+          ? container.ip_addresses
+          : [];
+    ipValue.textContent = ipAddresses.length > 0 ? formatResourcesIPValue(ipAddresses) : "—";
+    const ipTooltip = ipAddresses.length > 0 ? formatResourcesIPTooltip(ipAddresses) : "";
     if (ipTooltip) {
       ipIcon.setAttribute("data-tooltip", ipTooltip);
       ipIcon.setAttribute("aria-label", ipTooltip);
@@ -3955,7 +3974,7 @@ function renderContainersResourcesCards() {
     portsIcon.setAttribute("aria-label", "Ports");
     const portsValue = document.createElement("span");
     portsValue.className = "containers-resource-value";
-    const hostPorts = resource ? getResourcesHostPorts(resource.ports) : [];
+    const hostPorts = getResourcesHostPorts(resource ? resource.ports : container.ports);
     const scopeInfo = getScopeInfo(containersSelectedScope);
     const publicHost = scopeInfo && scopeInfo.server ? String(scopeInfo.server.public_ip || "").trim() : "";
     if (hostPorts.length === 0) {
@@ -4650,11 +4669,17 @@ function clearStacksActionConfirmations() {
 function updateContainerRow(row, container, scope) {
   row.dataset.id = container.id;
   const resource = containersTableResourcesData.get(container.id);
-  const hostPorts = resource ? getResourcesHostPorts(resource.ports) : [];
-  const ipValue = resource ? formatResourcesIPValue(resource.ip_addresses) : "";
-  row.dataset.search = `${container.name || ""} ${container.image || ""} ${container.stack || ""} ${container.state || ""} ${ipValue || ""} ${hostPorts.join(" ")}`;
+  const hostPorts = getResourcesHostPorts(resource ? resource.ports : container.ports);
+  const ipAddresses = resource && Array.isArray(resource.ip_addresses)
+    ? resource.ip_addresses
+    : Array.isArray(container.ip_addresses)
+        ? container.ip_addresses
+        : [];
+  const ipSearchValue = ipAddresses.length > 0 ? ipAddresses.map((ip) => ip.ip).filter(Boolean).join(" ") : "";
+  row.dataset.search = `${container.name || ""} ${container.image || ""} ${container.stack || ""} ${container.state || ""} ${ipSearchValue} ${hostPorts.join(" ")}`;
   const cells = row.querySelectorAll("td");
   if (cells.length < 10) return;
+  // 0 Name, 1 Image, 2 State, 3 Uptime, 4 CPU, 5 RAM, 6 IP, 7 Port, 8 Stack, 9 Actions
   cells[0].textContent = "";
   const nameIcon = document.createElement("span");
   nameIcon.className = "icon-action icon-package name-leading-icon";
@@ -4662,20 +4687,23 @@ function updateContainerRow(row, container, scope) {
   cells[0].appendChild(nameIcon);
   cells[0].appendChild(document.createTextNode(container.name || container.id.slice(0, 12)));
   cells[1].textContent = container.image || "";
-  cells[2].textContent = resource ? formatPercent(resource.cpu_percent) : "—";
-  cells[3].textContent = resource ? formatBytesMBOrGB(resource.mem_usage_bytes) : "—";
+
   const stateValue = normalizeContainerState(container.state);
   const stateText = container.state || "unknown";
-  cells[4].textContent = "";
+  cells[2].textContent = "";
   const stateBadge = document.createElement("span");
   stateBadge.className = `containers-state-badge ${stateValue ? `containers-state-${stateValue}` : "containers-state-unknown"}`;
   stateBadge.textContent = stateText;
-  cells[4].className = "containers-state-cell";
-  cells[4].appendChild(stateBadge);
-  cells[5].textContent = formatUptime(container.uptime_sec);
-  cells[6].textContent = resource ? formatResourcesIPValue(resource.ip_addresses) : "—";
+  cells[2].className = "containers-state-cell";
+  cells[2].appendChild(stateBadge);
+
+  cells[3].textContent = formatUptime(container.uptime_sec);
+  cells[4].textContent = resource ? formatPercent(resource.cpu_percent) : "—";
+  cells[5].textContent = resource ? formatBytesMBOrGB(resource.mem_usage_bytes) : "—";
+  cells[6].textContent = ipAddresses.length > 0 ? formatResourcesIPValue(ipAddresses) : "—";
+
   cells[7].textContent = "";
-  if (!resource || hostPorts.length === 0) {
+  if (hostPorts.length === 0) {
     cells[7].textContent = "—";
   } else {
     const scopeInfo = getScopeInfo(scope);
@@ -4697,6 +4725,7 @@ function updateContainerRow(row, container, scope) {
       }
     });
   }
+
   cells[8].textContent = container.stack || "-";
   row.dataset.state = stateValue;
   const actionsCell = cells[9];
@@ -4927,7 +4956,6 @@ async function refreshContainersTableResources(scope, list, options = {}) {
       if (!options.silent) {
         showToast(payload && payload.error ? payload.error : "Unable to load container resources.");
       }
-      containersTableResourcesData = new Map();
       return;
     }
     const resources = Array.isArray(payload.resources) ? payload.resources : [];
@@ -4941,7 +4969,6 @@ async function refreshContainersTableResources(scope, list, options = {}) {
     if (!options.silent) {
       showToast(err.message || "Unable to load container resources.");
     }
-    containersTableResourcesData = new Map();
   } finally {
     if (requestId === containersTableResourcesRequestId) {
       containersTableResourcesUpdateInProgress = false;

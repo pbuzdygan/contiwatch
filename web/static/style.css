@@ -2601,32 +2601,34 @@ input::placeholder {
 
 #containers-resources-table-wrap .containers-table th:nth-child(2),
 #containers-resources-table-wrap .containers-table td:nth-child(2) {
-  width: 26%;
+  width: 28%;
 }
 
 #containers-resources-table-wrap .containers-table th:nth-child(3),
 #containers-resources-table-wrap .containers-table td:nth-child(3) {
-  width: 9%;
+  width: 12%;
 }
 
 #containers-resources-table-wrap .containers-table th:nth-child(4),
 #containers-resources-table-wrap .containers-table td:nth-child(4) {
-  width: 10%;
+  width: 14%;
+  white-space: nowrap;
 }
 
 #containers-resources-table-wrap .containers-table th:nth-child(5),
 #containers-resources-table-wrap .containers-table td:nth-child(5) {
-  width: 12%;
+  width: 9%;
 }
 
 #containers-resources-table-wrap .containers-table th:nth-child(6),
 #containers-resources-table-wrap .containers-table td:nth-child(6) {
-  width: 12%;
+  width: 6.5ch;
+  white-space: nowrap;
 }
 
 #containers-resources-table-wrap .containers-table th:nth-child(7),
 #containers-resources-table-wrap .containers-table td:nth-child(7) {
-  width: 19%;
+  width: 25%;
 }
 
 #containers-resources-table-wrap .containers-table th:nth-child(8),
@@ -3015,6 +3017,18 @@ input::placeholder {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.containers-main-table th:nth-child(4),
+.containers-main-table td:nth-child(4),
+.containers-main-table th:nth-child(6),
+.containers-main-table td:nth-child(6) {
+  white-space: nowrap;
+}
+
+.containers-main-table th:nth-child(6),
+.containers-main-table td:nth-child(6) {
+  width: 6.5ch;
 }
 
 .containers-stacks-view {
@@ -3489,22 +3503,22 @@ input::placeholder {
 
 .containers-main-table th:nth-child(3),
 .containers-main-table td:nth-child(3) {
-  width: 6%;
+  width: 8%;
 }
 
 .containers-main-table th:nth-child(4),
 .containers-main-table td:nth-child(4) {
-  width: 7%;
+  width: 10%;
 }
 
 .containers-main-table th:nth-child(5),
 .containers-main-table td:nth-child(5) {
-  width: 8%;
+  width: 6%;
 }
 
 .containers-main-table th:nth-child(6),
 .containers-main-table td:nth-child(6) {
-  width: 8%;
+  width: 6.5ch;
 }
 
 .containers-main-table th:nth-child(7),
@@ -3519,7 +3533,7 @@ input::placeholder {
 
 .containers-main-table th:nth-child(9),
 .containers-main-table td:nth-child(9) {
-  width: 8%;
+  width: 7%;
 }
 
 .containers-main-table th:nth-child(10),

@@ -59,6 +59,10 @@ type Server struct {
 	serverInfoSubs    map[chan streamEvent]struct{}
 	serverInfoQueue   chan config.RemoteServer
 	serverInfoStop    context.CancelFunc
+
+	containersResourcesCacheMu sync.RWMutex
+	containersResourcesCache   map[string]map[string]containersResourcesCacheEntry
+	containersResourcesRefresh map[string]time.Time
 }
 
 type scanState struct {
