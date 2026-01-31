@@ -318,10 +318,7 @@
         </button>
       </nav>
       <div class="sidebar-footer">
-        <div class="app-version">
-          <a id="app-version" class="app-version-link" href="#" target="_blank" rel="noreferrer">vdev</a>
-          <a id="app-version-update" class="app-version-badge hidden" href="#" target="_blank" rel="noreferrer">UPDATE AVAILABLE</a>
-        </div>
+        <a id="app-version-update" class="app-version-badge hidden" href="#" target="_blank" rel="noreferrer">UPDATE AVAILABLE</a>
       </div>
     </aside>
 
@@ -454,25 +451,40 @@
                 <span>Container images</span>
               </label>
             </div>
+            <div class="settings-card about-card">
+              <h3 class="settings-title">
+                <svg xmlns="http://www.w3.org/2000/svg" class="settings-icon icon icon-tabler icons-tabler-outline icon-tabler-info-circle" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M3 12a9 9 0 1 0 18 0a9 9 0 0 0 -18 0" /><path d="M12 9h.01" /><path d="M11 12h1v4h1" /></svg>
+                About
+              </h3>
+              <div class="about-row">
+                <span class="about-label">Version</span>
+                <a id="about-version-link" class="about-value" href="#" target="_blank" rel="noreferrer">vdev</a>
+              </div>
+              <div class="about-row">
+                <span class="about-label">Update</span>
+                <span id="about-update-status" class="about-update-status">Up to date</span>
+                <a id="about-update-link" class="app-version-badge hidden" href="#" target="_blank" rel="noreferrer">UPDATE AVAILABLE</a>
+              </div>
+            </div>
           </div>
         </form>
       </section>
 
       <section id="view-containers" class="hidden">
         <div id="containers-table-view">
-	          <div class="containers-table-wrap">
-	            <table class="containers-table containers-main-table">
-	              <thead>
-	                <tr>
-	                  <th class="containers-th-name">
-	                    <span class="containers-th-name-inner">
-	                      <span>Name</span>
-	                      <button id="containers-name-sort" class="containers-sort-btn" type="button" aria-label="Sort by name">
-	                        <span class="icon-sort icon-sort-neutral" aria-hidden="true"></span>
-	                      </button>
-	                    </span>
-	                  </th>
-	                  <th>Image</th>
+          <div class="containers-table-wrap">
+            <table class="containers-table containers-main-table">
+              <thead>
+                <tr>
+                  <th class="containers-th-name">
+                    <span class="containers-th-name-inner">
+                      <span>Name</span>
+                      <button id="containers-name-sort" class="containers-sort-btn" type="button" aria-label="Sort by name">
+                        <span class="icon-sort icon-sort-neutral" aria-hidden="true"></span>
+                      </button>
+                    </span>
+                  </th>
+                  <th>Image</th>
 	                  <th class="containers-th-state">
 	                    <span class="containers-th-name-inner">
 	                      <span>State</span>

@@ -1152,6 +1152,35 @@ h2 {
   background: color-mix(in srgb, var(--color-success), transparent 82%);
 }
 
+.about-card .about-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-2);
+  padding: var(--s-1) 0;
+}
+
+.about-card .about-label {
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+}
+
+.about-card .about-value {
+  font-weight: 600;
+  color: var(--color-text);
+  text-decoration: none;
+}
+
+.about-card .about-value:hover {
+  color: var(--color-primary);
+  text-decoration: underline;
+}
+
+.about-card .about-update-status {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
 .scan-btn {
   min-width: var(--control-h);
 }

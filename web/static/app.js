@@ -155,6 +155,9 @@ const logsAutoToggle = document.getElementById("logs-auto");
 const logsListEl = document.getElementById("logs-list");
 const appVersionEl = document.getElementById("app-version");
 const appVersionUpdateEl = document.getElementById("app-version-update");
+const aboutVersionLinkEl = document.getElementById("about-version-link");
+const aboutUpdateStatusEl = document.getElementById("about-update-status");
+const aboutUpdateLinkEl = document.getElementById("about-update-link");
 const testWebhookBtn = document.getElementById("test-webhook");
 const saveIntervalBtn = document.getElementById("save-interval");
 const detailsModal = document.getElementById("details-modal");
@@ -6111,15 +6114,27 @@ function buildReleaseUrl(meta) {
 }
 
 function applyAppVersion(meta) {
-  if (!appVersionEl) return;
-  appVersionEl.textContent = formatAppVersionLabel(meta && meta.version ? meta.version : "dev");
+  const versionLabel = formatAppVersionLabel(meta && meta.version ? meta.version : "dev");
   const url = buildReleaseUrl(meta);
-  if (url) {
-    appVersionEl.href = url;
-    appVersionEl.classList.add("app-version-link");
-  } else {
-    appVersionEl.removeAttribute("href");
-    appVersionEl.classList.remove("app-version-link");
+  if (appVersionEl) {
+    appVersionEl.textContent = versionLabel;
+    if (url) {
+      appVersionEl.href = url;
+      appVersionEl.classList.add("app-version-link");
+    } else {
+      appVersionEl.removeAttribute("href");
+      appVersionEl.classList.remove("app-version-link");
+    }
+  }
+  if (aboutVersionLinkEl) {
+    aboutVersionLinkEl.textContent = versionLabel;
+    if (url) {
+      aboutVersionLinkEl.href = url;
+      aboutVersionLinkEl.classList.add("about-value");
+    } else {
+      aboutVersionLinkEl.removeAttribute("href");
+      aboutVersionLinkEl.classList.remove("about-value");
+    }
   }
 }
 
@@ -6129,6 +6144,13 @@ function applyReleaseBadge(release) {
   appVersionUpdateEl.classList.remove("has-tooltip");
   appVersionUpdateEl.removeAttribute("data-tooltip");
   appVersionUpdateEl.removeAttribute("aria-label");
+  if (aboutUpdateLinkEl && aboutUpdateStatusEl) {
+    aboutUpdateLinkEl.classList.add("hidden");
+    aboutUpdateLinkEl.classList.remove("has-tooltip");
+    aboutUpdateLinkEl.removeAttribute("data-tooltip");
+    aboutUpdateLinkEl.removeAttribute("aria-label");
+    aboutUpdateStatusEl.classList.remove("hidden");
+  }
   if (!release || !release.update_available || !release.latest || !release.latest.url) {
     return;
   }
@@ -6139,6 +6161,14 @@ function applyReleaseBadge(release) {
   appVersionUpdateEl.classList.add("has-tooltip");
   appVersionUpdateEl.setAttribute("data-tooltip", tooltip);
   appVersionUpdateEl.setAttribute("aria-label", tooltip);
+  if (aboutUpdateLinkEl && aboutUpdateStatusEl) {
+    aboutUpdateStatusEl.classList.add("hidden");
+    aboutUpdateLinkEl.href = release.latest.url;
+    aboutUpdateLinkEl.classList.remove("hidden");
+    aboutUpdateLinkEl.classList.add("has-tooltip");
+    aboutUpdateLinkEl.setAttribute("data-tooltip", tooltip);
+    aboutUpdateLinkEl.setAttribute("aria-label", tooltip);
+  }
 }
 
 async function fetchMeta() {
@@ -6472,14 +6502,29 @@ function showTooltip(target) {
   let left = rect.left + rect.width / 2 - tooltipRect.width / 2;
   left = Math.max(margin, Math.min(left, window.innerWidth - tooltipRect.width - margin));
 
-  let top = rect.top - tooltipRect.height - 10;
+  const spaceAbove = rect.top - margin;
+  const spaceBelow = window.innerHeight - rect.bottom - margin;
+  const offset = 10;
   let placement = "top";
-  if (top < margin) {
-    top = rect.bottom + 10;
+  let top = rect.top - tooltipRect.height - offset;
+  if (spaceAbove < tooltipRect.height + offset && spaceBelow >= tooltipRect.height + offset) {
     placement = "bottom";
+    top = rect.bottom + offset;
+  } else if (spaceAbove < tooltipRect.height + offset && spaceBelow < tooltipRect.height + offset) {
+    // Not enough space either side: pick the larger space and clamp.
+    if (spaceBelow > spaceAbove) {
+      placement = "bottom";
+      top = rect.bottom + offset;
+    } else {
+      placement = "top";
+      top = rect.top - tooltipRect.height - offset;
+    }
+  }
+  if (top < margin) {
+    top = margin;
   }
   if (top + tooltipRect.height > window.innerHeight - margin) {
-    top = Math.max(margin, window.innerHeight - tooltipRect.height - margin);
+    top = window.innerHeight - tooltipRect.height - margin;
   }
 
   tooltipEl.style.left = `${left}px`;
