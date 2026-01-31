@@ -158,6 +158,9 @@ const appVersionUpdateEl = document.getElementById("app-version-update");
 const aboutVersionLinkEl = document.getElementById("about-version-link");
 const aboutUpdateStatusEl = document.getElementById("about-update-status");
 const aboutUpdateLinkEl = document.getElementById("about-update-link");
+const aboutChannelEl = document.getElementById("about-channel");
+const aboutRepoLinkEl = document.getElementById("about-repo-link");
+const aboutReleaseTagEl = document.getElementById("about-release-tag");
 const testWebhookBtn = document.getElementById("test-webhook");
 const saveIntervalBtn = document.getElementById("save-interval");
 const detailsModal = document.getElementById("details-modal");
@@ -216,6 +219,7 @@ const containersResourcesViewStorageKey = "contiwatch_container_resources_view";
 let containersResourcesViewMode = "cards";
 const sidebarCollapsedStorageKey = "contiwatch_sidebar_collapsed";
 const releaseCheckPollMs = 1000 * 60 * 60 * 6;
+const defaultReleaseRepo = "pbuzdygan/contiwatch";
 let lastSchedulerEnabled = null;
 let lastSchedulerIntervalSec = null;
 let serverStream = null;
@@ -6107,10 +6111,11 @@ function buildReleaseTag(version) {
 }
 
 function buildReleaseUrl(meta) {
-  if (!meta || !meta.repo) return "";
-  const tag = meta.release_tag || buildReleaseTag(meta.version);
-  if (!tag) return `https://github.com/${meta.repo}/releases`;
-  return `https://github.com/${meta.repo}/releases/tag/${tag}`;
+  const repo = meta && meta.repo ? meta.repo : defaultReleaseRepo;
+  if (!repo) return "";
+  const tag = meta && meta.release_tag ? meta.release_tag : buildReleaseTag(meta && meta.version ? meta.version : "");
+  if (!tag) return `https://github.com/${repo}/releases`;
+  return `https://github.com/${repo}/releases/tag/${tag}`;
 }
 
 function applyAppVersion(meta) {
@@ -6135,6 +6140,25 @@ function applyAppVersion(meta) {
       aboutVersionLinkEl.removeAttribute("href");
       aboutVersionLinkEl.classList.remove("about-value");
     }
+  }
+  if (aboutChannelEl) {
+    aboutChannelEl.textContent = meta && meta.channel ? meta.channel : "—";
+  }
+  if (aboutRepoLinkEl) {
+    const repo = meta && meta.repo ? meta.repo : defaultReleaseRepo;
+    if (repo) {
+      aboutRepoLinkEl.textContent = repo;
+      aboutRepoLinkEl.href = `https://github.com/${repo}`;
+      aboutRepoLinkEl.classList.add("about-value");
+    } else {
+      aboutRepoLinkEl.textContent = "—";
+      aboutRepoLinkEl.removeAttribute("href");
+      aboutRepoLinkEl.classList.remove("about-value");
+    }
+  }
+  if (aboutReleaseTagEl) {
+    const tag = meta && meta.release_tag ? meta.release_tag : buildReleaseTag(meta && meta.version ? meta.version : "");
+    aboutReleaseTagEl.textContent = tag || "—";
   }
 }
 
