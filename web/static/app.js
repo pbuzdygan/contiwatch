@@ -154,6 +154,7 @@ const logsLevelMenu = document.getElementById("logs-level-menu");
 const logsAutoToggle = document.getElementById("logs-auto");
 const logsListEl = document.getElementById("logs-list");
 const appVersionEl = document.getElementById("app-version");
+const appVersionUpdateEl = document.getElementById("app-version-update");
 const testWebhookBtn = document.getElementById("test-webhook");
 const saveIntervalBtn = document.getElementById("save-interval");
 const detailsModal = document.getElementById("details-modal");
@@ -184,6 +185,7 @@ let currentScanController = null;
 let currentView = "status";
 let updateInProgress = false;
 let logsRefreshTimer = null;
+let releaseCheckTimer = null;
 let currentConfig = null;
 let cachedLocals = [];
 let cachedRemotes = [];
@@ -210,6 +212,7 @@ let serversViewMode = "table";
 const containersResourcesViewStorageKey = "contiwatch_container_resources_view";
 let containersResourcesViewMode = "cards";
 const sidebarCollapsedStorageKey = "contiwatch_sidebar_collapsed";
+const releaseCheckPollMs = 1000 * 60 * 60 * 6;
 let lastSchedulerEnabled = null;
 let lastSchedulerIntervalSec = null;
 let serverStream = null;
@@ -6084,17 +6087,90 @@ function initServerStream() {
   });
 }
 
-async function refreshVersion() {
+function formatAppVersionLabel(version) {
+  const raw = version ? String(version) : "dev";
+  if (raw.startsWith("v")) return raw;
+  return `v${raw}`;
+}
+
+function buildReleaseTag(version) {
+  if (!version) return "";
+  const raw = String(version);
+  const lower = raw.toLowerCase();
+  if (lower.startsWith("vdev")) return raw.slice(1);
+  if (lower.startsWith("dev")) return raw;
+  if (lower.startsWith("v")) return raw;
+  return `v${raw}`;
+}
+
+function buildReleaseUrl(meta) {
+  if (!meta || !meta.repo) return "";
+  const tag = meta.release_tag || buildReleaseTag(meta.version);
+  if (!tag) return `https://github.com/${meta.repo}/releases`;
+  return `https://github.com/${meta.repo}/releases/tag/${tag}`;
+}
+
+function applyAppVersion(meta) {
   if (!appVersionEl) return;
-  try {
-    const payload = await fetchJSON("/api/version");
-    const raw = (payload && payload.version) ? String(payload.version) : "dev";
-    const normalized = raw.startsWith("v") ? raw : `v${raw}`;
-    const display = raw.startsWith("dev") ? `v${raw}` : normalized;
-    appVersionEl.textContent = display;
-  } catch (err) {
-    appVersionEl.textContent = "vdev";
+  appVersionEl.textContent = formatAppVersionLabel(meta && meta.version ? meta.version : "dev");
+  const url = buildReleaseUrl(meta);
+  if (url) {
+    appVersionEl.href = url;
+    appVersionEl.classList.add("app-version-link");
+  } else {
+    appVersionEl.removeAttribute("href");
+    appVersionEl.classList.remove("app-version-link");
   }
+}
+
+function applyReleaseBadge(release) {
+  if (!appVersionUpdateEl) return;
+  appVersionUpdateEl.classList.add("hidden");
+  appVersionUpdateEl.classList.remove("has-tooltip");
+  appVersionUpdateEl.removeAttribute("data-tooltip");
+  appVersionUpdateEl.removeAttribute("aria-label");
+  if (!release || !release.update_available || !release.latest || !release.latest.url) {
+    return;
+  }
+  const label = release.latest.tag || release.latest.version || "";
+  const tooltip = label ? `Update available: ${label}` : "Update available";
+  appVersionUpdateEl.href = release.latest.url;
+  appVersionUpdateEl.classList.remove("hidden");
+  appVersionUpdateEl.classList.add("has-tooltip");
+  appVersionUpdateEl.setAttribute("data-tooltip", tooltip);
+  appVersionUpdateEl.setAttribute("aria-label", tooltip);
+}
+
+async function fetchMeta() {
+  try {
+    return await fetchJSON("/api/meta");
+  } catch {
+    const payload = await fetchJSON("/api/version");
+    return { version: payload && payload.version ? String(payload.version) : "dev" };
+  }
+}
+
+async function refreshReleaseStatus() {
+  if (!appVersionEl) return;
+  let release = null;
+  let meta = null;
+  try {
+    release = await fetchJSON("/api/release");
+    if (release && release.meta) {
+      meta = release.meta;
+    }
+  } catch {
+    release = null;
+  }
+  if (!meta) {
+    try {
+      meta = await fetchMeta();
+    } catch {
+      meta = { version: "dev" };
+    }
+  }
+  applyAppVersion(meta);
+  applyReleaseBadge(release);
 }
 
 async function refreshLogs() {
@@ -7652,7 +7728,12 @@ async function init() {
   triggerStatusRefresh().catch(() => {});
   renderStatusPlaceholders();
   refreshStatus().catch(() => {});
-  await refreshVersion();
+  await refreshReleaseStatus();
+  if (!releaseCheckTimer) {
+    releaseCheckTimer = window.setInterval(() => {
+      refreshReleaseStatus().catch(() => {});
+    }, releaseCheckPollMs);
+  }
   statusHintEl.classList.toggle("hidden", cachedLocals.length > 0);
 }
 

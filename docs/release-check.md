@@ -1,8 +1,6 @@
-# Release Check (dev/main) - uniwersalny schemat
+# Release Check - uniwersalny schemat
 
-Ten dokument opisuje uniwersalny mechanizm sprawdzania nowej wersji aplikacji, z rozdzieleniem kanałów:
-- obrazy/instancje z kanalu `dev` sprawdzają tylko wydania z gałęzi `dev`
-- obrazy/instancje z kanalu `main` sprawdzają tylko wydania z gałęzi `main`
+Ten dokument opisuje uniwersalny mechanizm sprawdzania nowej wersji aplikacji, z rozdzieleniem kanałów wydań (np. `main` / `dev`, `stable` / `beta`, `prod` / `staging`).
 
 Zawiera przykładową implementację dla:
 - Backend: Go (HTTP API, scheduler, logi)
@@ -10,21 +8,21 @@ Zawiera przykładową implementację dla:
 
 ## 1) Konwencje wersji i kanałów
 
-Ustal zasady nazewnictwa wydań tak, aby dało się je rozdzielić:
-- **main**: tagi semver, np. `v1.2.3`
-- **dev**: tagi dev, np. `dev12` lub `dev-12`
+Ustal zasady nazewnictwa wydań tak, aby dało się je rozdzielić między kanały:
+- **kanał stabilny**: tagi semver, np. `v1.2.3`
+- **kanał niestabilny**: tagi dev/beta/rc, np. `dev12`, `beta-3`, `rc.1`
 
 Wymagania:
-- `dev` musi być rozpoznawalny po tagu/nazwie release albo po `target_commitish == dev`.
-- `main` to wszystko, co nie jest `dev`.
+- Kanał musi być rozpoznawalny po tagu/nazwie release albo po `target_commitish`.
+- Jeśli kanałów jest więcej niż dwa, zdefiniuj reguły priorytetu i fallback.
 
-## 2) Pipeline (build i tagowanie obrazów)
+## 2) Pipeline (build i tagowanie artefaktów)
 
 W pipeline ustawiasz:
 - `APP_VERSION` (np. tag release)
 - `APP_REPO` (np. `org/app`)
-- `APP_CHANNEL` (`main` lub `dev`)
-- Tag obrazu: `latest` dla `main`, `dev_latest` dla `dev`
+- `APP_CHANNEL` (np. `main`, `dev`, `beta`)
+- Tag artefaktu/obrazu: `latest` dla kanału stabilnego, osobny tag dla innych kanałów (np. `dev_latest`)
 
 Minimalny pseudokod (GitHub Actions):
 
@@ -41,15 +39,21 @@ jobs:
       - set VERSION = tag
       - set CHANNEL = (target_commitish == dev ? dev : main)
       - set PRIMARY_TAG = (CHANNEL == dev ? dev_latest : latest)
-      - docker build --build-arg APP_VERSION --build-arg APP_REPO --build-arg APP_CHANNEL -t image:PRIMARY_TAG .
-      - docker push image:PRIMARY_TAG
+      - build artifact with APP_VERSION/APP_REPO/APP_CHANNEL
+      - publish artifact tagged with PRIMARY_TAG
 ```
 
-## 3) Backend (Go) - API meta
+## 3) Backend - API meta
 
 Backend jest źródłem prawdy o wersji i kanale. Wystaw endpoint:
 
 `GET /api/meta` -> `{ version, repo, channel }`
+
+Opcjonalnie dodaj:
+- `release_tag` (dokładny tag release do linków)
+- `release_check_enabled` (flaga do wyłączenia w instalacjach offline)
+
+W praktyce warto **nie odpytywać GitHuba bezpośrednio z przeglądarki** (CORS, rate limit, prywatne repo). Zalecane jest proxy w backendzie z cachem/ETag.
 
 ### Minimalny kod (Go)
 
@@ -100,7 +104,7 @@ func main() {
 
 Frontend robi dwa kroki:
 1) `GET /api/meta` -> ustawia `appVersion` i `releaseChannel`
-2) pobiera release z GitHuba i wybiera odpowiedni wg kanału
+2) pobiera release (najlepiej z backendu) i wybiera odpowiedni wg kanału
 
 ### Struktura danych release (GitHub API)
 
@@ -112,7 +116,7 @@ Ważne pola:
 - `target_commitish`
 - `html_url`
 
-### Logika wyboru release (dev/main)
+### Logika wyboru release (kanały)
 
 ```js
 function isDevRelease(rel) {
@@ -135,7 +139,7 @@ function releaseVersion(rel) {
 }
 ```
 
-### Porownywanie wersji (semver + dev)
+### Porównywanie wersji (semver + niestabilne tagi)
 
 ```js
 function normalizeVersion(v) {
@@ -184,7 +188,7 @@ function compareVersions(a, b) {
 }
 ```
 
-### Przykladowy skrypt (frontend)
+### Przykładowy skrypt (frontend)
 
 ```html
 <div id="release-status">Loading...</div>
@@ -199,6 +203,8 @@ function compareVersions(a, b) {
   }
 
   async function fetchReleases(repo) {
+    // Wersja bezpośrednia (GitHub API).
+    // W produkcji preferuj backend-proxy (CORS, rate limit, prywatne repo).
     const res = await fetch(`https://api.github.com/repos/${repo}/releases?per_page=30`, {
       headers: { Accept: "application/vnd.github+json" },
     });
@@ -239,17 +245,15 @@ function compareVersions(a, b) {
 
 ## 5) Podsumowanie logiki (flow)
 
-1) Pipeline buduje obraz z `APP_CHANNEL=main|dev` i taguje go `latest` lub `dev_latest`.
-2) Backend `/api/meta` zwraca aktualna wersje i kanal.
-3) Frontend pobiera release z GitHuba, filtruje wg kanalu:
-   - `dev`: tylko release z `dev` (tag/name/branch)
-   - `main`: wszystko poza `dev`
+1) Pipeline buduje artefakt z `APP_CHANNEL=<kanał>` i publikuje go z odpowiednim tagiem.
+2) Backend `/api/meta` zwraca aktualną wersję, repo i kanał.
+3) Backend lub frontend pobiera release, filtruje wg kanału.
 4) `compareVersions` ustala, czy jest nowsza wersja.
 5) UI pokazuje "Update available" tylko w odpowiednim kanale.
 
-## 6) Wskazowki wdrozeniowe
+## 6) Wskazówki wdrożeniowe
 
-- Nie mieszaj tagow `dev` i `v1.2.3` w tym samym kanale.
-- Dla `dev` utrzymuj prosta numeracje: `dev1`, `dev2`, `dev3`.
-- Jesli brak release dla kanalu, frontend moze pokazac brak aktualizacji lub fallback do pierwszego release.
-- Jezeli repo jest prywatne, potrzebujesz tokena do GitHub API (np. reverse-proxy lub token w backendzie).
+- Nie mieszaj tagów semver i tagów niestabilnych w tym samym kanale.
+- Dla kanału niestabilnego utrzymuj spójną numerację (`dev1`, `dev2`, `rc.1`, itp.).
+- Jeśli brak release dla kanału, UI może pokazać brak aktualizacji lub fallback do najnowszego release.
+- Przy prywatnym repo użyj tokena w backendzie i proxy zamiast bezpośredniego GitHub API w przeglądarce.

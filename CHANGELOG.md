@@ -3,13 +3,16 @@
 ## v1.2.3
 
 ## Bug fixes
+- Images: fixed remote agent mode requests (no longer incorrectly passing `server=<remote name>` which could cause `local server not found`).
 
 ## New features
+- UI: Update notification in UI - version footer now links to the GitHub release and can show an update badge when a newer release is available.
 
 ## Improvements
 - Containers: IP/Port columns now populate immediately on first load (no need to wait for `/api/containers/resources`).
 - Containers: CPU/RAM now load in a 2-step way (server-side cache returned immediately when available, then refreshed in background).
 - Containers: adjusted table column order + narrower RAM column (999 MB max) to free space for wider Uptime.
+
 
 ## v1.2.2
 

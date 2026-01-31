@@ -63,6 +63,10 @@ type Server struct {
 	containersResourcesCacheMu sync.RWMutex
 	containersResourcesCache   map[string]map[string]containersResourcesCacheEntry
 	containersResourcesRefresh map[string]time.Time
+
+	releaseCheckMu   sync.RWMutex
+	releaseCheck     releaseCheckState
+	releaseCheckStop context.CancelFunc
 }
 
 type scanState struct {
@@ -103,6 +107,7 @@ func New(store *config.Store, watcher *dockerwatcher.Watcher, agentMode bool, ag
 	s.routes()
 	s.loadScanState()
 	s.startServerInfoMonitor()
+	s.startReleaseCheckMonitor()
 	return s
 }
 
@@ -287,6 +292,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/notifications/test", s.handleNotificationsTest)
 	s.mux.HandleFunc("/api/aggregate", s.handleAggregate)
 	s.mux.HandleFunc("/api/version", s.handleVersion)
+	s.mux.HandleFunc("/api/meta", s.handleMeta)
+	s.mux.HandleFunc("/api/release", s.handleRelease)
 
 	if !s.agentMode {
 		staticDir := "/app/web/static"
@@ -315,6 +322,10 @@ func (s *Server) agentAllowed(path string) bool {
 	case path == "/api/health":
 		return true
 	case path == "/api/version":
+		return true
+	case path == "/api/meta":
+		return true
+	case path == "/api/release":
 		return true
 	case path == "/api/status":
 		return true

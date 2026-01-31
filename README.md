@@ -86,6 +86,10 @@ docker pull ghcr.io/<owner>/<repo>:dev_<version>
 - `TZ` (optional; e.g. `Europe/Warsaw` for local timestamps)
 - `CONTIWATCH_AGENT` (optional; set to `true` to run in agent mode)
 - `CONTIWATCH_AGENT_TOKEN` (required in agent mode; bearer token for API access)
+- `CONTIWATCH_REPO` (optional; GitHub repo in `owner/name` form for release links/checks)
+- `CONTIWATCH_CHANNEL` (optional; `main` or `dev` for release checks)
+- `CONTIWATCH_RELEASE_CHECK` (optional; set to `0`/`false` to disable release checks)
+- `CONTIWATCH_GITHUB_TOKEN` (optional; token for private repos or higher GitHub API limits)
 
 ## Config file
 `/data/config.json` fields include:

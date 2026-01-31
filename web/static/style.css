@@ -1115,8 +1115,41 @@ h2 {
   text-align: center;
 }
 
-.sidebar-footer span {
-  display: inline-block;
+.app-version {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.app-version-link {
+  color: var(--color-text-muted);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.app-version-link:hover {
+  color: var(--color-primary);
+  text-decoration: underline;
+}
+
+.app-version-badge {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--color-success), transparent 45%);
+  background: color-mix(in srgb, var(--color-success), transparent 90%);
+  color: var(--color-success);
+  text-decoration: none;
+}
+
+.app-version-badge:hover {
+  border-color: color-mix(in srgb, var(--color-success), transparent 20%);
+  background: color-mix(in srgb, var(--color-success), transparent 82%);
 }
 
 .scan-btn {
