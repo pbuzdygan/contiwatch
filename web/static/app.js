@@ -154,6 +154,13 @@ const logsLevelMenu = document.getElementById("logs-level-menu");
 const logsAutoToggle = document.getElementById("logs-auto");
 const logsListEl = document.getElementById("logs-list");
 const appVersionEl = document.getElementById("app-version");
+const appVersionUpdateEl = document.getElementById("app-version-update");
+const aboutVersionLinkEl = document.getElementById("about-version-link");
+const aboutUpdateStatusEl = document.getElementById("about-update-status");
+const aboutUpdateLinkEl = document.getElementById("about-update-link");
+const aboutChannelEl = document.getElementById("about-channel");
+const aboutRepoLinkEl = document.getElementById("about-repo-link");
+const aboutReleaseTagEl = document.getElementById("about-release-tag");
 const testWebhookBtn = document.getElementById("test-webhook");
 const saveIntervalBtn = document.getElementById("save-interval");
 const detailsModal = document.getElementById("details-modal");
@@ -184,6 +191,7 @@ let currentScanController = null;
 let currentView = "status";
 let updateInProgress = false;
 let logsRefreshTimer = null;
+let releaseCheckTimer = null;
 let currentConfig = null;
 let cachedLocals = [];
 let cachedRemotes = [];
@@ -210,6 +218,8 @@ let serversViewMode = "table";
 const containersResourcesViewStorageKey = "contiwatch_container_resources_view";
 let containersResourcesViewMode = "cards";
 const sidebarCollapsedStorageKey = "contiwatch_sidebar_collapsed";
+const releaseCheckPollMs = 1000 * 60 * 60 * 6;
+const defaultReleaseRepo = "pbuzdygan/contiwatch";
 let lastSchedulerEnabled = null;
 let lastSchedulerIntervalSec = null;
 let serverStream = null;
@@ -3021,7 +3031,8 @@ function formatBytesMBOrGB(value) {
   const total = Number(value);
   if (!Number.isFinite(total) || total <= 0) return "0 MB";
   const mb = total / (1024 * 1024);
-  if (mb < 1024) {
+  // UX: keep the RAM column narrow. Above ~999 MB we switch to GB so the value stays compact.
+  if (mb < 1000) {
     return `${mb.toFixed(mb >= 10 ? 0 : 1)} MB`;
   }
   const gb = mb / 1024;
@@ -3056,15 +3067,18 @@ function containersSort(list, mode) {
   const dir = order === "desc" ? "desc" : "asc";
   const getResourcesSortValue = (container) => {
     const resource = containersTableResourcesData.get(container.id);
-    if (!resource) return null;
-    if (field === "cpu") return Number.isFinite(Number(resource.cpu_percent)) ? Number(resource.cpu_percent) : null;
-    if (field === "ram") return Number.isFinite(Number(resource.mem_usage_bytes)) ? Number(resource.mem_usage_bytes) : null;
+    if (field === "cpu") return resource && Number.isFinite(Number(resource.cpu_percent)) ? Number(resource.cpu_percent) : null;
+    if (field === "ram") return resource && Number.isFinite(Number(resource.mem_usage_bytes)) ? Number(resource.mem_usage_bytes) : null;
     if (field === "ip") {
-      const ips = Array.isArray(resource.ip_addresses) ? resource.ip_addresses : [];
+      const ips = Array.isArray(resource && resource.ip_addresses)
+        ? resource.ip_addresses
+        : Array.isArray(container.ip_addresses)
+            ? container.ip_addresses
+            : [];
       return ips.length > 0 ? String(ips[0].ip || "") : null;
     }
     if (field === "port") {
-      const ports = getResourcesHostPorts(resource.ports);
+      const ports = getResourcesHostPorts(resource ? resource.ports : container.ports);
       return ports.length > 0 ? Number(ports[0]) : null;
     }
     return null;
@@ -3397,6 +3411,7 @@ function setContainersViewMode(mode) {
     closeContainersLogsSession("switch to table");
     stopStacksAutoRefresh();
     startContainersAutoRefresh();
+    refreshContainers({ silent: true }).catch(() => {});
   }
   if (next !== "resources") {
     stopContainersResourcesAutoRefresh();
@@ -3719,11 +3734,15 @@ function renderContainersResourcesTable() {
       return Number.isFinite(val) ? val : null;
     }
     if (key === "ip") {
-      const ips = resource && Array.isArray(resource.ip_addresses) ? resource.ip_addresses : [];
+      const ips = resource && Array.isArray(resource.ip_addresses)
+        ? resource.ip_addresses
+        : Array.isArray(container.ip_addresses)
+            ? container.ip_addresses
+            : [];
       return ips.length > 0 ? String(ips[0].ip || "") : null;
     }
     if (key === "port") {
-      const ports = resource ? getResourcesHostPorts(resource.ports) : [];
+      const ports = getResourcesHostPorts(resource ? resource.ports : container.ports);
       return ports.length > 0 ? Number(ports[0]) : null;
     }
     return String(container.name || container.id || "");
@@ -3787,10 +3806,15 @@ function renderContainersResourcesTable() {
     uptimeCell.textContent = formatUptime(resource ? resource.uptime_sec : container.uptime_sec);
 
     const ipCell = document.createElement("td");
-    ipCell.textContent = resource ? formatResourcesIPValue(resource.ip_addresses) : "—";
+    const ipAddresses = resource && Array.isArray(resource.ip_addresses)
+      ? resource.ip_addresses
+      : Array.isArray(container.ip_addresses)
+          ? container.ip_addresses
+          : [];
+    ipCell.textContent = ipAddresses.length > 0 ? formatResourcesIPValue(ipAddresses) : "—";
 
     const portCell = document.createElement("td");
-    const hostPorts = resource ? getResourcesHostPorts(resource.ports) : [];
+    const hostPorts = getResourcesHostPorts(resource ? resource.ports : container.ports);
     const scopeInfo = getScopeInfo(containersSelectedScope);
     const publicHost = scopeInfo && scopeInfo.server ? String(scopeInfo.server.public_ip || "").trim() : "";
     if (hostPorts.length === 0) {
@@ -3815,7 +3839,7 @@ function renderContainersResourcesTable() {
       });
     }
 
-    row.append(pinCell, nameCell, cpuCell, ramCell, statusCell, uptimeCell, ipCell, portCell);
+    row.append(pinCell, nameCell, statusCell, uptimeCell, cpuCell, ramCell, ipCell, portCell);
     return row;
   };
 
@@ -3939,8 +3963,13 @@ function renderContainersResourcesCards() {
     ipIcon.setAttribute("aria-hidden", "true");
     const ipValue = document.createElement("span");
     ipValue.className = "containers-resource-value";
-    ipValue.textContent = resource ? formatResourcesIPValue(resource.ip_addresses) : "—";
-    const ipTooltip = resource ? formatResourcesIPTooltip(resource.ip_addresses) : "";
+    const ipAddresses = resource && Array.isArray(resource.ip_addresses)
+      ? resource.ip_addresses
+      : Array.isArray(container.ip_addresses)
+          ? container.ip_addresses
+          : [];
+    ipValue.textContent = ipAddresses.length > 0 ? formatResourcesIPValue(ipAddresses) : "—";
+    const ipTooltip = ipAddresses.length > 0 ? formatResourcesIPTooltip(ipAddresses) : "";
     if (ipTooltip) {
       ipIcon.setAttribute("data-tooltip", ipTooltip);
       ipIcon.setAttribute("aria-label", ipTooltip);
@@ -3955,7 +3984,7 @@ function renderContainersResourcesCards() {
     portsIcon.setAttribute("aria-label", "Ports");
     const portsValue = document.createElement("span");
     portsValue.className = "containers-resource-value";
-    const hostPorts = resource ? getResourcesHostPorts(resource.ports) : [];
+    const hostPorts = getResourcesHostPorts(resource ? resource.ports : container.ports);
     const scopeInfo = getScopeInfo(containersSelectedScope);
     const publicHost = scopeInfo && scopeInfo.server ? String(scopeInfo.server.public_ip || "").trim() : "";
     if (hostPorts.length === 0) {
@@ -4650,11 +4679,17 @@ function clearStacksActionConfirmations() {
 function updateContainerRow(row, container, scope) {
   row.dataset.id = container.id;
   const resource = containersTableResourcesData.get(container.id);
-  const hostPorts = resource ? getResourcesHostPorts(resource.ports) : [];
-  const ipValue = resource ? formatResourcesIPValue(resource.ip_addresses) : "";
-  row.dataset.search = `${container.name || ""} ${container.image || ""} ${container.stack || ""} ${container.state || ""} ${ipValue || ""} ${hostPorts.join(" ")}`;
+  const hostPorts = getResourcesHostPorts(resource ? resource.ports : container.ports);
+  const ipAddresses = resource && Array.isArray(resource.ip_addresses)
+    ? resource.ip_addresses
+    : Array.isArray(container.ip_addresses)
+        ? container.ip_addresses
+        : [];
+  const ipSearchValue = ipAddresses.length > 0 ? ipAddresses.map((ip) => ip.ip).filter(Boolean).join(" ") : "";
+  row.dataset.search = `${container.name || ""} ${container.image || ""} ${container.stack || ""} ${container.state || ""} ${ipSearchValue} ${hostPorts.join(" ")}`;
   const cells = row.querySelectorAll("td");
   if (cells.length < 10) return;
+  // 0 Name, 1 Image, 2 State, 3 Uptime, 4 CPU, 5 RAM, 6 IP, 7 Port, 8 Stack, 9 Actions
   cells[0].textContent = "";
   const nameIcon = document.createElement("span");
   nameIcon.className = "icon-action icon-package name-leading-icon";
@@ -4662,20 +4697,23 @@ function updateContainerRow(row, container, scope) {
   cells[0].appendChild(nameIcon);
   cells[0].appendChild(document.createTextNode(container.name || container.id.slice(0, 12)));
   cells[1].textContent = container.image || "";
-  cells[2].textContent = resource ? formatPercent(resource.cpu_percent) : "—";
-  cells[3].textContent = resource ? formatBytesMBOrGB(resource.mem_usage_bytes) : "—";
+
   const stateValue = normalizeContainerState(container.state);
   const stateText = container.state || "unknown";
-  cells[4].textContent = "";
+  cells[2].textContent = "";
   const stateBadge = document.createElement("span");
   stateBadge.className = `containers-state-badge ${stateValue ? `containers-state-${stateValue}` : "containers-state-unknown"}`;
   stateBadge.textContent = stateText;
-  cells[4].className = "containers-state-cell";
-  cells[4].appendChild(stateBadge);
-  cells[5].textContent = formatUptime(container.uptime_sec);
-  cells[6].textContent = resource ? formatResourcesIPValue(resource.ip_addresses) : "—";
+  cells[2].className = "containers-state-cell";
+  cells[2].appendChild(stateBadge);
+
+  cells[3].textContent = formatUptime(container.uptime_sec);
+  cells[4].textContent = resource ? formatPercent(resource.cpu_percent) : "—";
+  cells[5].textContent = resource ? formatBytesMBOrGB(resource.mem_usage_bytes) : "—";
+  cells[6].textContent = ipAddresses.length > 0 ? formatResourcesIPValue(ipAddresses) : "—";
+
   cells[7].textContent = "";
-  if (!resource || hostPorts.length === 0) {
+  if (hostPorts.length === 0) {
     cells[7].textContent = "—";
   } else {
     const scopeInfo = getScopeInfo(scope);
@@ -4697,6 +4735,7 @@ function updateContainerRow(row, container, scope) {
       }
     });
   }
+
   cells[8].textContent = container.stack || "-";
   row.dataset.state = stateValue;
   const actionsCell = cells[9];
@@ -4927,7 +4966,6 @@ async function refreshContainersTableResources(scope, list, options = {}) {
       if (!options.silent) {
         showToast(payload && payload.error ? payload.error : "Unable to load container resources.");
       }
-      containersTableResourcesData = new Map();
       return;
     }
     const resources = Array.isArray(payload.resources) ? payload.resources : [];
@@ -4941,7 +4979,6 @@ async function refreshContainersTableResources(scope, list, options = {}) {
     if (!options.silent) {
       showToast(err.message || "Unable to load container resources.");
     }
-    containersTableResourcesData = new Map();
   } finally {
     if (requestId === containersTableResourcesRequestId) {
       containersTableResourcesUpdateInProgress = false;
@@ -6057,17 +6094,141 @@ function initServerStream() {
   });
 }
 
-async function refreshVersion() {
-  if (!appVersionEl) return;
-  try {
-    const payload = await fetchJSON("/api/version");
-    const raw = (payload && payload.version) ? String(payload.version) : "dev";
-    const normalized = raw.startsWith("v") ? raw : `v${raw}`;
-    const display = raw.startsWith("dev") ? `v${raw}` : normalized;
-    appVersionEl.textContent = display;
-  } catch (err) {
-    appVersionEl.textContent = "vdev";
+function formatAppVersionLabel(version) {
+  const raw = version ? String(version) : "dev";
+  if (raw.startsWith("v")) return raw;
+  return `v${raw}`;
+}
+
+function buildReleaseTag(version) {
+  if (!version) return "";
+  const raw = String(version);
+  const lower = raw.toLowerCase();
+  if (lower.startsWith("vdev")) return raw.slice(1);
+  if (lower.startsWith("dev")) return raw;
+  if (lower.startsWith("v")) return raw;
+  return `v${raw}`;
+}
+
+function buildReleaseUrl(meta) {
+  const repo = meta && meta.repo ? meta.repo : defaultReleaseRepo;
+  if (!repo) return "";
+  const tag = meta && meta.release_tag ? meta.release_tag : buildReleaseTag(meta && meta.version ? meta.version : "");
+  if (!tag) return `https://github.com/${repo}/releases`;
+  return `https://github.com/${repo}/releases/tag/${tag}`;
+}
+
+function applyAppVersion(meta) {
+  const versionLabel = formatAppVersionLabel(meta && meta.version ? meta.version : "dev");
+  const url = buildReleaseUrl(meta);
+  if (appVersionEl) {
+    appVersionEl.textContent = versionLabel;
+    if (url) {
+      appVersionEl.href = url;
+      appVersionEl.classList.add("app-version-link");
+    } else {
+      appVersionEl.removeAttribute("href");
+      appVersionEl.classList.remove("app-version-link");
+    }
   }
+  if (aboutVersionLinkEl) {
+    aboutVersionLinkEl.textContent = versionLabel;
+    if (url) {
+      aboutVersionLinkEl.href = url;
+      aboutVersionLinkEl.classList.add("about-value");
+    } else {
+      aboutVersionLinkEl.removeAttribute("href");
+      aboutVersionLinkEl.classList.remove("about-value");
+    }
+  }
+  if (aboutChannelEl) {
+    aboutChannelEl.textContent = meta && meta.channel ? meta.channel : "—";
+  }
+  if (aboutRepoLinkEl) {
+    const repo = meta && meta.repo ? meta.repo : defaultReleaseRepo;
+    if (repo) {
+      aboutRepoLinkEl.textContent = repo;
+      aboutRepoLinkEl.href = `https://github.com/${repo}`;
+      aboutRepoLinkEl.classList.add("about-value");
+    } else {
+      aboutRepoLinkEl.textContent = "—";
+      aboutRepoLinkEl.removeAttribute("href");
+      aboutRepoLinkEl.classList.remove("about-value");
+    }
+  }
+  if (aboutReleaseTagEl) {
+    const tag = meta && meta.release_tag ? meta.release_tag : buildReleaseTag(meta && meta.version ? meta.version : "");
+    aboutReleaseTagEl.textContent = tag || "—";
+  }
+}
+
+function applyReleaseBadge(release) {
+  if (appVersionUpdateEl) {
+    appVersionUpdateEl.classList.add("hidden");
+    appVersionUpdateEl.classList.remove("has-tooltip");
+    appVersionUpdateEl.removeAttribute("data-tooltip");
+    appVersionUpdateEl.removeAttribute("aria-label");
+  }
+  if (aboutUpdateLinkEl && aboutUpdateStatusEl) {
+    aboutUpdateLinkEl.classList.add("hidden");
+    aboutUpdateLinkEl.classList.remove("has-tooltip");
+    aboutUpdateLinkEl.removeAttribute("data-tooltip");
+    aboutUpdateLinkEl.removeAttribute("aria-label");
+    aboutUpdateStatusEl.classList.remove("hidden");
+    aboutUpdateStatusEl.textContent = "Up to date";
+  }
+  if (!release || !release.update_available || !release.latest || !release.latest.url) {
+    return;
+  }
+  const label = release.latest.tag || release.latest.version || "";
+  const tooltip = label ? `Update available: ${label}` : "Update available";
+  if (appVersionUpdateEl) {
+    appVersionUpdateEl.href = release.latest.url;
+    appVersionUpdateEl.classList.remove("hidden");
+    appVersionUpdateEl.classList.add("has-tooltip");
+    appVersionUpdateEl.setAttribute("data-tooltip", tooltip);
+    appVersionUpdateEl.setAttribute("aria-label", tooltip);
+  }
+  if (aboutUpdateLinkEl && aboutUpdateStatusEl) {
+    aboutUpdateStatusEl.textContent = label ? `Update available: ${label}` : "Update available";
+    aboutUpdateLinkEl.href = release.latest.url;
+    aboutUpdateLinkEl.classList.remove("hidden");
+    aboutUpdateLinkEl.classList.add("has-tooltip");
+    aboutUpdateLinkEl.setAttribute("data-tooltip", tooltip);
+    aboutUpdateLinkEl.setAttribute("aria-label", tooltip);
+  }
+}
+
+async function fetchMeta() {
+  try {
+    return await fetchJSON("/api/meta");
+  } catch {
+    const payload = await fetchJSON("/api/version");
+    return { version: payload && payload.version ? String(payload.version) : "dev" };
+  }
+}
+
+async function refreshReleaseStatus() {
+  if (!appVersionUpdateEl && !aboutVersionLinkEl && !aboutUpdateLinkEl && !aboutUpdateStatusEl) return;
+  let release = null;
+  let meta = null;
+  try {
+    release = await fetchJSON("/api/release");
+    if (release && release.meta) {
+      meta = release.meta;
+    }
+  } catch {
+    release = null;
+  }
+  if (!meta) {
+    try {
+      meta = await fetchMeta();
+    } catch {
+      meta = { version: "dev" };
+    }
+  }
+  applyAppVersion(meta);
+  applyReleaseBadge(release);
 }
 
 async function refreshLogs() {
@@ -6369,14 +6530,29 @@ function showTooltip(target) {
   let left = rect.left + rect.width / 2 - tooltipRect.width / 2;
   left = Math.max(margin, Math.min(left, window.innerWidth - tooltipRect.width - margin));
 
-  let top = rect.top - tooltipRect.height - 10;
+  const spaceAbove = rect.top - margin;
+  const spaceBelow = window.innerHeight - rect.bottom - margin;
+  const offset = 10;
   let placement = "top";
-  if (top < margin) {
-    top = rect.bottom + 10;
+  let top = rect.top - tooltipRect.height - offset;
+  if (spaceAbove < tooltipRect.height + offset && spaceBelow >= tooltipRect.height + offset) {
     placement = "bottom";
+    top = rect.bottom + offset;
+  } else if (spaceAbove < tooltipRect.height + offset && spaceBelow < tooltipRect.height + offset) {
+    // Not enough space either side: pick the larger space and clamp.
+    if (spaceBelow > spaceAbove) {
+      placement = "bottom";
+      top = rect.bottom + offset;
+    } else {
+      placement = "top";
+      top = rect.top - tooltipRect.height - offset;
+    }
+  }
+  if (top < margin) {
+    top = margin;
   }
   if (top + tooltipRect.height > window.innerHeight - margin) {
-    top = Math.max(margin, window.innerHeight - tooltipRect.height - margin);
+    top = window.innerHeight - tooltipRect.height - margin;
   }
 
   tooltipEl.style.left = `${left}px`;
@@ -7625,7 +7801,12 @@ async function init() {
   triggerStatusRefresh().catch(() => {});
   renderStatusPlaceholders();
   refreshStatus().catch(() => {});
-  await refreshVersion();
+  await refreshReleaseStatus();
+  if (!releaseCheckTimer) {
+    releaseCheckTimer = window.setInterval(() => {
+      refreshReleaseStatus().catch(() => {});
+    }, releaseCheckPollMs);
+  }
   statusHintEl.classList.toggle("hidden", cachedLocals.length > 0);
 }
 

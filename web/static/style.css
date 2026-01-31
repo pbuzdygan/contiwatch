@@ -1115,8 +1115,78 @@ h2 {
   text-align: center;
 }
 
-.sidebar-footer span {
-  display: inline-block;
+.app-version {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.app-version-link {
+  color: var(--color-text-muted);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.app-version-link:hover {
+  color: var(--color-primary);
+  text-decoration: underline;
+}
+
+.app-version-badge {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--color-success), transparent 45%);
+  background: color-mix(in srgb, var(--color-success), transparent 90%);
+  color: var(--color-success);
+  text-decoration: none;
+}
+
+.app-version-badge:hover {
+  border-color: color-mix(in srgb, var(--color-success), transparent 20%);
+  background: color-mix(in srgb, var(--color-success), transparent 82%);
+}
+
+.about-card .about-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-2);
+  padding: var(--s-1) 0;
+}
+
+.about-card .about-label {
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+}
+
+.about-card .about-value {
+  font-weight: 600;
+  color: var(--color-text);
+  text-decoration: none;
+}
+
+.about-card .about-value:hover {
+  color: var(--color-primary);
+  text-decoration: underline;
+}
+
+.about-card .about-update-status {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
+.about-card .about-update-wrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--s-2);
+  flex-wrap: wrap;
 }
 
 .scan-btn {
@@ -2601,32 +2671,34 @@ input::placeholder {
 
 #containers-resources-table-wrap .containers-table th:nth-child(2),
 #containers-resources-table-wrap .containers-table td:nth-child(2) {
-  width: 26%;
+  width: 28%;
 }
 
 #containers-resources-table-wrap .containers-table th:nth-child(3),
 #containers-resources-table-wrap .containers-table td:nth-child(3) {
-  width: 9%;
+  width: 12%;
 }
 
 #containers-resources-table-wrap .containers-table th:nth-child(4),
 #containers-resources-table-wrap .containers-table td:nth-child(4) {
-  width: 10%;
+  width: 14%;
+  white-space: nowrap;
 }
 
 #containers-resources-table-wrap .containers-table th:nth-child(5),
 #containers-resources-table-wrap .containers-table td:nth-child(5) {
-  width: 12%;
+  width: 9%;
 }
 
 #containers-resources-table-wrap .containers-table th:nth-child(6),
 #containers-resources-table-wrap .containers-table td:nth-child(6) {
-  width: 12%;
+  width: 6.5ch;
+  white-space: nowrap;
 }
 
 #containers-resources-table-wrap .containers-table th:nth-child(7),
 #containers-resources-table-wrap .containers-table td:nth-child(7) {
-  width: 19%;
+  width: 25%;
 }
 
 #containers-resources-table-wrap .containers-table th:nth-child(8),
@@ -3015,6 +3087,18 @@ input::placeholder {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.containers-main-table th:nth-child(4),
+.containers-main-table td:nth-child(4),
+.containers-main-table th:nth-child(6),
+.containers-main-table td:nth-child(6) {
+  white-space: nowrap;
+}
+
+.containers-main-table th:nth-child(6),
+.containers-main-table td:nth-child(6) {
+  width: 6.5ch;
 }
 
 .containers-stacks-view {
@@ -3489,22 +3573,22 @@ input::placeholder {
 
 .containers-main-table th:nth-child(3),
 .containers-main-table td:nth-child(3) {
-  width: 6%;
+  width: 8%;
 }
 
 .containers-main-table th:nth-child(4),
 .containers-main-table td:nth-child(4) {
-  width: 7%;
+  width: 10%;
 }
 
 .containers-main-table th:nth-child(5),
 .containers-main-table td:nth-child(5) {
-  width: 8%;
+  width: 6%;
 }
 
 .containers-main-table th:nth-child(6),
 .containers-main-table td:nth-child(6) {
-  width: 8%;
+  width: 6.5ch;
 }
 
 .containers-main-table th:nth-child(7),
@@ -3519,7 +3603,7 @@ input::placeholder {
 
 .containers-main-table th:nth-child(9),
 .containers-main-table td:nth-child(9) {
-  width: 8%;
+  width: 7%;
 }
 
 .containers-main-table th:nth-child(10),

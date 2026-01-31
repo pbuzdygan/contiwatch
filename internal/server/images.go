@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"net/url"
 	"strings"
 	"time"
 
@@ -16,9 +15,9 @@ import (
 )
 
 type imagesResponse struct {
-	Scope  string                     `json:"scope"`
-	Images []dockerwatcher.ImageInfo  `json:"images"`
-	Error  string                     `json:"error,omitempty"`
+	Scope  string                    `json:"scope"`
+	Images []dockerwatcher.ImageInfo `json:"images"`
+	Error  string                    `json:"error,omitempty"`
 }
 
 type imagePullRequest struct {
@@ -310,9 +309,6 @@ func (s *Server) listRemoteImages(cfg config.Config, name string) ([]dockerwatch
 		return nil, errors.New("remote url missing")
 	}
 	endpoint := strings.TrimSuffix(remote.URL, "/") + "/api/images"
-	if name != "" {
-		endpoint += "?server=" + url.QueryEscape(name)
-	}
 	req, err := http.NewRequest(http.MethodGet, endpoint, nil)
 	if err != nil {
 		return nil, err
@@ -373,9 +369,6 @@ func (s *Server) pullRemoteImage(cfg config.Config, name, repository, tag string
 		return err
 	}
 	endpoint := strings.TrimSuffix(remote.URL, "/") + "/api/images/pull"
-	if name != "" {
-		endpoint += "?server=" + url.QueryEscape(name)
-	}
 	req, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
 		return err
@@ -426,9 +419,6 @@ func (s *Server) pruneRemoteImages(cfg config.Config, name, mode string) (int, u
 		return 0, 0, err
 	}
 	endpoint := strings.TrimSuffix(remote.URL, "/") + "/api/images/prune"
-	if name != "" {
-		endpoint += "?server=" + url.QueryEscape(name)
-	}
 	req, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
 		return 0, 0, err
@@ -483,9 +473,6 @@ func (s *Server) removeRemoteImage(cfg config.Config, name, imageID string) erro
 		return err
 	}
 	endpoint := strings.TrimSuffix(remote.URL, "/") + "/api/images/remove"
-	if name != "" {
-		endpoint += "?server=" + url.QueryEscape(name)
-	}
 	req, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
 		return err

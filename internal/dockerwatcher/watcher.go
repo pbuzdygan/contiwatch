@@ -45,12 +45,14 @@ type ContainerStatus struct {
 }
 
 type ContainerInfo struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	Image     string `json:"image"`
-	State     string `json:"state"`
-	UptimeSec int64  `json:"uptime_sec"`
-	Stack     string `json:"stack"`
+	ID          string                 `json:"id"`
+	Name        string                 `json:"name"`
+	Image       string                 `json:"image"`
+	State       string                 `json:"state"`
+	UptimeSec   int64                  `json:"uptime_sec"`
+	Stack       string                 `json:"stack"`
+	IPAddresses []ContainerIP          `json:"ip_addresses,omitempty"`
+	Ports       []ContainerPortBinding `json:"ports,omitempty"`
 }
 
 type ContainerIP struct {
@@ -355,13 +357,17 @@ func (w *Watcher) containerInfo(ctx context.Context, item types.Container) (Cont
 	if inspect.Config != nil {
 		stack = stackFromLabels(inspect.Config.Labels)
 	}
+	ipAddresses := extractContainerIPs(inspect.NetworkSettings)
+	ports := extractContainerPorts(inspect.NetworkSettings)
 	return ContainerInfo{
-		ID:        item.ID,
-		Name:      name,
-		Image:     imageRef,
-		State:     state,
-		UptimeSec: uptimeSec,
-		Stack:     stack,
+		ID:          item.ID,
+		Name:        name,
+		Image:       imageRef,
+		State:       state,
+		UptimeSec:   uptimeSec,
+		Stack:       stack,
+		IPAddresses: ipAddresses,
+		Ports:       ports,
 	}, nil
 }
 
