@@ -1181,6 +1181,14 @@ h2 {
   color: var(--color-text-muted);
 }
 
+.about-card .about-update-wrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--s-2);
+  flex-wrap: wrap;
+}
+
 .scan-btn {
   min-width: var(--control-h);
 }

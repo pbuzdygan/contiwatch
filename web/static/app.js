@@ -6163,30 +6163,34 @@ function applyAppVersion(meta) {
 }
 
 function applyReleaseBadge(release) {
-  if (!appVersionUpdateEl) return;
-  appVersionUpdateEl.classList.add("hidden");
-  appVersionUpdateEl.classList.remove("has-tooltip");
-  appVersionUpdateEl.removeAttribute("data-tooltip");
-  appVersionUpdateEl.removeAttribute("aria-label");
+  if (appVersionUpdateEl) {
+    appVersionUpdateEl.classList.add("hidden");
+    appVersionUpdateEl.classList.remove("has-tooltip");
+    appVersionUpdateEl.removeAttribute("data-tooltip");
+    appVersionUpdateEl.removeAttribute("aria-label");
+  }
   if (aboutUpdateLinkEl && aboutUpdateStatusEl) {
     aboutUpdateLinkEl.classList.add("hidden");
     aboutUpdateLinkEl.classList.remove("has-tooltip");
     aboutUpdateLinkEl.removeAttribute("data-tooltip");
     aboutUpdateLinkEl.removeAttribute("aria-label");
     aboutUpdateStatusEl.classList.remove("hidden");
+    aboutUpdateStatusEl.textContent = "Up to date";
   }
   if (!release || !release.update_available || !release.latest || !release.latest.url) {
     return;
   }
   const label = release.latest.tag || release.latest.version || "";
   const tooltip = label ? `Update available: ${label}` : "Update available";
-  appVersionUpdateEl.href = release.latest.url;
-  appVersionUpdateEl.classList.remove("hidden");
-  appVersionUpdateEl.classList.add("has-tooltip");
-  appVersionUpdateEl.setAttribute("data-tooltip", tooltip);
-  appVersionUpdateEl.setAttribute("aria-label", tooltip);
+  if (appVersionUpdateEl) {
+    appVersionUpdateEl.href = release.latest.url;
+    appVersionUpdateEl.classList.remove("hidden");
+    appVersionUpdateEl.classList.add("has-tooltip");
+    appVersionUpdateEl.setAttribute("data-tooltip", tooltip);
+    appVersionUpdateEl.setAttribute("aria-label", tooltip);
+  }
   if (aboutUpdateLinkEl && aboutUpdateStatusEl) {
-    aboutUpdateStatusEl.classList.add("hidden");
+    aboutUpdateStatusEl.textContent = label ? `Update available: ${label}` : "Update available";
     aboutUpdateLinkEl.href = release.latest.url;
     aboutUpdateLinkEl.classList.remove("hidden");
     aboutUpdateLinkEl.classList.add("has-tooltip");
@@ -6205,7 +6209,7 @@ async function fetchMeta() {
 }
 
 async function refreshReleaseStatus() {
-  if (!appVersionEl) return;
+  if (!appVersionUpdateEl && !aboutVersionLinkEl && !aboutUpdateLinkEl && !aboutUpdateStatusEl) return;
   let release = null;
   let meta = null;
   try {
