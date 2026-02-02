@@ -1,16 +1,35 @@
 # Changelog
 
+## v1.2.4
+
+## Bug fixes
+- UI: fix tooltip positioning near the bottom edge of the screen (no longer rendered outside viewport).
+
+## New features
+- Stacks: added Redeploy action (docker compose pull + docker compose up -d) in the stacks table and stack editor.
+- UI: toast notifications are now overlay stack (bottom-right) with queueing, auto-dismiss, and per-type styling.
+
+## Improvements
+- UI: topbar Search input gently pulses when a filter is active, so it’s easier to notice that results are filtered.
+- Images: correcting UI to have consistent fonts and icons size
+- UI: removed browser `alert()` dialogs in favor of in-app feedback (toast/inline modal error).
+- UI: added success/warning/error notifications for key actions (Containers/Stacks/Images/Servers), so users get clear feedback after operations.
+- UI: scan/refresh flows now show completion notifications; selective scan skips offline servers (marked as cancelled).
+- Settings/About: simplify fields (remove Repo/Release tag) and fix release link tag format (no leading `v`).
+- UI: toast appearance changeg to more consistent and Contiwatch style alike
+
+
 ## v1.2.3
 
 ## Bug fixes
-- Images: fixed remote agent mode requests (no longer incorrectly passing `server=<remote name>` which could cause `local server not found`).
+- Images: fixed remote agent mode requests (no longer incorrectly passing server=<remote name> which could cause local server not found).
 
 ## New features
 - UI: Update notification in UI - sidebar's footer can show an update badge when a newer release is available.
 - Settings: added About card with current version, update status and few more details like channel, repo, release tag.
 
 ## Improvements
-- Containers: IP/Port columns now populate immediately on first load (no need to wait for `/api/containers/resources`).
+- Containers: IP/Port columns now populate immediately on first load (no need to wait for /api/containers/resources).
 - Containers: CPU/RAM now load in a 2-step way (server-side cache returned immediately when available, then refreshed in background).
 - Containers: adjusted table column order + narrower RAM column (999 MB max) to free space for wider Uptime.
 

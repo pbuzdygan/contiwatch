@@ -249,7 +249,6 @@
         </label>
       </div>
       <div class="topbar-right">
-        <div id="toast" class="toast toast-top hidden" role="status" aria-live="polite"></div>
         <button id="theme-toggle" class="secondary theme-toggle has-tooltip" type="button" aria-label="Switch to Dark theme" data-tooltip="Switch to Dark theme">
           <svg xmlns="http://www.w3.org/2000/svg" class="theme-icon theme-icon-dark icon icon-tabler icons-tabler-outline icon-tabler-sun" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M8 12a4 4 0 1 0 8 0a4 4 0 1 0 -8 0" /><path d="M3 12h1m8 -9v1m8 8h1m-9 8v1m-6.4 -15.4l.7 .7m12.1 -.7l-.7 .7m0 11.4l.7 .7m-12.1 -.7l-.7 .7" /></svg>
           <svg xmlns="http://www.w3.org/2000/svg" class="theme-icon theme-icon-light icon icon-tabler icons-tabler-outline icon-tabler-moon-stars" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M12 3c.132 0 .263 0 .393 0a7.5 7.5 0 0 0 7.92 12.446a9 9 0 1 1 -8.313 -12.454z" /><path d="M17 4a2 2 0 0 0 2 2a2 2 0 0 0 -2 2a2 2 0 0 0 -2 -2a2 2 0 0 0 2 -2" /><path d="M19 11h2m-1 -1v2" /></svg>
@@ -458,19 +457,11 @@
               </h3>
               <div class="about-row">
                 <span class="about-label">Channel</span>
-                <span id="about-channel" class="about-value">—</span>
-              </div>
-              <div class="about-row">
-                <span class="about-label">Repo</span>
-                <a id="about-repo-link" class="about-value" href="#" target="_blank" rel="noreferrer">—</a>
-              </div>
-              <div class="about-row">
-                <span class="about-label">Release tag</span>
-                <span id="about-release-tag" class="about-value">—</span>
+                <span id="about-channel" class="about-text">—</span>
               </div>
               <div class="about-row">
                 <span class="about-label">Version</span>
-                <a id="about-version-link" class="about-value" href="#" target="_blank" rel="noreferrer">vdev</a>
+                <a id="about-version-link" class="about-value" href="#" target="_blank" rel="noreferrer">dev</a>
               </div>
               <div class="about-row">
                 <span class="about-label">Update</span>
@@ -933,15 +924,18 @@
                 </div>
                 <pre id="remote-modal-compose" class="server-compose"></pre>
               </div>
-            </div>
-            <div class="settings-actions">
-              <button id="remote-modal-save" type="button">Save</button>
-              <button id="remote-modal-cancel" class="secondary" type="button">Cancel</button>
-            </div>
-          </div>
+	            </div>
+	            <div id="remote-modal-error" class="stack-modal-error hidden" role="alert"></div>
+	            <div class="settings-actions">
+	              <button id="remote-modal-save" type="button">Save</button>
+	              <button id="remote-modal-cancel" class="secondary" type="button">Cancel</button>
+	            </div>
+	          </div>
         </div>
       </div>
     </div>
+
+    <div id="toast-stack" class="toast-stack" aria-live="polite" aria-relevant="additions"></div>
 
     <div id="stack-modal" class="modal hidden" aria-hidden="true" role="dialog" aria-modal="true">
       <div class="modal-backdrop" data-close="true"></div>
@@ -980,18 +974,27 @@
 	            >
 	              <span class="icon-action icon-chevrons-up" aria-hidden="true"></span>
 	            </button>
-	            <button
-	              id="stack-modal-compose-down"
-	              class="secondary icon-action-btn has-tooltip btn-warning"
-	              type="button"
-	              aria-label="Compose down"
-	              data-tooltip="Compose down"
-	            >
-	              <span class="icon-action icon-chevrons-down" aria-hidden="true"></span>
-	            </button>
-	          </div>
-	          <div class="stack-editor-grid">
-	            <div class="stack-editor-main">
+		            <button
+		              id="stack-modal-compose-down"
+		              class="secondary icon-action-btn has-tooltip btn-warning"
+		              type="button"
+		              aria-label="Compose down"
+		              data-tooltip="Compose down"
+		            >
+		              <span class="icon-action icon-chevrons-down" aria-hidden="true"></span>
+		            </button>
+		            <button
+		              id="stack-modal-redeploy"
+		              class="secondary icon-action-btn has-tooltip btn-info"
+		              type="button"
+		              aria-label="Redeploy"
+		              data-tooltip="Redeploy"
+		            >
+		              <span class="icon-action icon-arrow-back-up-double" aria-hidden="true"></span>
+		            </button>
+		          </div>
+		          <div class="stack-editor-grid">
+		            <div class="stack-editor-main">
 	              <label for="stack-compose-input">docker-compose.yml</label>
 	              <div id="stack-compose-editor" class="stack-editor"></div>
 	              <textarea id="stack-compose-input" class="stack-textarea hidden" rows="16" spellcheck="false" placeholder="services:"></textarea>

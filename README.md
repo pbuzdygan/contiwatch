@@ -116,6 +116,8 @@ docker pull ghcr.io/<owner>/<repo>:dev_<version>
 
 ## API
 - `GET /api/version`
+- `GET /api/meta` (version/channel/repo metadata used by the UI)
+- `GET /api/release` (latest release info + update availability)
 - `POST /api/scan` run scan
 - `POST /api/scan/stop` cancel scan
 - `GET /api/scan/state` scan running status

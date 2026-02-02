@@ -242,9 +242,9 @@ func releaseTagFromVersion(version string) string {
 		return v
 	}
 	if strings.HasPrefix(lower, "v") {
-		return v
+		return strings.TrimPrefix(v, "v")
 	}
-	return "v" + v
+	return v
 }
 
 func fetchGitHubReleases(ctx context.Context, repo, etag string) ([]githubRelease, string, bool, error) {

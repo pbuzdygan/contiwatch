@@ -7,7 +7,7 @@ const schedulerNextRunEl = document.getElementById("scheduler-next-run");
 const tooltipEl = document.createElement("div");
 tooltipEl.id = "app-tooltip";
 document.body.appendChild(tooltipEl);
-const toastEl = document.getElementById("toast");
+const toastStackEl = document.getElementById("toast-stack");
 const statusHintEl = document.getElementById("status-hint");
 const configForm = document.getElementById("config-form");
 const schedulerEnabledInput = document.getElementById("scheduler-enabled");
@@ -58,9 +58,11 @@ const remoteModalCompose = document.getElementById("remote-modal-compose");
 const remoteModalComposeCopy = document.getElementById("remote-modal-compose-copy");
 const remoteModalSave = document.getElementById("remote-modal-save");
 const remoteModalCancel = document.getElementById("remote-modal-cancel");
+const remoteModalErrorEl = document.getElementById("remote-modal-error");
 const sidebar = document.getElementById("sidebar");
 const sidebarSearch = document.getElementById("sidebar-search");
 const sidebarSearchCountEl = document.getElementById("sidebar-search-count");
+const sidebarSearchWrap = sidebarSearch ? sidebarSearch.closest(".topbar-search") : null;
 const sidebarCollapseToggleBtn = document.getElementById("sidebar-collapse-toggle");
 const themeToggleBtn = document.getElementById("theme-toggle");
 const themeLabel = document.getElementById("theme-label");
@@ -159,8 +161,6 @@ const aboutVersionLinkEl = document.getElementById("about-version-link");
 const aboutUpdateStatusEl = document.getElementById("about-update-status");
 const aboutUpdateLinkEl = document.getElementById("about-update-link");
 const aboutChannelEl = document.getElementById("about-channel");
-const aboutRepoLinkEl = document.getElementById("about-repo-link");
-const aboutReleaseTagEl = document.getElementById("about-release-tag");
 const testWebhookBtn = document.getElementById("test-webhook");
 const saveIntervalBtn = document.getElementById("save-interval");
 const detailsModal = document.getElementById("details-modal");
@@ -177,6 +177,7 @@ const stackModalSaveIcon = document.getElementById("stack-modal-save-icon");
 const stackModalCancel = document.getElementById("stack-modal-cancel");
 const stackModalComposeUp = document.getElementById("stack-modal-compose-up");
 const stackModalComposeDown = document.getElementById("stack-modal-compose-down");
+const stackModalRedeploy = document.getElementById("stack-modal-redeploy");
 const stackNameInput = document.getElementById("stack-name-input");
 const stackNameRow = document.getElementById("stack-name-row");
 const stackComposeEditorEl = document.getElementById("stack-compose-editor");
@@ -552,6 +553,7 @@ function openLocalModal(mode, server) {
   const isEdit = mode === "edit";
   editingLocalServer = isEdit ? server : null;
   editingRemoteServer = null;
+  clearRemoteModalError();
   setServerModalTab("local");
   if (remoteModalTitle) {
     remoteModalTitle.textContent = isEdit ? "Edit local server" : "Add local server";
@@ -589,6 +591,7 @@ function openRemoteModal(mode, server) {
   const isEdit = mode === "edit";
   editingRemoteServer = isEdit ? server : null;
   editingLocalServer = null;
+  clearRemoteModalError();
   setServerModalTab("remote");
   if (remoteModalTitle) {
     remoteModalTitle.textContent = isEdit ? "Edit remote server" : "Add remote server";
@@ -630,6 +633,22 @@ function closeRemoteModal() {
   remoteModal.setAttribute("aria-hidden", "true");
   editingRemoteServer = null;
   editingLocalServer = null;
+  clearRemoteModalError();
+}
+
+function showRemoteModalError(message) {
+  if (!remoteModalErrorEl) {
+    showToast(message || "Request failed.");
+    return;
+  }
+  remoteModalErrorEl.textContent = message || "Request failed.";
+  remoteModalErrorEl.classList.remove("hidden");
+}
+
+function clearRemoteModalError() {
+  if (!remoteModalErrorEl) return;
+  remoteModalErrorEl.textContent = "";
+  remoteModalErrorEl.classList.add("hidden");
 }
 
 function isValidStackName(name) {
@@ -1044,7 +1063,7 @@ function closeStackModal() {
   editingStackName = "";
 }
 
-async function saveStackFromModal({ closeOnSuccess } = {}) {
+async function saveStackFromModal({ closeOnSuccess, notifyOnSuccess = true } = {}) {
   const scope = containersSelectedScope;
   if (!scope) {
     showToast("Select server first.");
@@ -1093,6 +1112,9 @@ async function saveStackFromModal({ closeOnSuccess } = {}) {
       closeStackModal();
     }
     await refreshStacks({ silent: true });
+    if (notifyOnSuccess !== false) {
+      notify({ type: "success", message: `Stack saved: ${name}` });
+    }
     return true;
   } catch (err) {
     showStackModalError(err.message || "Stack save failed.");
@@ -1111,7 +1133,7 @@ async function runStackActionFromModal(action) {
     showToast("Stack name must match A-Z, a-z, 0-9, _ or -.");
     return;
   }
-  const ok = await saveStackFromModal({ closeOnSuccess: false });
+  const ok = await saveStackFromModal({ closeOnSuccess: false, notifyOnSuccess: false });
   if (!ok) return;
   await runStackAction(name, action);
 }
@@ -1145,7 +1167,8 @@ async function copyToClipboard(value, label, options = {}) {
 
 async function toggleMaintenance(type, server) {
   if (!server || !type) return;
-  const payload = { ...server, maintenance: !server.maintenance };
+  const nextEnabled = !server.maintenance;
+  const payload = { ...server, maintenance: nextEnabled };
   const path = type === "local" ? "/api/locals" : "/api/servers";
   try {
     await fetchJSON(path, {
@@ -1155,8 +1178,12 @@ async function toggleMaintenance(type, server) {
     });
     await refreshServers();
     await refreshStatus();
+    notify({
+      type: nextEnabled ? "warning" : "success",
+      message: nextEnabled ? `Maintenance enabled: ${server.name}` : `Maintenance ended: ${server.name}`,
+    });
   } catch (err) {
-    showToast(err.message || "Failed to update maintenance.");
+    notify({ type: "error", message: err.message || "Failed to update maintenance." });
   }
 }
 
@@ -1366,6 +1393,7 @@ function buildContainerCard(container, result, canUpdateStopped, variant) {
       }
     } catch (err) {
       updateState.textContent = `Error: ${err.message}`;
+      notify({ type: "error", message: err.message || "Update failed." });
     } finally {
       updateInProgress = false;
       if (restartHint) {
@@ -1381,11 +1409,11 @@ function buildContainerCard(container, result, canUpdateStopped, variant) {
       await refreshLogs();
       if (updateResult) {
         if (updateResult.updated) {
-          showToast(`Updated ${updateResult.name} (${updateResult.previous_state} → ${updateResult.current_state})`);
+          notify({ type: "success", message: `Updated ${updateResult.name} (${updateResult.previous_state} → ${updateResult.current_state})` });
         } else if (restartHint) {
-          showToast("Agent restarting — waiting for reconnect.");
+          notify({ type: "warning", message: "Agent restarting — waiting for reconnect." });
         } else {
-          showToast(`${updateResult.name}: ${updateResult.message || "Not updated"}`);
+          notify({ type: "warning", message: `${updateResult.name}: ${updateResult.message || "Not updated"}` });
         }
       }
     }
@@ -2028,9 +2056,14 @@ function buildServerActions(item) {
   confirmBtn.addEventListener("click", async () => {
     const path = item.type === "local" ? "/api/locals/" : "/api/servers/";
     setConfirming(false);
-    await fetchJSON(`${path}${encodeURIComponent(item.server.name)}`, { method: "DELETE" });
-    await refreshServers();
-    await refreshStatus();
+    try {
+      await fetchJSON(`${path}${encodeURIComponent(item.server.name)}`, { method: "DELETE" });
+      await refreshServers();
+      await refreshStatus();
+      notify({ type: "warning", message: `Server removed: ${item.server.name}` });
+    } catch (err) {
+      notify({ type: "error", message: err.message || "Failed to remove server." });
+    }
   });
 
   actions.append(editBtn, maintenanceBtn, removeBtn, confirmBtn);
@@ -2346,8 +2379,15 @@ function normalizeQuery(value) {
   return String(value || "").trim().toLowerCase();
 }
 
+function updateSidebarSearchPulse(valueOverride) {
+  if (!sidebarSearch || !sidebarSearchWrap) return;
+  const query = normalizeQuery(valueOverride ?? sidebarSearch.value);
+  sidebarSearchWrap.classList.toggle("has-filter", Boolean(query));
+}
+
 function updateSidebarSearchUI() {
   if (!sidebarSearch) return;
+  updateSidebarSearchPulse();
   if (currentView === "containers") {
     updateContainersSearchCount();
   } else if (sidebarSearchCountEl) {
@@ -2358,6 +2398,7 @@ function updateSidebarSearchUI() {
 function applySidebarFilter(queryOverride) {
   if (!sidebarSearch) return;
   updateSidebarSearchUI();
+  updateSidebarSearchPulse(queryOverride);
   const query = normalizeQuery(queryOverride ?? sidebarSearch.value);
   if (currentView === "containers") {
     if (containersViewMode === "shell" && containersShellList) {
@@ -5130,6 +5171,7 @@ function maybeClearStackStatusOverride(stack) {
     const fallbackByActionMs = {
       up: 30000,
       down: 30000,
+      redeploy: 30000,
       restart: 5000,
       start: 5000,
       stop: 5000,
@@ -5199,6 +5241,12 @@ function updateStackRow(entry, stack) {
   const editBtn = buildStackActionButton("icon-edit", "Edit stack", () => openStackModal(stack.name));
   const upBtn = buildStackActionButton("icon-chevrons-up", "Compose up", () => runStackAction(stack.name, "up"), "btn-success");
   const downBtn = buildStackActionButton("icon-chevrons-down", "Compose down", () => runStackAction(stack.name, "down"), "btn-warning");
+  const redeployBtn = buildStackActionButton(
+    "icon-arrow-back-up-double",
+    "Redeploy",
+    () => runStackAction(stack.name, "redeploy"),
+    "btn-info"
+  );
   const restartBtn = buildStackActionButton("icon-reload", "Restart stack", () => runStackAction(stack.name, "restart"), "btn-info");
   const startBtn = buildStackActionButton("icon-play", "Start stack", () => runStackAction(stack.name, "start"), "btn-success");
   const stopBtn = buildStackActionButton("icon-stop", "Stop stack", () => runStackAction(stack.name, "stop"), "btn-warning");
@@ -5243,7 +5291,7 @@ function updateStackRow(entry, stack) {
   if (isConfirmingRm) {
     rmBtn.classList.add("is-confirming");
   }
-  actionsWrap.append(editBtn, upBtn, downBtn, restartBtn, startBtn, stopBtn, killBtn, rmBtn);
+  actionsWrap.append(editBtn, upBtn, downBtn, redeployBtn, restartBtn, startBtn, stopBtn, killBtn, rmBtn);
 }
 
 function renderStacks(list) {
@@ -5827,9 +5875,11 @@ async function runImagePull() {
     });
     startImagesPullAutoClose(repository, tag, 6);
     await refreshImages({ silent: true });
+    notify({ type: "success", message: `Pulled ${repository}:${tag}` });
   } catch (err) {
     stopImagesPullAutoClose();
     setImagesPullInProgress(false, err.message || "Pull image failed.", "error");
+    notify({ type: "error", message: err.message || "Pull image failed." });
   }
 }
 
@@ -5848,8 +5898,10 @@ async function runImagePrune(mode) {
       body: JSON.stringify({ scope, mode }),
     });
     await refreshImages({ silent: true });
+    const label = mode === "dangling" ? "dangling" : "unused";
+    notify({ type: "success", message: `Pruned ${label} images` });
   } catch (err) {
-    showToast(err.message || "Prune images failed.");
+    notify({ type: "error", message: err.message || "Prune images failed." });
   }
 }
 
@@ -5864,6 +5916,7 @@ async function runImageRemove() {
     return;
   }
   try {
+    const removedId = imagesSelectedId;
     imagesActionConfirming.clear();
     updateImagesConfirmButtons();
     await fetchJSON("/api/images/remove", {
@@ -5874,8 +5927,9 @@ async function runImageRemove() {
     imagesSelectedId = "";
     if (imagesRemoveBtn) imagesRemoveBtn.disabled = true;
     await refreshImages({ silent: true });
+    notify({ type: "warning", message: `Removed image ${String(removedId).slice(0, 12)}` });
   } catch (err) {
-    showToast(err.message || "Remove image failed.");
+    notify({ type: "error", message: err.message || "Remove image failed." });
   }
 }
 
@@ -5889,6 +5943,7 @@ async function runStackAction(name, action) {
   const optimisticByAction = {
     up: "deploying",
     down: "tearing_down",
+    redeploy: "deploying",
     restart: "restarting",
     start: "starting",
     stop: "stopping",
@@ -5911,9 +5966,23 @@ async function runStackAction(name, action) {
     });
     markStackStatusOverrideCompleted(name);
     await refreshStacks({ silent: true });
+    const normalized = String(action || "").toLowerCase();
+    const labelByAction = {
+      up: "Deployed",
+      down: "Torn down",
+      redeploy: "Redeployed",
+      restart: "Restarted",
+      start: "Started",
+      stop: "Stopped",
+      kill: "Killed",
+      rm: "Removed",
+    };
+    const toastType = ["down", "stop", "kill", "rm"].includes(normalized) ? "warning" : "success";
+    const label = labelByAction[normalized] || normalized;
+    notify({ type: toastType, message: `Stack ${name}: ${label}` });
   } catch (err) {
     stackStatusOverrides.delete(name);
-    showToast(err.message || "Stack action failed.");
+    notify({ type: "error", message: err.message || "Stack action failed." });
   }
 }
 
@@ -5938,6 +6007,9 @@ async function runContainerAction(scope, containerID, action) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ scope, container_id: containerID, action }),
     });
+    const containerName = (payload && payload.container && payload.container.name)
+      || (containersCache.get(containerID) && containersCache.get(containerID).data && containersCache.get(containerID).data.name)
+      || containerID;
     if (payload && payload.container) {
       const entry = containersCache.get(payload.container.id);
       const row = entry ? entry.row : null;
@@ -5946,8 +6018,20 @@ async function runContainerAction(scope, containerID, action) {
       }
     }
     await refreshContainers({ silent: true });
+    const normalized = String(action || "").toLowerCase();
+    const labelByAction = {
+      start: "Started",
+      stop: "Stopped",
+      restart: "Restarted",
+      pause: "Paused",
+      unpause: "Unpaused",
+      kill: "Killed",
+    };
+    const toastType = ["stop", "pause", "kill"].includes(normalized) ? "warning" : "success";
+    const label = labelByAction[normalized] || normalized;
+    notify({ type: toastType, message: `Container ${containerName}: ${label}` });
   } catch (err) {
-    showToast(err.message || "Container action failed.");
+    notify({ type: "error", message: err.message || "Container action failed." });
   }
 }
 
@@ -6096,8 +6180,7 @@ function initServerStream() {
 
 function formatAppVersionLabel(version) {
   const raw = version ? String(version) : "dev";
-  if (raw.startsWith("v")) return raw;
-  return `v${raw}`;
+  return raw;
 }
 
 function buildReleaseTag(version) {
@@ -6106,8 +6189,8 @@ function buildReleaseTag(version) {
   const lower = raw.toLowerCase();
   if (lower.startsWith("vdev")) return raw.slice(1);
   if (lower.startsWith("dev")) return raw;
-  if (lower.startsWith("v")) return raw;
-  return `v${raw}`;
+  if (lower.startsWith("v")) return raw.slice(1);
+  return raw;
 }
 
 function buildReleaseUrl(meta) {
@@ -6144,22 +6227,6 @@ function applyAppVersion(meta) {
   if (aboutChannelEl) {
     aboutChannelEl.textContent = meta && meta.channel ? meta.channel : "—";
   }
-  if (aboutRepoLinkEl) {
-    const repo = meta && meta.repo ? meta.repo : defaultReleaseRepo;
-    if (repo) {
-      aboutRepoLinkEl.textContent = repo;
-      aboutRepoLinkEl.href = `https://github.com/${repo}`;
-      aboutRepoLinkEl.classList.add("about-value");
-    } else {
-      aboutRepoLinkEl.textContent = "—";
-      aboutRepoLinkEl.removeAttribute("href");
-      aboutRepoLinkEl.classList.remove("about-value");
-    }
-  }
-  if (aboutReleaseTagEl) {
-    const tag = meta && meta.release_tag ? meta.release_tag : buildReleaseTag(meta && meta.version ? meta.version : "");
-    aboutReleaseTagEl.textContent = tag || "—";
-  }
 }
 
 function applyReleaseBadge(release) {
@@ -6190,7 +6257,7 @@ function applyReleaseBadge(release) {
     appVersionUpdateEl.setAttribute("aria-label", tooltip);
   }
   if (aboutUpdateLinkEl && aboutUpdateStatusEl) {
-    aboutUpdateStatusEl.textContent = label ? `Update available: ${label}` : "Update available";
+    aboutUpdateStatusEl.textContent = label || "Update available";
     aboutUpdateLinkEl.href = release.latest.url;
     aboutUpdateLinkEl.classList.remove("hidden");
     aboutUpdateLinkEl.classList.add("has-tooltip");
@@ -6413,7 +6480,7 @@ function updateScanPolling(results) {
   }
 }
 
-function applyOptimisticScanState(scope) {
+function applyOptimisticScanState(scope, cancelledScopes = []) {
   const nextOverrides = {};
   currentScanStartedAtMs = Date.now();
   const base = Array.isArray(lastStatusResults) && lastStatusResults.length > 0
@@ -6426,6 +6493,13 @@ function applyOptimisticScanState(scope) {
       local: false,
     })));
   const items = Array.isArray(base) ? base : [];
+  if (Array.isArray(cancelledScopes)) {
+    cancelledScopes.forEach((key) => {
+      if (key) {
+        nextOverrides[key] = "cancelled";
+      }
+    });
+  }
   if (Array.isArray(scope)) {
     scope.forEach((key, index) => {
       nextOverrides[key] = index === 0 ? "scanning" : "pending";
@@ -6477,13 +6551,146 @@ function startScanPolling() {
   }
 }
 
-function showToast(message, timeoutMs = 8000) {
-  if (!toastEl) return;
+const toastQueue = [];
+const toastVisible = new Map();
+const toastMaxVisible = 3;
+const toastDefaults = {
+  success: 3000,
+  info: 4500,
+  warning: 6000,
+  error: 10000,
+};
+
+function notify(payload) {
+  if (!toastStackEl) return;
+  const message = String(payload && payload.message ? payload.message : "").trim();
   if (!message) return;
-  toastEl.textContent = message;
-  toastEl.classList.remove("hidden");
-  window.clearTimeout(showToast._t);
-  showToast._t = window.setTimeout(() => toastEl.classList.add("hidden"), timeoutMs);
+  const type = ["success", "info", "warning", "error"].includes(payload.type) ? payload.type : "info";
+  const timeoutMs = Number(payload.timeoutMs);
+  const entry = {
+    id: payload.id || `toast_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+    type,
+    message,
+    timeoutMs: Number.isFinite(timeoutMs) ? Math.max(1000, timeoutMs) : (toastDefaults[type] || 4500),
+  };
+  toastQueue.push(entry);
+  drainToastQueue();
+}
+
+function drainToastQueue() {
+  if (!toastStackEl) return;
+  while (toastVisible.size < toastMaxVisible && toastQueue.length > 0) {
+    const next = toastQueue.shift();
+    if (!next) break;
+    renderToast(next);
+  }
+}
+
+function renderToast(entry) {
+  if (!toastStackEl) return;
+  const toast = document.createElement("div");
+  toast.className = `toast toast--${entry.type}`;
+  toast.setAttribute("data-toast-id", entry.id);
+  toast.setAttribute("role", entry.type === "error" ? "alert" : "status");
+  const bubble = document.createElement("span");
+  bubble.className = "toast__bubble";
+  bubble.setAttribute("aria-hidden", "true");
+  const glyph = document.createElement("span");
+  glyph.className = "toast__glyph";
+  glyph.setAttribute("aria-hidden", "true");
+  bubble.appendChild(glyph);
+  const content = document.createElement("div");
+  content.className = "toast__content";
+  const message = document.createElement("div");
+  message.className = "toast__message";
+  message.textContent = entry.message;
+  content.appendChild(message);
+  const closeBtn = document.createElement("button");
+  closeBtn.className = "toast__close";
+  closeBtn.type = "button";
+  closeBtn.setAttribute("aria-label", "Dismiss notification");
+  closeBtn.textContent = "×";
+  closeBtn.addEventListener("click", () => removeToast(entry.id));
+  toast.append(bubble, content, closeBtn);
+  const progress = document.createElement("div");
+  progress.className = "toast__progress";
+  progress.setAttribute("aria-hidden", "true");
+  const progressBar = document.createElement("div");
+  progressBar.className = "toast__progress-bar";
+  progress.appendChild(progressBar);
+  toast.appendChild(progress);
+  toastStackEl.appendChild(toast);
+
+  const state = {
+    id: entry.id,
+    el: toast,
+    timeoutMs: entry.timeoutMs,
+    remainingMs: entry.timeoutMs,
+    timerId: null,
+    startedAt: 0,
+    totalMs: entry.timeoutMs,
+    progressBar,
+  };
+  toastVisible.set(entry.id, state);
+  scheduleToastRemoval(state);
+
+  toast.addEventListener("mouseenter", () => pauseToast(state.id));
+  toast.addEventListener("mouseleave", () => resumeToast(state.id));
+}
+
+function scheduleToastRemoval(state) {
+  if (!state || !state.el) return;
+  state.startedAt = Date.now();
+  state.timerId = window.setTimeout(() => removeToast(state.id), state.remainingMs);
+  if (state.progressBar) {
+    state.progressBar.style.transition = "none";
+    state.progressBar.style.transform = "scaleX(1)";
+    const duration = Math.max(100, Number(state.remainingMs) || 0);
+    requestAnimationFrame(() => {
+      if (!state.progressBar) return;
+      state.progressBar.style.transition = `transform ${duration}ms linear`;
+      state.progressBar.style.transform = "scaleX(0)";
+    });
+  }
+}
+
+function pauseToast(id) {
+  const state = toastVisible.get(id);
+  if (!state || !state.timerId) return;
+  window.clearTimeout(state.timerId);
+  state.timerId = null;
+  const elapsed = Date.now() - state.startedAt;
+  state.remainingMs = Math.max(500, state.remainingMs - elapsed);
+  if (state.progressBar) {
+    const ratio = state.totalMs > 0 ? state.remainingMs / state.totalMs : 0;
+    state.progressBar.style.transition = "none";
+    state.progressBar.style.transform = `scaleX(${Math.max(0, Math.min(1, ratio))})`;
+  }
+}
+
+function resumeToast(id) {
+  const state = toastVisible.get(id);
+  if (!state || state.timerId) return;
+  scheduleToastRemoval(state);
+}
+
+function removeToast(id) {
+  const state = toastVisible.get(id);
+  if (!state || !state.el) return;
+  if (state.timerId) {
+    window.clearTimeout(state.timerId);
+  }
+  const el = state.el;
+  el.classList.add("toast--leaving");
+  window.setTimeout(() => {
+    el.remove();
+  }, 160);
+  toastVisible.delete(id);
+  drainToastQueue();
+}
+
+function showToast(message, timeoutMs = 8000) {
+  notify({ type: "info", message, timeoutMs });
 }
 
 let tooltipTarget = null;
@@ -6853,7 +7060,7 @@ scanBtn.addEventListener("click", async () => {
     try {
       await fetchJSON("/api/scan/stop", { method: "POST" });
     } catch (err) {
-      showToast(err.message || "Failed to stop scan.");
+      notify({ type: "error", message: err.message || "Failed to stop scan." });
     }
     if (currentScanController) {
       currentScanController.abort();
@@ -6862,12 +7069,13 @@ scanBtn.addEventListener("click", async () => {
     scanStateOverrides = {};
     currentScanStartedAtMs = null;
     await refreshStatus();
+    notify({ type: "warning", message: "Scan stopped" });
     return;
   }
   const wasSelectiveScan = isSelectiveScanEnabled();
   currentScanController = new AbortController();
   if (wasSelectiveScan && selectedScanServers.size === 0) {
-    showToast("Select at least one server to scan.");
+    notify({ type: "warning", message: "Select at least one server to scan." });
     currentScanController = null;
     scanActive = false;
     setScanningUI(false);
@@ -6876,25 +7084,43 @@ scanBtn.addEventListener("click", async () => {
   scanRequestActive = true;
   setScanningUI(true);
   startScanPolling();
-  const scanTargets = wasSelectiveScan
-    ? Array.from(selectedScanServers)
-    : "all";
-  applyOptimisticScanState(scanTargets);
+  const scanTargets = wasSelectiveScan ? Array.from(selectedScanServers) : "all";
+  let effectiveTargets = scanTargets;
+  let skippedOffline = [];
+  if (Array.isArray(scanTargets)) {
+    skippedOffline = scanTargets.filter((key) => String((cachedServerInfo[key] || {}).status || "").toLowerCase() === "offline");
+    effectiveTargets = scanTargets.filter((key) => !skippedOffline.includes(key));
+  }
+  applyOptimisticScanState(effectiveTargets, skippedOffline);
   refreshStatus().catch(() => {});
   try {
     if (wasSelectiveScan) {
-      for (const scope of scanTargets) {
+      if (Array.isArray(effectiveTargets) && effectiveTargets.length === 0) {
+        notify({ type: "warning", message: "All selected servers are offline — scan cancelled." });
+        return;
+      }
+      for (const scope of effectiveTargets) {
         const url = `/api/scan?server=${encodeURIComponent(scope)}`;
         await fetchJSON(url, { method: "POST", signal: currentScanController.signal });
       }
     } else {
       await fetchJSON("/api/scan?server=all", { method: "POST", signal: currentScanController.signal });
     }
+    if (wasSelectiveScan) {
+      const scannedCount = Array.isArray(effectiveTargets) ? effectiveTargets.length : 0;
+      const skippedCount = Array.isArray(skippedOffline) ? skippedOffline.length : 0;
+      const msg = skippedCount > 0
+        ? `Check updates finished (${scannedCount} scanned, ${skippedCount} skipped offline)`
+        : `Check updates finished (${scannedCount} scanned)`;
+      notify({ type: skippedCount > 0 ? "warning" : "success", message: msg });
+    } else {
+      notify({ type: "success", message: "Check updates finished" });
+    }
   } catch (err) {
     if (err.name === "AbortError" || /aborted|canceled|cancelled/i.test(err.message)) {
-      alert("Scan cancelled.");
+      notify({ type: "warning", message: "Scan cancelled." });
     } else {
-      alert(err.message);
+      notify({ type: "error", message: err.message || "Scan failed." });
     }
   } finally {
     currentScanController = null;
@@ -6908,11 +7134,18 @@ scanBtn.addEventListener("click", async () => {
   }
 });
 
-refreshLogsBtn.addEventListener("click", refreshLogs);
+refreshLogsBtn.addEventListener("click", async () => {
+  pulseButton(refreshLogsBtn, 1500);
+  await refreshLogs();
+  if (viewLogsEl && !viewLogsEl.classList.contains("hidden")) {
+    notify({ type: "success", message: "Logs refreshed" });
+  }
+});
 clearLogsBtn.addEventListener("click", async () => {
   try {
     await fetchJSON("/api/logs", { method: "DELETE" });
     await refreshLogs();
+    notify({ type: "warning", message: "Logs cleared" });
   } catch (err) {
     showToast(`Clear logs failed: ${err.message}`);
   }
@@ -6984,8 +7217,10 @@ if (testWebhookBtn) {
       await saveConfig({ useWebhookInput: true });
       await refreshConfig();
       flashButton(testWebhookBtn, "Test success", "btn-success");
+      notify({ type: "success", message: "Webhook test success" });
     } catch (err) {
       flashButton(testWebhookBtn, "Test failed", "btn-danger");
+      notify({ type: "error", message: err.message || "Webhook test failed" });
     }
   });
 }
@@ -6997,7 +7232,7 @@ configForm.addEventListener("submit", async (event) => {
     await refreshConfig();
     flashButton(saveIntervalBtn, "Saved", "btn-success");
   } catch (err) {
-    alert(err.message);
+    showToast(err.message || "Failed to save setting.");
   }
 });
 
@@ -7022,8 +7257,9 @@ if (remoteModalSave) {
         closeRemoteModal();
         await refreshServers();
         await refreshStatus();
+        notify({ type: "success", message: `Server saved: ${payload.name || "local"}` });
       } catch (err) {
-        alert(err.message);
+        showRemoteModalError(err.message || "Failed to save local server.");
       }
       return;
     }
@@ -7048,8 +7284,9 @@ if (remoteModalSave) {
       closeRemoteModal();
       await refreshServers();
       await refreshStatus();
+      notify({ type: "success", message: `Server saved: ${payload.name || "remote"}` });
     } catch (err) {
-      alert(err.message);
+      showRemoteModalError(err.message || "Failed to save remote server.");
     }
   });
 }
@@ -7093,6 +7330,12 @@ if (stackModalComposeUp) {
 if (stackModalComposeDown) {
   stackModalComposeDown.addEventListener("click", () => {
     runStackActionFromModal("down");
+  });
+}
+
+if (stackModalRedeploy) {
+  stackModalRedeploy.addEventListener("click", () => {
+    runStackActionFromModal("redeploy");
   });
 }
 
@@ -7188,6 +7431,7 @@ async function init() {
     sidebarSearch.addEventListener("blur", () => {
       updateSidebarSearchUI();
     });
+    updateSidebarSearchPulse();
   }
   if (sidebarCollapseToggleBtn) {
     sidebarCollapseToggleBtn.addEventListener("click", () => {
@@ -7244,13 +7488,15 @@ async function init() {
   if (refreshStatusBtn) {
     refreshStatusBtn.addEventListener("click", async () => {
       const wasSelectiveScan = isSelectiveScanEnabled();
-      showToast("Checking connection…", 2000);
+      notify({ type: "info", message: "Checking connection…", timeoutMs: 2000 });
       try {
         await refreshServers();
         await triggerServersRefresh();
         await triggerStatusRefresh();
         await refreshStatus();
-        showToast("Connection checked", 2000);
+        notify({ type: "success", message: "Connection checked", timeoutMs: 2500 });
+      } catch (err) {
+        notify({ type: "error", message: err.message || "Connection check failed." });
       } finally {
         if (wasSelectiveScan) {
           setSelectiveScanEnabled(false);
@@ -7261,10 +7507,14 @@ async function init() {
 
   if (refreshServersBtn) {
     refreshServersBtn.addEventListener("click", async () => {
-      showToast("Checking connection…", 2000);
-      await refreshServers();
-      await triggerServersRefresh();
-      showToast("Connection checked", 2000);
+      notify({ type: "info", message: "Checking connection…", timeoutMs: 2000 });
+      try {
+        await refreshServers();
+        await triggerServersRefresh();
+        notify({ type: "success", message: "Connection checked", timeoutMs: 2500 });
+      } catch (err) {
+        notify({ type: "error", message: err.message || "Connection check failed." });
+      }
     });
   }
 
@@ -7461,20 +7711,34 @@ async function init() {
     });
   }
   if (topbarContainersRefreshBtn) {
-    topbarContainersRefreshBtn.addEventListener("click", async () => {
-      pulseButton(topbarContainersRefreshBtn, 2000);
+  topbarContainersRefreshBtn.addEventListener("click", async () => {
+    pulseButton(topbarContainersRefreshBtn, 2000);
+    try {
       if (containersViewMode === "stacks") {
         await refreshStacks({ silent: true });
+        notify({ type: "success", message: "Stacks refreshed" });
       } else if (containersViewMode === "images") {
         await refreshImages({ silent: true });
+        notify({ type: "success", message: "Images refreshed" });
       } else if (containersViewMode === "resources") {
         await refreshContainers({ silent: true });
         await refreshContainersResources({ silent: true });
+        notify({ type: "success", message: "Resources refreshed" });
+      } else if (containersViewMode === "shell") {
+        await refreshContainers({ silent: true });
+        notify({ type: "success", message: "Shell list refreshed" });
+      } else if (containersViewMode === "logs") {
+        await refreshContainers({ silent: true });
+        notify({ type: "success", message: "Logs view refreshed" });
       } else {
         await refreshContainers({ silent: true });
+        notify({ type: "success", message: "Containers refreshed" });
       }
-    });
-  }
+    } catch (err) {
+      notify({ type: "error", message: err.message || "Refresh failed." });
+    }
+  });
+}
   if (topbarContainersShellBtn) {
     topbarContainersShellBtn.addEventListener("click", () => {
       const enabled = currentConfig && currentConfig.experimental_features
