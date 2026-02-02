@@ -554,11 +554,29 @@ func runComposeFromPayload(payload stackActionRequest, dockerHost string) error 
 
 func runComposeAction(dir, projectName, action string, env map[string]string, envFile string) error {
 	projectName = composeProjectName(projectName)
+
+	if action == "redeploy" {
+		if err := runComposeSingleAction(dir, projectName, "pull", env, envFile); err != nil {
+			return fmt.Errorf("compose pull failed: %w", err)
+		}
+		if err := runComposeSingleAction(dir, projectName, "up", env, envFile); err != nil {
+			return fmt.Errorf("compose up failed: %w", err)
+		}
+		return nil
+	}
+	return runComposeSingleAction(dir, projectName, action, env, envFile)
+}
+
+func runComposeSingleAction(dir, projectName, action string, env map[string]string, envFile string) error {
 	args, err := buildComposeArgs(projectName, action, envFile)
 	if err != nil {
 		return err
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), stackActionTimeoutSec*time.Second)
+	timeout := stackActionTimeoutSec * time.Second
+	if action == "pull" || action == "redeploy" {
+		timeout = 10 * time.Minute
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "docker", args...)
 	cmd.Dir = dir
@@ -639,6 +657,8 @@ func buildComposeArgs(projectName, action, envFile string) ([]string, error) {
 		return append(args, "up", "-d"), nil
 	case "down":
 		return append(args, "down"), nil
+	case "pull":
+		return append(args, "pull"), nil
 	case "restart":
 		return append(args, "restart"), nil
 	case "start":
