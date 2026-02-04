@@ -69,6 +69,7 @@ const sidebarCollapseToggleBtn = document.getElementById("sidebar-collapse-toggl
 const themeToggleBtn = document.getElementById("theme-toggle");
 const themeLabel = document.getElementById("theme-label");
 const topbarEl = document.querySelector(".topbar");
+const topbarCenterEl = document.querySelector(".topbar-center");
 const topbarStatusEl = document.getElementById("topbar-status");
 const topbarSettingsEl = document.getElementById("topbar-settings");
 const topbarContainersEl = document.getElementById("topbar-containers");
@@ -90,6 +91,7 @@ const topbarContainersShellBtn = document.getElementById("topbar-containers-shel
 const topbarContainersLogsBtn = document.getElementById("topbar-containers-logs");
 const topbarContainersResourcesBtn = document.getElementById("topbar-containers-resources");
 const topbarContainersStatusEl = document.getElementById("topbar-containers-status");
+const containersTopbarSearchSlot = document.getElementById("containers-topbar-search-slot");
 const containersNameSortBtn = document.getElementById("containers-name-sort");
 const containersStateSortBtn = document.getElementById("containers-state-sort");
 const containersCpuSortBtn = document.getElementById("containers-cpu-sort");
@@ -2565,7 +2567,7 @@ function applyExperimentalFeatures(cfg) {
       const enabled = Boolean(flags[view]);
       btn.classList.toggle("hidden", !enabled);
     });
-    const showContainerShortcuts = flags.containers && flags.containers_sidebar;
+    const showContainerShortcuts = flags.containers && flags.containers_sidebar && !mobileNavQuery.matches;
     sidebar.querySelectorAll(".containers-sidebar-link").forEach((btn) => {
       const requiredFlag = btn.getAttribute("data-feature");
       const enabled = showContainerShortcuts && Boolean(flags[requiredFlag]);
@@ -2720,6 +2722,13 @@ function updateContainersExperimentalToggles() {
       row.classList.toggle("toggle-disabled", !enabled);
     }
   });
+
+  // Mobile UX: container feature shortcuts in the sidebar are redundant when the
+  // sidebar becomes the compact top nav, so hide the toggle in settings.
+  if (expContainersSidebarInput) {
+    const row = expContainersSidebarInput.closest(".toggle-row");
+    if (row) row.classList.toggle("hidden", mobileNavQuery.matches);
+  }
 }
 
 function getLogsLevelLabel(mode) {
@@ -7967,6 +7976,7 @@ window.addEventListener("resize", () => {
   }
   updateTopbarHeight();
   updateMobileNavHeight();
+  syncContainersTopbarSearchPlacement();
 });
 
 function refreshViewData(view) {
@@ -7994,6 +8004,38 @@ function updateTopbarHeight() {
 const mobileNavQuery = window.matchMedia("(max-width: 720px)");
 let mobileNavHeight = 0;
 
+const topbarCenterOriginalParent = topbarCenterEl ? topbarCenterEl.parentElement : null;
+const topbarCenterOriginalNextSibling = topbarCenterEl ? topbarCenterEl.nextElementSibling : null;
+
+function syncContainersTopbarSearchPlacement() {
+  if (!topbarCenterEl || !containersTopbarSearchSlot || !topbarCenterOriginalParent) return;
+  const shouldInline = mobileNavQuery.matches && currentView === "containers";
+
+  containersTopbarSearchSlot.setAttribute("aria-hidden", shouldInline ? "false" : "true");
+
+  if (shouldInline) {
+    if (!containersTopbarSearchSlot.contains(topbarCenterEl)) {
+      containersTopbarSearchSlot.appendChild(topbarCenterEl);
+    }
+    updateTopbarHeight();
+    updateMobileNavHeight();
+    return;
+  }
+
+  if (topbarCenterEl.parentElement !== topbarCenterOriginalParent) {
+    if (
+      topbarCenterOriginalNextSibling &&
+      topbarCenterOriginalNextSibling.parentElement === topbarCenterOriginalParent
+    ) {
+      topbarCenterOriginalParent.insertBefore(topbarCenterEl, topbarCenterOriginalNextSibling);
+    } else {
+      topbarCenterOriginalParent.appendChild(topbarCenterEl);
+    }
+    updateTopbarHeight();
+    updateMobileNavHeight();
+  }
+}
+
 function updateMobileNavHeight() {
   if (!topbarEl || !sidebar) return;
   if (!mobileNavQuery.matches) {
@@ -8009,6 +8051,8 @@ function updateMobileNavHeight() {
 
 mobileNavQuery.addEventListener("change", () => {
   updateMobileNavHeight();
+  syncContainersTopbarSearchPlacement();
+  if (currentConfig) applyExperimentalFeatures(currentConfig);
 });
 
 function updateSidebarNavActive(nextView) {
@@ -8103,6 +8147,7 @@ function setView(nextView) {
   }
   updateTopbarHeight();
   updateMobileNavHeight();
+  syncContainersTopbarSearchPlacement();
 
   // Mobile UX: each view should start at the top instead of carrying over the
   // scroll position from the previous view.

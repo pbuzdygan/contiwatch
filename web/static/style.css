@@ -589,6 +589,47 @@ body[data-sidebar="collapsed"] .sidebar-footer {
   flex-wrap: wrap;
 }
 
+.containers-topbar-primary {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.containers-topbar-search-slot {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  flex: 1 1 320px;
+}
+
+.containers-topbar-search-slot[aria-hidden="true"] {
+  display: none;
+}
+
+.containers-topbar-search-slot .topbar-center {
+  position: static;
+  left: auto;
+  top: auto;
+  transform: none;
+  width: 100%;
+  z-index: auto;
+}
+
+.containers-topbar-search-slot .topbar-search {
+  width: 100%;
+  margin: 0;
+}
+
+.containers-topbar-secondary {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
 .topbar-separator {
   width: 1px;
   height: 22px;
@@ -2663,7 +2704,13 @@ input::placeholder {
 .containers-table-wrap {
   border: 1px solid var(--color-border);
   border-radius: var(--r-card);
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  width: 100%;
+  max-width: 100%;
+  display: block;
+  overscroll-behavior-x: contain;
   background: var(--color-surface);
   box-shadow: var(--shadow-card);
 }
@@ -4469,6 +4516,44 @@ input::placeholder {
     grid-area: actions;
     width: 100%;
     justify-content: flex-start;
+  }
+
+  .containers-topbar-actions {
+    flex-direction: column;
+    align-items: stretch;
+    flex-wrap: nowrap;
+  }
+
+  .containers-topbar-primary {
+    width: 100%;
+    flex-wrap: nowrap;
+  }
+
+  .containers-topbar-primary .containers-server-picker {
+    min-width: 0;
+    flex: 1 1 0;
+  }
+
+  .containers-topbar-primary .containers-server-btn {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .containers-topbar-search-slot {
+    flex: 1 1 0;
+  }
+
+  .containers-topbar-secondary {
+    width: 100%;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+    padding-bottom: 2px;
+  }
+
+  .containers-topbar-secondary > * {
+    flex: 0 0 auto;
   }
 
   .topbar-right {
