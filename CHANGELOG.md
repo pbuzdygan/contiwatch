@@ -1,5 +1,16 @@
 # Changelog
 
+## v1.2.5
+
+## Bug fixes
+
+## New features
+- Containers: added Remove action (docker rm) - now possible to remove stopped container directly from UI.
+- Containers: added Volumes view (list, details modal, safe remove with blockers, and prune unused).
+- Containers: added Networks view (list, details, safe remove, prune, connect/disconnect).
+
+## Improvements
+
 ## v1.2.4
 
 ## Bug fixes

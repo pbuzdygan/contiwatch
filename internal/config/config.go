@@ -41,13 +41,15 @@ type Config struct {
 }
 
 type ExperimentalFeatures struct {
-	Containers        bool `json:"containers"`
-	Stacks            bool `json:"stacks"`
-	Images            bool `json:"images"`
-	ContainerShell    bool `json:"container_shell"`
-	ContainerLogs     bool `json:"container_logs"`
+	Containers         bool `json:"containers"`
+	Stacks             bool `json:"stacks"`
+	Images             bool `json:"images"`
+	Volumes            bool `json:"volumes"`
+	Networks           bool `json:"networks"`
+	ContainerShell     bool `json:"container_shell"`
+	ContainerLogs      bool `json:"container_logs"`
 	ContainerResources bool `json:"container_resources"`
-	ContainersSidebar bool `json:"containers_sidebar"`
+	ContainersSidebar  bool `json:"containers_sidebar"`
 }
 
 const (

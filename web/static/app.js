@@ -28,6 +28,8 @@ const expContainerLogsInput = document.getElementById("exp-container-logs");
 const expContainerResourcesInput = document.getElementById("exp-container-resources");
 const expStacksInput = document.getElementById("exp-stacks");
 const expImagesInput = document.getElementById("exp-images");
+const expVolumesInput = document.getElementById("exp-volumes");
+const expNetworksInput = document.getElementById("exp-networks");
 const addServerBtn = document.getElementById("add-server");
 const refreshServersBtn = document.getElementById("refresh-servers");
 const serversTableWrap = document.getElementById("servers-table-wrap");
@@ -77,6 +79,8 @@ const viewSettingsEl = document.getElementById("view-settings");
 const viewContainersEl = document.getElementById("view-containers");
 const topbarContainersStacksBtn = document.getElementById("topbar-containers-stacks");
 const topbarContainersImagesBtn = document.getElementById("topbar-containers-images");
+const topbarContainersVolumesBtn = document.getElementById("topbar-containers-volumes");
+const topbarContainersNetworksBtn = document.getElementById("topbar-containers-networks");
 const viewServersEl = document.getElementById("view-servers");
 const viewLogsEl = document.getElementById("view-logs");
 const topbarContainersServerBtn = document.getElementById("topbar-containers-server-btn");
@@ -97,6 +101,8 @@ const containersEmptyEl = document.getElementById("containers-empty");
 const containersTableView = document.getElementById("containers-table-view");
 const containersStacksView = document.getElementById("containers-stacks-view");
 const containersImagesView = document.getElementById("containers-images-view");
+const containersVolumesView = document.getElementById("containers-volumes-view");
+const containersNetworksView = document.getElementById("containers-networks-view");
 const stacksTableBody = document.getElementById("stacks-body");
 const stacksEmptyEl = document.getElementById("stacks-empty");
 const stacksNewBtn = document.getElementById("stacks-new");
@@ -121,6 +127,44 @@ const imagesPullConfirmBtn = document.getElementById("images-pull-confirm");
 const imagesPullRepoInput = document.getElementById("images-pull-repo");
 const imagesPullTagInput = document.getElementById("images-pull-tag");
 const imagesPullStatusEl = document.getElementById("images-pull-status");
+const networksTableBody = document.getElementById("networks-body");
+const networksEmptyEl = document.getElementById("networks-empty");
+const networksNameSortBtn = document.getElementById("networks-name-sort");
+const networksStackSortBtn = document.getElementById("networks-stack-sort");
+const networksSubnetSortBtn = document.getElementById("networks-subnet-sort");
+const networksGatewaySortBtn = document.getElementById("networks-gateway-sort");
+const networksPruneBtn = document.getElementById("networks-prune");
+const networkDetailsModal = document.getElementById("network-details-modal");
+const networkDetailsTitle = document.getElementById("network-details-title");
+const networkDetailsCloseBtn = document.getElementById("network-details-close");
+const networkDetailsBody = document.getElementById("network-details-body");
+const networkConnectModal = document.getElementById("network-connect-modal");
+const networkConnectTitle = document.getElementById("network-connect-title");
+const networkConnectCloseBtn = document.getElementById("network-connect-close");
+const networkConnectSelect = document.getElementById("network-connect-select");
+const networkConnectErrorEl = document.getElementById("network-connect-error");
+const networkConnectConfirmBtn = document.getElementById("network-connect-confirm");
+const networkConnectCancelBtn = document.getElementById("network-connect-cancel");
+const networkDisconnectModal = document.getElementById("network-disconnect-modal");
+const networkDisconnectTitle = document.getElementById("network-disconnect-title");
+const networkDisconnectCloseBtn = document.getElementById("network-disconnect-close");
+const networkDisconnectSelect = document.getElementById("network-disconnect-select");
+const networkDisconnectErrorEl = document.getElementById("network-disconnect-error");
+const networkDisconnectConfirmBtn = document.getElementById("network-disconnect-confirm");
+const networkDisconnectCancelBtn = document.getElementById("network-disconnect-cancel");
+const volumesTableBody = document.getElementById("volumes-body");
+const volumesEmptyEl = document.getElementById("volumes-empty");
+const volumesNameSortBtn = document.getElementById("volumes-name-sort");
+const volumesStackSortBtn = document.getElementById("volumes-stack-sort");
+const volumesPruneBtn = document.getElementById("volumes-prune");
+const volumeDetailsModal = document.getElementById("volume-details-modal");
+const volumeDetailsTitle = document.getElementById("volume-details-title");
+const volumeDetailsCloseBtn = document.getElementById("volume-details-close");
+const volumeDetailsBody = document.getElementById("volume-details-body");
+const volumeUsedByModal = document.getElementById("volume-usedby-modal");
+const volumeUsedByTitle = document.getElementById("volume-usedby-title");
+const volumeUsedByCloseBtn = document.getElementById("volume-usedby-close");
+const volumeUsedByBody = document.getElementById("volume-usedby-body");
 const containersShellLayout = document.getElementById("containers-shell-layout");
 const containersShellList = document.getElementById("containers-shell-list");
 const containersShellPlaceholder = document.getElementById("containers-shell-placeholder");
@@ -244,6 +288,7 @@ let stacksUpdateInProgress = false;
 let imagesUpdateInProgress = false;
 let containersCache = new Map();
 let containersKillConfirming = new Set();
+let containersRemoveConfirming = new Set();
 let stacksActionConfirming = new Set();
 let stackStatusOverrides = new Map();
 let imagesCache = [];
@@ -254,6 +299,23 @@ let imagesPullInProgress = false;
 let imagesPullAutoCloseTimer = null;
 let imagesPullAutoCloseRemainingSec = 0;
 let imagesPullLastRef = "";
+let volumesSortMode = "name:asc";
+let volumesUpdateInProgress = false;
+let volumesCache = [];
+let volumesActionConfirming = new Set();
+let currentVolumeDetails = null;
+let currentVolumeUsedBy = null;
+let networksSortMode = "name:asc";
+let networksUpdateInProgress = false;
+let networksCache = [];
+let networksActionConfirming = new Set();
+let networksRefreshRequestId = 0;
+let networksRefreshAbort = null;
+let networkDetailsRequestId = 0;
+let networkDetailsAbort = null;
+let networkContainersRequestId = 0;
+let networkContainersAbort = null;
+let currentNetworkSelection = null;
 let containersViewMode = "table";
 let pendingContainersMode = "";
 let containersShellSelectedId = "";
@@ -2441,6 +2503,22 @@ function applySidebarFilter(queryOverride) {
         const match = !query || haystack.includes(query);
         row.classList.toggle("filtered-out", !match);
       });
+    } else if (containersViewMode === "networks" && networksTableBody) {
+      const rows = Array.from(networksTableBody.querySelectorAll("tr.networks-row"));
+      rows.forEach((row) => {
+        const source = row.dataset && row.dataset.search ? row.dataset.search : row.textContent;
+        const haystack = normalizeQuery(source);
+        const match = !query || haystack.includes(query);
+        row.classList.toggle("filtered-out", !match);
+      });
+    } else if (containersViewMode === "volumes" && volumesTableBody) {
+      const rows = Array.from(volumesTableBody.querySelectorAll("tr.volumes-row"));
+      rows.forEach((row) => {
+        const source = row.dataset && row.dataset.search ? row.dataset.search : row.textContent;
+        const haystack = normalizeQuery(source);
+        const match = !query || haystack.includes(query);
+        row.classList.toggle("filtered-out", !match);
+      });
     } else {
       const rows = Array.from(containersTableBody ? containersTableBody.querySelectorAll("tr") : []);
       rows.forEach((row) => {
@@ -2477,6 +2555,8 @@ function applyExperimentalFeatures(cfg) {
     container_resources: Boolean(exp.container_resources),
     stacks: Boolean(exp.stacks),
     images: Boolean(exp.images),
+    volumes: Boolean(exp.volumes),
+    networks: Boolean(exp.networks),
     containers_sidebar: Boolean(exp.containers_sidebar),
   };
   if (sidebar) {
@@ -2510,6 +2590,12 @@ function applyExperimentalFeatures(cfg) {
   if (topbarContainersImagesBtn) {
     topbarContainersImagesBtn.classList.toggle("hidden", !(flags.images && flags.containers));
   }
+  if (topbarContainersVolumesBtn) {
+    topbarContainersVolumesBtn.classList.toggle("hidden", !(flags.volumes && flags.containers));
+  }
+  if (topbarContainersNetworksBtn) {
+    topbarContainersNetworksBtn.classList.toggle("hidden", !(flags.networks && flags.containers));
+  }
   if (!flags.container_shell && containersViewMode === "shell") {
     setContainersViewMode("table");
   }
@@ -2523,6 +2609,12 @@ function applyExperimentalFeatures(cfg) {
     setContainersViewMode("table");
   }
   if (!flags.images && containersViewMode === "images") {
+    setContainersViewMode("table");
+  }
+  if (!flags.volumes && containersViewMode === "volumes") {
+    setContainersViewMode("table");
+  }
+  if (!flags.networks && containersViewMode === "networks") {
     setContainersViewMode("table");
   }
   if (viewContainersEl && !flags.containers) viewContainersEl.classList.add("hidden");
@@ -2619,7 +2711,7 @@ function updateServersFilterMenu(mode = serversFilterMode) {
 
 function updateContainersExperimentalToggles() {
   const enabled = expContainersInput ? expContainersInput.checked : false;
-  const dependents = [expContainersSidebarInput, expContainerShellInput, expContainerLogsInput, expContainerResourcesInput, expStacksInput, expImagesInput];
+  const dependents = [expContainersSidebarInput, expContainerShellInput, expContainerLogsInput, expContainerResourcesInput, expStacksInput, expImagesInput, expNetworksInput, expVolumesInput];
   dependents.forEach((input) => {
     if (!input) return;
     input.disabled = !enabled;
@@ -2909,6 +3001,8 @@ async function refreshConfig() {
   if (expContainerResourcesInput) expContainerResourcesInput.checked = Boolean(exp.container_resources);
   if (expStacksInput) expStacksInput.checked = Boolean(exp.stacks);
   if (expImagesInput) expImagesInput.checked = Boolean(exp.images);
+  if (expVolumesInput) expVolumesInput.checked = Boolean(exp.volumes);
+  if (expNetworksInput) expNetworksInput.checked = Boolean(exp.networks);
   currentTimeZone = cfg.time_zone ? String(cfg.time_zone).trim() : "";
   setContainersLogsTimestamps(containersLogsTimestamps);
   applyExperimentalFeatures(cfg);
@@ -2992,6 +3086,8 @@ function buildConfigPayload(options = {}) {
       container_resources: expContainerResourcesInput ? expContainerResourcesInput.checked : false,
       stacks: expStacksInput ? expStacksInput.checked : false,
       images: expImagesInput ? expImagesInput.checked : false,
+      volumes: expVolumesInput ? expVolumesInput.checked : false,
+      networks: expNetworksInput ? expNetworksInput.checked : false,
     },
   };
 }
@@ -3322,6 +3418,14 @@ function updateContainersSearchCount() {
     const rows = Array.from(imagesTableBody.querySelectorAll("tr.images-image-row"));
     total = rows.length;
     visible = rows.filter((row) => !row.classList.contains("filtered-out") && !row.classList.contains("images-row-hidden")).length;
+  } else if (containersViewMode === "networks" && networksTableBody) {
+    const rows = Array.from(networksTableBody.querySelectorAll("tr.networks-row"));
+    total = rows.length;
+    visible = rows.filter((row) => !row.classList.contains("filtered-out")).length;
+  } else if (containersViewMode === "volumes" && volumesTableBody) {
+    const rows = Array.from(volumesTableBody.querySelectorAll("tr.volumes-row"));
+    total = rows.length;
+    visible = rows.filter((row) => !row.classList.contains("filtered-out")).length;
   } else if (containersTableBody) {
     const rows = Array.from(containersTableBody.querySelectorAll("tr"));
     total = rows.length;
@@ -3347,9 +3451,13 @@ function setContainersViewMode(mode) {
             ? "resources"
             : mode === "stacks"
                 ? "stacks"
-                : mode === "images"
-                    ? "images"
-                    : "table";
+    : mode === "images"
+        ? "images"
+        : mode === "volumes"
+            ? "volumes"
+            : mode === "networks"
+                ? "networks"
+                : "table";
   containersViewMode = next;
   if (topbarContainersEl) {
     const title = topbarContainersEl.querySelector("h2");
@@ -3360,10 +3468,14 @@ function setContainersViewMode(mode) {
             ? "Containers Logs"
             : next === "resources"
                 ? "Containers Resources"
-                : next === "stacks"
-                    ? "Containers Stacks"
-                    : next === "images"
-                        ? "Containers Images"
+        : next === "stacks"
+            ? "Containers Stacks"
+            : next === "images"
+                ? "Containers Images"
+                : next === "volumes"
+                    ? "Containers Volumes"
+                    : next === "networks"
+                        ? "Containers Networks"
                         : "Containers";
     }
   }
@@ -3379,6 +3491,12 @@ function setContainersViewMode(mode) {
   }
   if (containersImagesView) {
     containersImagesView.classList.toggle("hidden", next !== "images");
+  }
+  if (containersVolumesView) {
+    containersVolumesView.classList.toggle("hidden", next !== "volumes");
+  }
+  if (containersNetworksView) {
+    containersNetworksView.classList.toggle("hidden", next !== "networks");
   }
   if (containersShellLayout) {
     containersShellLayout.classList.toggle("hidden", next !== "shell");
@@ -3403,6 +3521,12 @@ function setContainersViewMode(mode) {
   }
   if (topbarContainersImagesBtn) {
     topbarContainersImagesBtn.classList.toggle("is-active", next === "images");
+  }
+  if (topbarContainersVolumesBtn) {
+    topbarContainersVolumesBtn.classList.toggle("is-active", next === "volumes");
+  }
+  if (topbarContainersNetworksBtn) {
+    topbarContainersNetworksBtn.classList.toggle("is-active", next === "networks");
   }
   if (next === "shell") {
     closeContainersLogsSession("switch to shell");
@@ -3447,6 +3571,20 @@ function setContainersViewMode(mode) {
     stopContainersAutoRefresh();
     stopStacksAutoRefresh();
     refreshImages({ silent: true }).catch(() => {});
+  } else if (next === "networks") {
+    closeContainersShellSession("switch to networks");
+    closeContainersLogsSession("switch to networks");
+    setContainersLogsPaused(false);
+    stopContainersAutoRefresh();
+    stopStacksAutoRefresh();
+    refreshNetworks({ silent: true }).catch(() => {});
+  } else if (next === "volumes") {
+    closeContainersShellSession("switch to volumes");
+    closeContainersLogsSession("switch to volumes");
+    setContainersLogsPaused(false);
+    stopContainersAutoRefresh();
+    stopStacksAutoRefresh();
+    refreshVolumes({ silent: true }).catch(() => {});
   } else {
     closeContainersShellSession("switch to table");
     closeContainersLogsSession("switch to table");
@@ -3458,6 +3596,20 @@ function setContainersViewMode(mode) {
     stopContainersResourcesAutoRefresh();
     containersResourcesSelectedIds.clear();
     updateContainersResourcesPlaceholder();
+  }
+  if (next !== "networks") {
+    if (networksRefreshAbort) {
+      networksRefreshAbort.abort();
+      networksRefreshAbort = null;
+    }
+    if (networkDetailsAbort) {
+      networkDetailsAbort.abort();
+      networkDetailsAbort = null;
+    }
+    if (networkContainersAbort) {
+      networkContainersAbort.abort();
+      networkContainersAbort = null;
+    }
   }
   if (sidebarSearch && sidebarSearch.value.trim()) {
     applySidebarFilter(sidebarSearch.value);
@@ -4704,6 +4856,16 @@ function clearContainersKillConfirmations() {
   }
 }
 
+function clearContainersRemoveConfirmations() {
+  if (containersRemoveConfirming.size === 0) return;
+  containersRemoveConfirming.clear();
+  if (!containersSelectedScope) return;
+  const list = Array.from(containersCache.values()).map((entry) => entry.data);
+  if (list.length > 0) {
+    renderContainers(list, containersSelectedScope);
+  }
+}
+
 function stackActionKey(name, action) {
   return `${name || ""}::${action || ""}`;
 }
@@ -4804,6 +4966,7 @@ function updateContainerRow(row, container, scope) {
 
   const startBtn = buildContainerActionButton("icon-play", "Start", async () => {
     containersKillConfirming.delete(container.id);
+    containersRemoveConfirming.delete(container.id);
     await runContainerAction(scope, container.id, "start");
   });
   startBtn.classList.add("btn-success");
@@ -4811,6 +4974,7 @@ function updateContainerRow(row, container, scope) {
 
   const stopBtn = buildContainerActionButton("icon-stop", "Stop", async () => {
     containersKillConfirming.delete(container.id);
+    containersRemoveConfirming.delete(container.id);
     await runContainerAction(scope, container.id, "stop");
   });
   stopBtn.classList.add("btn-danger");
@@ -4818,6 +4982,7 @@ function updateContainerRow(row, container, scope) {
 
   const restartBtn = buildContainerActionButton("icon-reload", "Restart", async () => {
     containersKillConfirming.delete(container.id);
+    containersRemoveConfirming.delete(container.id);
     setContainerOptimisticState(container.id, "restarting", scope);
     await runContainerAction(scope, container.id, "restart");
   });
@@ -4829,6 +4994,7 @@ function updateContainerRow(row, container, scope) {
   const pauseAction = isPaused ? "unpause" : "pause";
   const pauseBtn = buildContainerActionButton(pauseIcon, pauseLabel, async () => {
     containersKillConfirming.delete(container.id);
+    containersRemoveConfirming.delete(container.id);
     await runContainerAction(scope, container.id, pauseAction);
   });
   pauseBtn.classList.add("btn-warning");
@@ -4840,6 +5006,7 @@ function updateContainerRow(row, container, scope) {
     isConfirmingKill ? "Confirm kill" : "Kill",
     async () => {
       if (!canKill) return;
+      containersRemoveConfirming.delete(container.id);
       if (!containersKillConfirming.has(container.id)) {
         containersKillConfirming.add(container.id);
         updateContainerRow(row, container, scope);
@@ -4856,7 +5023,27 @@ function updateContainerRow(row, container, scope) {
   }
   killBtn.disabled = !canKill;
 
-  actionsWrap.append(startBtn, stopBtn, restartBtn, pauseBtn, killBtn);
+  const isConfirmingRemove = containersRemoveConfirming.has(container.id);
+  const removeBtn = buildContainerActionButton(
+    isConfirmingRemove ? "icon-check" : "icon-trash",
+    isConfirmingRemove ? "Confirm remove" : "Remove",
+    async () => {
+      containersKillConfirming.delete(container.id);
+      if (!containersRemoveConfirming.has(container.id)) {
+        containersRemoveConfirming.add(container.id);
+        updateContainerRow(row, container, scope);
+        return;
+      }
+      containersRemoveConfirming.delete(container.id);
+      await runContainerAction(scope, container.id, "rm");
+    }
+  );
+  removeBtn.classList.add("btn-danger", "containers-kill-btn");
+  if (isConfirmingRemove) {
+    removeBtn.classList.add("is-confirming");
+  }
+
+  actionsWrap.append(startBtn, stopBtn, restartBtn, pauseBtn, killBtn, removeBtn);
 }
 
 function clearContainersTable(message) {
@@ -4865,6 +5052,7 @@ function clearContainersTable(message) {
   }
   containersCache = new Map();
   containersKillConfirming.clear();
+  containersRemoveConfirming.clear();
   containersTableResourcesData = new Map();
   containersTableResourcesScope = "";
   if (containersShellList) {
@@ -5334,8 +5522,9 @@ function renderStacks(list) {
     }
   });
   stacksTableBody.appendChild(fragment);
-  if (sidebarSearch && sidebarSearch.value.trim()) {
-    applySidebarFilter(sidebarSearch.value);
+  const query = sidebarSearch ? sidebarSearch.value : "";
+  if (query && query.trim()) {
+    applySidebarFilter(query);
   } else {
     updateContainersSearchCount();
   }
@@ -5766,6 +5955,947 @@ async function refreshImages(options = {}) {
   }
 }
 
+function updateNetworksSortUI() {
+  const buttons = [
+    { key: "name", btn: networksNameSortBtn, label: "name" },
+    { key: "stack", btn: networksStackSortBtn, label: "stack" },
+    { key: "subnet", btn: networksSubnetSortBtn, label: "subnet" },
+    { key: "gateway", btn: networksGatewaySortBtn, label: "gateway" },
+  ];
+  buttons.forEach(({ key, btn, label }) => {
+    if (!btn) return;
+    const icon = btn.querySelector(".icon-sort");
+    if (!icon) return;
+    if (networksSortMode === `${key}:asc`) {
+      icon.classList.remove("icon-sort-neutral", "icon-sort-desc");
+      icon.classList.add("icon-sort-asc");
+      btn.setAttribute("aria-label", `Sort by ${label} desc`);
+    } else if (networksSortMode === `${key}:desc`) {
+      icon.classList.remove("icon-sort-neutral", "icon-sort-asc");
+      icon.classList.add("icon-sort-desc");
+      btn.setAttribute("aria-label", `Sort by ${label} asc`);
+    } else {
+      icon.classList.remove("icon-sort-asc", "icon-sort-desc");
+      icon.classList.add("icon-sort-neutral");
+      btn.setAttribute("aria-label", `Sort by ${label}`);
+    }
+  });
+}
+
+function networksSort(list, mode) {
+  const [field, order] = String(mode || "name:asc").split(":");
+  const dir = order === "desc" ? -1 : 1;
+  const sorted = Array.isArray(list) ? [...list] : [];
+  sorted.sort((a, b) => {
+    const aVal = normalizeQuery(
+      field === "stack" ? a.stack : field === "subnet" ? a.subnet : field === "gateway" ? a.gateway : a.name
+    );
+    const bVal = normalizeQuery(
+      field === "stack" ? b.stack : field === "subnet" ? b.subnet : field === "gateway" ? b.gateway : b.name
+    );
+    if (aVal < bVal) return -1 * dir;
+    if (aVal > bVal) return 1 * dir;
+    return 0;
+  });
+  return sorted;
+}
+
+function networkStatusLabel(count) {
+  return count > 0 ? "In use" : "Unused";
+}
+
+function buildNetworkStatusBadge(label) {
+  const badge = document.createElement("span");
+  badge.className = `image-state-badge ${label === "In use" ? "image-state-in-use" : "image-state-unused"}`;
+  badge.textContent = label;
+  return badge;
+}
+
+function updateNetworksConfirmButtons() {
+  if (!networksPruneBtn) return;
+  const icon = networksPruneBtn.querySelector(".icon-action");
+  if (!icon) return;
+  if (networksActionConfirming.has("prune")) {
+    icon.classList.remove("icon-square-minus");
+    icon.classList.add("icon-check");
+    networksPruneBtn.classList.add("is-confirming", "btn-warning");
+  } else {
+    icon.classList.remove("icon-check");
+    icon.classList.add("icon-square-minus");
+    networksPruneBtn.classList.remove("is-confirming", "btn-warning");
+  }
+}
+
+function clearNetworksConfirmations() {
+  if (networksActionConfirming.size === 0) return;
+  networksActionConfirming.clear();
+  updateNetworksConfirmButtons();
+  if (networksCache.length > 0) {
+    renderNetworks(networksCache);
+  }
+}
+
+function clearNetworksTable(message) {
+  if (networksTableBody) {
+    networksTableBody.innerHTML = "";
+  }
+  networksCache = [];
+  networksActionConfirming.clear();
+  updateNetworksConfirmButtons();
+  if (networksEmptyEl) {
+    if (message) {
+      networksEmptyEl.textContent = message;
+      networksEmptyEl.classList.remove("hidden");
+    } else {
+      networksEmptyEl.classList.add("hidden");
+    }
+  }
+  updateContainersSearchCount();
+}
+
+function renderNetworks(list) {
+  if (!networksTableBody) return;
+  if (!Array.isArray(list) || list.length === 0) {
+    clearNetworksTable("No networks found.");
+    return;
+  }
+  if (networksEmptyEl) {
+    networksEmptyEl.classList.add("hidden");
+  }
+  networksCache = list;
+  const sorted = networksSort(list, networksSortMode);
+  const validConfirmKeys = new Set(sorted.map((item) => `remove:${item.id}`));
+  if (networksActionConfirming.size > 0) {
+    Array.from(networksActionConfirming).forEach((key) => {
+      if (key !== "prune" && !validConfirmKeys.has(key)) {
+        networksActionConfirming.delete(key);
+      }
+    });
+    updateNetworksConfirmButtons();
+  }
+  const fragment = document.createDocumentFragment();
+  sorted.forEach((network) => {
+    if (!network || !network.id) return;
+    const row = document.createElement("tr");
+    row.className = "networks-row";
+    const statusLabel = networkStatusLabel(Number(network.containers_count || 0));
+    row.dataset.search = `${network.name || ""} ${network.driver || ""} ${network.stack || ""} ${network.subnet || ""} ${network.gateway || ""} ${statusLabel}`;
+    for (let i = 0; i < 8; i += 1) {
+      row.appendChild(document.createElement("td"));
+    }
+    const cells = row.querySelectorAll("td");
+    cells[0].textContent = "";
+    const nameIcon = document.createElement("span");
+    nameIcon.className = "icon-action icon-network2 name-leading-icon";
+    nameIcon.setAttribute("aria-hidden", "true");
+    cells[0].appendChild(nameIcon);
+    cells[0].appendChild(document.createTextNode(network.name || network.id.slice(0, 12)));
+    if (network.system) {
+      const tag = document.createElement("span");
+      tag.className = "network-system-tag";
+      tag.textContent = "System";
+      cells[0].appendChild(tag);
+    }
+    cells[1].textContent = "";
+    cells[1].appendChild(buildNetworkStatusBadge(statusLabel));
+    cells[2].textContent = network.driver || "—";
+    cells[3].textContent = network.stack || "—";
+    cells[4].textContent = network.subnet || "—";
+    cells[5].textContent = network.gateway || "—";
+    cells[6].textContent = String(network.containers_count || 0);
+    const actionsCell = cells[7];
+    let actionsWrap = actionsCell.querySelector(".containers-actions");
+    if (!actionsWrap) {
+      actionsWrap = document.createElement("div");
+      actionsWrap.className = "containers-actions";
+      actionsCell.innerHTML = "";
+      actionsCell.appendChild(actionsWrap);
+    } else {
+      actionsWrap.innerHTML = "";
+    }
+    const detailsBtn = buildContainerActionButton("icon-list-details", "Details", () => openNetworkDetailsModal(network));
+    const connectBtn = buildContainerActionButton("icon-link", "Connect", () => openNetworkConnectModal(network));
+    const disconnectBtn = buildContainerActionButton("icon-link-off", "Disconnect", () => openNetworkDisconnectModal(network));
+    const confirmKey = `remove:${network.id}`;
+    const isConfirming = networksActionConfirming.has(confirmKey);
+    const removeBtn = buildContainerActionButton(
+      isConfirming ? "icon-check" : "icon-trash",
+      isConfirming ? "Confirm remove" : "Remove network",
+      async () => {
+        if (!networksActionConfirming.has(confirmKey)) {
+          networksActionConfirming.delete("prune");
+          networksActionConfirming.clear();
+          networksActionConfirming.add(confirmKey);
+          updateNetworksConfirmButtons();
+          renderNetworks(networksCache);
+          return;
+        }
+        networksActionConfirming.delete(confirmKey);
+        updateNetworksConfirmButtons();
+        await runNetworkRemove(network);
+      }
+    );
+    removeBtn.classList.add("btn-danger", "networks-remove-btn");
+    if (isConfirming) {
+      removeBtn.classList.add("is-confirming");
+    } else {
+      removeBtn.classList.remove("is-confirming");
+    }
+    if (network.system) {
+      connectBtn.disabled = true;
+      disconnectBtn.disabled = true;
+      removeBtn.disabled = true;
+      connectBtn.setAttribute("data-tooltip", "System network");
+      disconnectBtn.setAttribute("data-tooltip", "System network");
+      removeBtn.setAttribute("data-tooltip", "System network");
+    }
+    actionsWrap.append(detailsBtn, connectBtn, disconnectBtn, removeBtn);
+    fragment.appendChild(row);
+  });
+  networksTableBody.innerHTML = "";
+  networksTableBody.appendChild(fragment);
+  if (sidebarSearch && sidebarSearch.value.trim()) {
+    applySidebarFilter(sidebarSearch.value);
+  } else {
+    updateContainersSearchCount();
+  }
+}
+
+async function refreshNetworks(options = {}) {
+  if (!networksTableBody) return;
+  if (networksUpdateInProgress) return;
+  networksUpdateInProgress = true;
+  const scope = containersSelectedScope;
+  if (!scope) {
+    clearNetworksTable("No servers configured. Add one in Servers.");
+    updateContainersStatus("", "");
+    networksUpdateInProgress = false;
+    return;
+  }
+  containersSelectedScope = scope;
+  updateContainersStatus(scope, "");
+  if (networksRefreshAbort) {
+    networksRefreshAbort.abort();
+  }
+  const requestId = (networksRefreshRequestId += 1);
+  const controller = new AbortController();
+  networksRefreshAbort = controller;
+  try {
+    const payload = await fetchJSON(`/api/networks?scope=${encodeURIComponent(scope)}`, { signal: controller.signal });
+    if (requestId !== networksRefreshRequestId) return;
+    if (!payload || payload.error) {
+      const errorMessage = payload && payload.error ? payload.error : "Unable to load networks.";
+      clearNetworksTable("No networks data available.");
+      updateContainersStatus(scope, errorMessage);
+      return;
+    }
+    const list = Array.isArray(payload.networks) ? payload.networks : [];
+    renderNetworks(list);
+    updateContainersStatus(scope, "");
+  } catch (err) {
+    if (err && err.name === "AbortError") return;
+    clearNetworksTable("No networks data available.");
+    updateContainersStatus(scope, err.message);
+  } finally {
+    networksUpdateInProgress = false;
+  }
+}
+
+function buildNetworkDetailsRow(label, value) {
+  const group = document.createElement("div");
+  group.className = "details-group";
+  const header = document.createElement("div");
+  header.className = "details-group-header";
+  header.innerHTML = `<span class="details-group-label">${label}</span>`;
+  const body = document.createElement("div");
+  body.className = "details-body-text";
+  body.textContent = value || "—";
+  group.append(header, body);
+  return group;
+}
+
+function setNetworkModalError(el, message) {
+  if (!el) return;
+  const text = String(message || "").trim();
+  el.classList.toggle("hidden", !text);
+  el.textContent = text;
+}
+
+async function openNetworkDetailsModal(network) {
+  if (!networkDetailsModal || !networkDetailsBody || !network) return;
+  if (networkDetailsTitle) {
+    networkDetailsTitle.textContent = network.name ? `Network: ${network.name}` : "Network details";
+  }
+  networkDetailsBody.innerHTML = "";
+  networkDetailsBody.appendChild(buildNetworkDetailsRow("Loading", "Loading network details…"));
+  networkDetailsModal.classList.remove("hidden");
+  if (networkDetailsAbort) {
+    networkDetailsAbort.abort();
+  }
+  const requestId = (networkDetailsRequestId += 1);
+  const controller = new AbortController();
+  networkDetailsAbort = controller;
+  try {
+    const payload = await fetchJSON(
+      `/api/networks/details?scope=${encodeURIComponent(containersSelectedScope)}&id=${encodeURIComponent(network.id)}`,
+      { signal: controller.signal }
+    );
+    if (requestId !== networkDetailsRequestId) return;
+    if (!payload || payload.error) {
+      networkDetailsBody.innerHTML = "";
+      networkDetailsBody.appendChild(buildNetworkDetailsRow("Error", payload && payload.error ? payload.error : "Unable to load details."));
+      return;
+    }
+    const details = payload.network || {};
+    networkDetailsBody.innerHTML = "";
+    networkDetailsBody.appendChild(buildNetworkDetailsRow("Created", details.created_at));
+    networkDetailsBody.appendChild(buildNetworkDetailsRow("Scope", details.scope));
+    networkDetailsBody.appendChild(buildNetworkDetailsRow("Driver", details.driver));
+    const subnets = Array.isArray(details.subnets) ? details.subnets : [];
+    if (subnets.length === 0) {
+      networkDetailsBody.appendChild(buildNetworkDetailsRow("Subnets", "—"));
+    } else {
+      const group = document.createElement("div");
+      group.className = "details-group";
+      const header = document.createElement("div");
+      header.className = "details-group-header";
+      header.innerHTML = '<span class="details-group-label">Subnets</span>';
+      const body = document.createElement("div");
+      body.className = "details-body-text";
+      const list = document.createElement("ul");
+      list.className = "network-details-list";
+      subnets.forEach((item) => {
+        const li = document.createElement("li");
+        const subnet = item && item.subnet ? item.subnet : "—";
+        const gateway = item && item.gateway ? item.gateway : "—";
+        li.textContent = `Subnet: ${subnet} • Gateway: ${gateway}`;
+        list.appendChild(li);
+      });
+      body.appendChild(list);
+      group.append(header, body);
+      networkDetailsBody.appendChild(group);
+    }
+    const containers = Array.isArray(details.containers) ? details.containers : [];
+    const containersGroup = document.createElement("div");
+    containersGroup.className = "details-group";
+    const containersHeader = document.createElement("div");
+    containersHeader.className = "details-group-header";
+    containersHeader.innerHTML = '<span class="details-group-label">Connected containers</span>';
+    const containersBody = document.createElement("div");
+    containersBody.className = "details-body-text";
+    if (containers.length === 0) {
+      containersBody.textContent = "—";
+    } else {
+      const table = document.createElement("table");
+      table.className = "network-details-table";
+      table.innerHTML = "<thead><tr><th>Name</th><th>IP</th><th>MAC</th></tr></thead>";
+      const tbody = document.createElement("tbody");
+      containers.forEach((entry) => {
+        const row = document.createElement("tr");
+        const nameCell = document.createElement("td");
+        nameCell.textContent = entry.name || entry.id || "—";
+        const ipCell = document.createElement("td");
+        ipCell.textContent = entry.ip || "—";
+        const macCell = document.createElement("td");
+        macCell.textContent = entry.mac || "—";
+        row.append(nameCell, ipCell, macCell);
+        tbody.appendChild(row);
+      });
+      table.appendChild(tbody);
+      containersBody.appendChild(table);
+    }
+    containersGroup.append(containersHeader, containersBody);
+    networkDetailsBody.appendChild(containersGroup);
+  } catch (err) {
+    if (err && err.name === "AbortError") return;
+    networkDetailsBody.innerHTML = "";
+    networkDetailsBody.appendChild(buildNetworkDetailsRow("Error", err.message || "Unable to load details."));
+  }
+}
+
+function closeNetworkDetailsModal() {
+  if (!networkDetailsModal) return;
+  if (networkDetailsAbort) {
+    networkDetailsAbort.abort();
+    networkDetailsAbort = null;
+  }
+  networkDetailsModal.classList.add("hidden");
+}
+
+async function fetchNetworkContainers() {
+  const scope = containersSelectedScope;
+  if (!scope) return [];
+  if (networkContainersAbort) {
+    networkContainersAbort.abort();
+  }
+  const requestId = (networkContainersRequestId += 1);
+  const controller = new AbortController();
+  networkContainersAbort = controller;
+  const payload = await fetchJSON(`/api/containers?scope=${encodeURIComponent(scope)}`, { signal: controller.signal });
+  if (requestId !== networkContainersRequestId) return [];
+  return Array.isArray(payload && payload.containers) ? payload.containers : [];
+}
+
+function setNetworkModalLoading(selectEl, label) {
+  if (!selectEl) return;
+  selectEl.innerHTML = "";
+  const option = document.createElement("option");
+  option.value = "";
+  option.textContent = label || "Loading...";
+  selectEl.appendChild(option);
+  selectEl.disabled = true;
+}
+
+function setNetworkModalOptions(selectEl, list) {
+  if (!selectEl) return;
+  selectEl.innerHTML = "";
+  if (!list || list.length === 0) {
+    const option = document.createElement("option");
+    option.value = "";
+    option.textContent = "No containers available";
+    selectEl.appendChild(option);
+    selectEl.disabled = true;
+    return;
+  }
+  list.forEach((item) => {
+    const option = document.createElement("option");
+    option.value = item.id;
+    option.textContent = item.name || item.id.slice(0, 12);
+    selectEl.appendChild(option);
+  });
+  selectEl.disabled = false;
+}
+
+async function openNetworkConnectModal(network) {
+  if (!networkConnectModal || !networkConnectSelect || !network) return;
+  if (network.system) {
+    showToast("System network cannot be modified.");
+    return;
+  }
+  currentNetworkSelection = network;
+  if (networkConnectTitle) networkConnectTitle.textContent = `Connect: ${network.name}`;
+  setNetworkModalError(networkConnectErrorEl, "");
+  setNetworkModalLoading(networkConnectSelect, "Loading containers...");
+  networkConnectModal.classList.remove("hidden");
+  try {
+    const containers = await fetchNetworkContainers();
+    const available = containers.filter((container) => {
+      const networks = Array.isArray(container.ip_addresses) ? container.ip_addresses : [];
+      return !networks.some((entry) => entry.network === network.name);
+    });
+    setNetworkModalOptions(networkConnectSelect, available);
+  } catch (err) {
+    if (err && err.name === "AbortError") return;
+    setNetworkModalError(networkConnectErrorEl, err.message || "Unable to load containers.");
+    setNetworkModalOptions(networkConnectSelect, []);
+  }
+}
+
+function closeNetworkConnectModal() {
+  if (!networkConnectModal) return;
+  if (networkContainersAbort) {
+    networkContainersAbort.abort();
+    networkContainersAbort = null;
+  }
+  networkConnectModal.classList.add("hidden");
+  currentNetworkSelection = null;
+}
+
+async function openNetworkDisconnectModal(network) {
+  if (!networkDisconnectModal || !networkDisconnectSelect || !network) return;
+  if (network.system) {
+    showToast("System network cannot be modified.");
+    return;
+  }
+  currentNetworkSelection = network;
+  if (networkDisconnectTitle) networkDisconnectTitle.textContent = `Disconnect: ${network.name}`;
+  setNetworkModalError(networkDisconnectErrorEl, "");
+  setNetworkModalLoading(networkDisconnectSelect, "Loading containers...");
+  networkDisconnectModal.classList.remove("hidden");
+  try {
+    const containers = await fetchNetworkContainers();
+    const attached = containers.filter((container) => {
+      const networks = Array.isArray(container.ip_addresses) ? container.ip_addresses : [];
+      return networks.some((entry) => entry.network === network.name);
+    });
+    setNetworkModalOptions(networkDisconnectSelect, attached);
+  } catch (err) {
+    if (err && err.name === "AbortError") return;
+    setNetworkModalError(networkDisconnectErrorEl, err.message || "Unable to load containers.");
+    setNetworkModalOptions(networkDisconnectSelect, []);
+  }
+}
+
+function closeNetworkDisconnectModal() {
+  if (!networkDisconnectModal) return;
+  if (networkContainersAbort) {
+    networkContainersAbort.abort();
+    networkContainersAbort = null;
+  }
+  networkDisconnectModal.classList.add("hidden");
+  currentNetworkSelection = null;
+}
+
+async function runNetworkPrune() {
+  const scope = containersSelectedScope;
+  if (!scope) {
+    showToast("Select server first.");
+    return;
+  }
+  try {
+    networksActionConfirming.delete("prune");
+    updateNetworksConfirmButtons();
+    const payload = await fetchJSON("/api/networks/prune", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ scope }),
+    });
+    await refreshNetworks({ silent: true });
+    const count = payload && Array.isArray(payload.deleted) ? payload.deleted.length : 0;
+    notify({ type: "success", message: `Pruned ${count} network${count === 1 ? "" : "s"}` });
+  } catch (err) {
+    notify({ type: "error", message: err.message || "Prune networks failed." });
+  }
+}
+
+async function runNetworkRemove(network) {
+  const scope = containersSelectedScope;
+  if (!scope) {
+    showToast("Select server first.");
+    return;
+  }
+  if (!network || !network.id) return;
+  try {
+    const res = await fetch("/api/networks/remove", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ scope, network_id: network.id }),
+    });
+    const payload = await res.json().catch(() => ({}));
+    clearNetworksConfirmations();
+    if (res.ok) {
+      await refreshNetworks({ silent: true });
+      notify({ type: "warning", message: `Removed network ${network.name || network.id.slice(0, 12)}` });
+      return;
+    }
+    if (res.status === 409 && payload && Array.isArray(payload.blocked_by)) {
+      const names = payload.blocked_by.map((item) => item.name || item.id || "unknown");
+      notify({ type: "warning", message: `Network in use by: ${names.join(", ")}` });
+      return;
+    }
+    throw new Error(payload.error || "Remove network failed.");
+  } catch (err) {
+    notify({ type: "error", message: err.message || "Remove network failed." });
+  }
+}
+
+async function runNetworkConnect() {
+  if (!currentNetworkSelection || !networkConnectSelect) return;
+  const containerID = networkConnectSelect.value;
+  if (!containerID) {
+    setNetworkModalError(networkConnectErrorEl, "Select a container.");
+    return;
+  }
+  setNetworkModalError(networkConnectErrorEl, "");
+  try {
+    await fetchJSON("/api/networks/connect", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ scope: containersSelectedScope, network_id: currentNetworkSelection.id, container_id: containerID }),
+    });
+    closeNetworkConnectModal();
+    await refreshNetworks({ silent: true });
+    notify({ type: "success", message: `Connected to ${currentNetworkSelection.name}` });
+  } catch (err) {
+    setNetworkModalError(networkConnectErrorEl, err.message || "Connect failed.");
+    notify({ type: "error", message: err.message || "Connect failed." });
+  }
+}
+
+async function runNetworkDisconnect() {
+  if (!currentNetworkSelection || !networkDisconnectSelect) return;
+  const containerID = networkDisconnectSelect.value;
+  if (!containerID) {
+    setNetworkModalError(networkDisconnectErrorEl, "Select a container.");
+    return;
+  }
+  setNetworkModalError(networkDisconnectErrorEl, "");
+  try {
+    await fetchJSON("/api/networks/disconnect", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ scope: containersSelectedScope, network_id: currentNetworkSelection.id, container_id: containerID }),
+    });
+    closeNetworkDisconnectModal();
+    await refreshNetworks({ silent: true });
+    notify({ type: "success", message: `Disconnected from ${currentNetworkSelection.name}` });
+  } catch (err) {
+    setNetworkModalError(networkDisconnectErrorEl, err.message || "Disconnect failed.");
+    notify({ type: "error", message: err.message || "Disconnect failed." });
+  }
+}
+
+function updateVolumesSortUI() {
+  const buttons = [
+    { key: "name", btn: volumesNameSortBtn, label: "name" },
+    { key: "stack", btn: volumesStackSortBtn, label: "stack" },
+  ];
+  buttons.forEach(({ key, btn, label }) => {
+    if (!btn) return;
+    const icon = btn.querySelector(".icon-sort");
+    if (!icon) return;
+    if (volumesSortMode === `${key}:asc`) {
+      icon.classList.remove("icon-sort-neutral", "icon-sort-desc");
+      icon.classList.add("icon-sort-asc");
+      btn.setAttribute("aria-label", `Sort by ${label} desc`);
+    } else if (volumesSortMode === `${key}:desc`) {
+      icon.classList.remove("icon-sort-neutral", "icon-sort-asc");
+      icon.classList.add("icon-sort-desc");
+      btn.setAttribute("aria-label", `Sort by ${label} asc`);
+    } else {
+      icon.classList.remove("icon-sort-asc", "icon-sort-desc");
+      icon.classList.add("icon-sort-neutral");
+      btn.setAttribute("aria-label", `Sort by ${label}`);
+    }
+  });
+}
+
+function volumesSort(list, mode) {
+  const [field, order] = String(mode || "name:asc").split(":");
+  const dir = order === "desc" ? -1 : 1;
+  const sorted = Array.isArray(list) ? [...list] : [];
+  sorted.sort((a, b) => {
+    const aVal = normalizeQuery(field === "stack" ? a.stack : a.name);
+    const bVal = normalizeQuery(field === "stack" ? b.stack : b.name);
+    if (aVal < bVal) return -1 * dir;
+    if (aVal > bVal) return 1 * dir;
+    return 0;
+  });
+  return sorted;
+}
+
+
+function clearVolumesTable(message) {
+  if (volumesTableBody) {
+    volumesTableBody.innerHTML = "";
+  }
+  volumesCache = [];
+  volumesActionConfirming.clear();
+  updateVolumesConfirmButtons();
+  if (volumesEmptyEl) {
+    if (message) {
+      volumesEmptyEl.textContent = message;
+      volumesEmptyEl.classList.remove("hidden");
+    } else {
+      volumesEmptyEl.classList.add("hidden");
+    }
+  }
+  updateContainersSearchCount();
+}
+
+function buildVolumeDetailsRow(label, value) {
+  const group = document.createElement("div");
+  group.className = "details-group";
+  const header = document.createElement("div");
+  header.className = "details-group-header";
+  header.innerHTML = `<span class="details-group-label">${label}</span>`;
+  const body = document.createElement("div");
+  body.className = "details-body-text";
+  body.textContent = value || "—";
+  group.append(header, body);
+  return group;
+}
+
+function openVolumeDetailsModal(volume) {
+  if (!volumeDetailsModal || !volumeDetailsBody) return;
+  currentVolumeDetails = volume || null;
+  volumeDetailsBody.innerHTML = "";
+  const title = volume && volume.name ? `Volume: ${volume.name}` : "Volume details";
+  if (volumeDetailsTitle) volumeDetailsTitle.textContent = title;
+  volumeDetailsBody.appendChild(buildVolumeDetailsRow("Driver", volume ? volume.driver : ""));
+  volumeDetailsBody.appendChild(buildVolumeDetailsRow("Mountpoint", volume ? volume.mountpoint : ""));
+  const labels = volume && volume.labels ? Object.entries(volume.labels) : [];
+  const labelsValue = labels.length
+    ? labels.map(([key, val]) => `${key}=${val}`).join(", ")
+    : "—";
+  volumeDetailsBody.appendChild(buildVolumeDetailsRow("Labels", labelsValue));
+  volumeDetailsBody.appendChild(buildVolumeDetailsRow("Created", volume ? volume.created_at : ""));
+  volumeDetailsBody.appendChild(buildVolumeDetailsRow("Scope", volume ? volume.scope : ""));
+  volumeDetailsModal.classList.remove("hidden");
+}
+
+function closeVolumeDetailsModal() {
+  if (!volumeDetailsModal) return;
+  currentVolumeDetails = null;
+  volumeDetailsModal.classList.add("hidden");
+}
+
+function openVolumeUsedByModal(name, usedBy) {
+  if (!volumeUsedByModal || !volumeUsedByBody) return;
+  currentVolumeUsedBy = { name, usedBy: Array.isArray(usedBy) ? usedBy : [] };
+  volumeUsedByBody.innerHTML = "";
+  if (volumeUsedByTitle) {
+    volumeUsedByTitle.textContent = name ? `Used by: ${name}` : "Used by";
+  }
+  const list = currentVolumeUsedBy.usedBy || [];
+  if (list.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "hint";
+    empty.textContent = "No containers are using this volume.";
+    volumeUsedByBody.appendChild(empty);
+  } else {
+    const ul = document.createElement("ul");
+    ul.className = "volume-usedby-list";
+    list.forEach((entry) => {
+      const li = document.createElement("li");
+      const label = entry && entry.name ? entry.name : (entry && entry.id ? entry.id.slice(0, 12) : "unknown");
+      const stackLabel = entry && entry.stack ? ` (${entry.stack})` : "";
+      li.textContent = `${label}${stackLabel}`;
+      ul.appendChild(li);
+    });
+    volumeUsedByBody.appendChild(ul);
+  }
+  volumeUsedByModal.classList.remove("hidden");
+}
+
+function closeVolumeUsedByModal() {
+  if (!volumeUsedByModal) return;
+  currentVolumeUsedBy = null;
+  volumeUsedByModal.classList.add("hidden");
+}
+
+function updateVolumesConfirmButtons() {
+  if (!volumesPruneBtn) return;
+  const icon = volumesPruneBtn.querySelector(".icon-action");
+  if (!icon) return;
+  if (volumesActionConfirming.has("prune")) {
+    icon.classList.remove("icon-square-minus");
+    icon.classList.add("icon-check");
+    volumesPruneBtn.classList.add("is-confirming", "btn-warning");
+  } else {
+    icon.classList.remove("icon-check");
+    icon.classList.add("icon-square-minus");
+    volumesPruneBtn.classList.remove("is-confirming", "btn-warning");
+  }
+}
+
+function clearVolumesConfirmations() {
+  if (volumesActionConfirming.size === 0) return;
+  volumesActionConfirming.clear();
+  updateVolumesConfirmButtons();
+  if (volumesCache.length > 0) {
+    renderVolumes(volumesCache);
+  }
+}
+
+function volumeStatusLabel(usedCount) {
+  return usedCount > 0 ? "In use" : "Unused";
+}
+
+function volumeStatusClass(label) {
+  const normalized = String(label || "").toLowerCase();
+  return normalized === "in use" ? "image-state-in-use" : "image-state-unused";
+}
+
+function buildVolumeStatusBadge(label) {
+  const badge = document.createElement("span");
+  badge.className = `image-state-badge ${volumeStatusClass(label)}`;
+  badge.textContent = label;
+  return badge;
+}
+
+function renderVolumes(list) {
+  if (!volumesTableBody) return;
+  if (!Array.isArray(list) || list.length === 0) {
+    clearVolumesTable("No volumes found.");
+    return;
+  }
+  const validConfirmKeys = new Set(list.filter((item) => item && item.name).map((item) => `remove:${item.name}`));
+  if (volumesActionConfirming.size > 0) {
+    Array.from(volumesActionConfirming).forEach((key) => {
+      if (key !== "prune" && !validConfirmKeys.has(key)) {
+        volumesActionConfirming.delete(key);
+      }
+    });
+    updateVolumesConfirmButtons();
+  }
+  if (volumesEmptyEl) {
+    volumesEmptyEl.classList.add("hidden");
+  }
+  volumesCache = list;
+  const sorted = volumesSort(list, volumesSortMode);
+  const fragment = document.createDocumentFragment();
+  sorted.forEach((volume) => {
+    if (!volume || !volume.name) return;
+    const row = document.createElement("tr");
+    row.className = "volumes-row";
+    const usedBy = Array.isArray(volume.used_by) ? volume.used_by : [];
+    row.dataset.usedByCount = String(usedBy.length);
+    const usedByNames = usedBy.map((entry) => entry && entry.name ? entry.name : "").join(" ");
+    const statusLabel = volumeStatusLabel(usedBy.length);
+    row.dataset.search = `${volume.name || ""} ${volume.driver || ""} ${volume.stack || ""} ${statusLabel} ${usedByNames}`;
+    for (let i = 0; i < 6; i += 1) {
+      row.appendChild(document.createElement("td"));
+    }
+    const cells = row.querySelectorAll("td");
+    cells[0].textContent = "";
+    const nameIcon = document.createElement("span");
+    nameIcon.className = "icon-action icon-hard-drive name-leading-icon";
+    nameIcon.setAttribute("aria-hidden", "true");
+    cells[0].appendChild(nameIcon);
+    cells[0].appendChild(document.createTextNode(volume.name));
+    cells[1].textContent = "";
+    cells[1].appendChild(buildVolumeStatusBadge(statusLabel));
+    cells[2].textContent = volume.stack || "—";
+    cells[3].textContent = "";
+    if (usedBy.length > 0) {
+      const list = document.createElement("div");
+      list.className = "volume-usedby-inline";
+      usedBy.forEach((entry) => {
+        const item = document.createElement("div");
+        const label = entry && entry.name ? entry.name : (entry && entry.id ? entry.id.slice(0, 12) : "unknown");
+        item.textContent = label;
+        list.appendChild(item);
+      });
+      cells[3].appendChild(list);
+    } else {
+      cells[3].textContent = "—";
+    }
+    const actionsCell = cells[4];
+    let actionsWrap = actionsCell.querySelector(".containers-actions");
+    if (!actionsWrap) {
+      actionsWrap = document.createElement("div");
+      actionsWrap.className = "containers-actions";
+      actionsCell.innerHTML = "";
+      actionsCell.appendChild(actionsWrap);
+    } else {
+      actionsWrap.innerHTML = "";
+    }
+    const detailsBtn = buildContainerActionButton("icon-list-details", "Details", () => openVolumeDetailsModal(volume));
+    const confirmKey = `remove:${volume.name}`;
+    const isConfirming = volumesActionConfirming.has(confirmKey);
+    const removeBtn = buildContainerActionButton(
+      isConfirming ? "icon-check" : "icon-trash",
+      isConfirming ? "Confirm remove" : "Remove volume",
+      async () => {
+        if (!volumesActionConfirming.has(confirmKey)) {
+          volumesActionConfirming.delete("prune");
+          volumesActionConfirming.clear();
+          volumesActionConfirming.add(confirmKey);
+          updateVolumesConfirmButtons();
+          renderVolumes(volumesCache);
+          return;
+        }
+        volumesActionConfirming.delete(confirmKey);
+        updateVolumesConfirmButtons();
+        await runVolumeRemove(volume);
+      }
+    );
+    removeBtn.classList.add("volumes-remove-btn");
+    removeBtn.classList.add("btn-danger");
+    if (isConfirming) {
+      removeBtn.classList.add("is-confirming");
+    } else {
+      removeBtn.classList.remove("is-confirming");
+    }
+    actionsWrap.append(detailsBtn, removeBtn);
+    fragment.appendChild(row);
+  });
+  volumesTableBody.innerHTML = "";
+  volumesTableBody.appendChild(fragment);
+  if (sidebarSearch && sidebarSearch.value.trim()) {
+    applySidebarFilter(sidebarSearch.value);
+  } else {
+    updateContainersSearchCount();
+  }
+}
+
+async function refreshVolumes(options = {}) {
+  if (!volumesTableBody) return;
+  if (volumesUpdateInProgress) return;
+  volumesUpdateInProgress = true;
+  const scope = containersSelectedScope;
+  if (!scope) {
+    clearVolumesTable("No servers configured. Add one in Servers.");
+    updateContainersStatus("", "");
+    volumesUpdateInProgress = false;
+    return;
+  }
+  containersSelectedScope = scope;
+  updateContainersStatus(scope, "");
+  try {
+    const payload = await fetchJSON(`/api/volumes?scope=${encodeURIComponent(scope)}`);
+    if (!payload || payload.error) {
+      const errorMessage = payload && payload.error ? payload.error : "Unable to load volumes.";
+      clearVolumesTable("No volumes data available.");
+      updateContainersStatus(scope, errorMessage);
+      return;
+    }
+    const list = Array.isArray(payload.volumes) ? payload.volumes : [];
+    renderVolumes(list);
+    updateContainersStatus(scope, "");
+  } catch (err) {
+    clearVolumesTable("No volumes data available.");
+    updateContainersStatus(scope, err.message);
+  } finally {
+    volumesUpdateInProgress = false;
+  }
+}
+
+async function runVolumePrune() {
+  const scope = containersSelectedScope;
+  if (!scope) {
+    showToast("Select server first.");
+    return;
+  }
+  try {
+    volumesActionConfirming.delete("prune");
+    updateVolumesConfirmButtons();
+    const payload = await fetchJSON("/api/volumes/prune", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ scope }),
+    });
+    await refreshVolumes({ silent: true });
+    const count = payload && Array.isArray(payload.deleted) ? payload.deleted.length : 0;
+    const label = count === 1 ? "volume" : "volumes";
+    notify({ type: "success", message: `Pruned ${count} ${label}` });
+  } catch (err) {
+    notify({ type: "error", message: err.message || "Prune volumes failed." });
+  }
+}
+
+async function runVolumeRemove(volume) {
+  const scope = containersSelectedScope;
+  if (!scope) {
+    showToast("Select server first.");
+    return;
+  }
+  if (!volume || !volume.name) return;
+  try {
+    const res = await fetch("/api/volumes/remove", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ scope, name: volume.name }),
+    });
+    const payload = await res.json().catch(() => ({}));
+    clearVolumesConfirmations();
+    if (res.ok) {
+      await refreshVolumes({ silent: true });
+      notify({ type: "warning", message: `Removed volume ${volume.name}` });
+      return;
+    }
+    if (res.status === 409 && payload && Array.isArray(payload.blocked_by)) {
+      openVolumeUsedByModal(volume.name, payload.blocked_by);
+      notify({ type: "warning", message: `Volume ${volume.name} is in use.` });
+      return;
+    }
+    throw new Error(payload.error || "Remove volume failed.");
+  } catch (err) {
+    notify({ type: "error", message: err.message || "Remove volume failed." });
+  }
+}
+
 function openImagesPullModal() {
   if (!imagesPullModal) return;
   if (imagesPullRepoInput) imagesPullRepoInput.value = "";
@@ -6026,8 +7156,9 @@ async function runContainerAction(scope, containerID, action) {
       pause: "Paused",
       unpause: "Unpaused",
       kill: "Killed",
+      rm: "Removed",
     };
-    const toastType = ["stop", "pause", "kill"].includes(normalized) ? "warning" : "success";
+    const toastType = ["stop", "pause", "kill", "rm"].includes(normalized) ? "warning" : "success";
     const label = labelByAction[normalized] || normalized;
     notify({ type: toastType, message: `Container ${containerName}: ${label}` });
   } catch (err) {
@@ -7192,6 +8323,8 @@ attachImmediateSave(expContainerLogsInput);
 attachImmediateSave(expContainerResourcesInput);
 attachImmediateSave(expStacksInput);
 attachImmediateSave(expImagesInput);
+attachImmediateSave(expVolumesInput);
+attachImmediateSave(expNetworksInput);
 globalPolicySelect.addEventListener("change", async () => {
   try {
     await saveConfig({ useWebhookInput: false });
@@ -7445,6 +8578,8 @@ async function init() {
   updateContainersSortUI();
   updateStacksSortUI();
   updateImagesSortUI();
+  updateNetworksSortUI();
+  updateVolumesSortUI();
   updateContainersResourcesSortUI();
   updateContainersResourcesViewButtons();
 
@@ -7710,6 +8845,106 @@ async function init() {
       }
     });
   }
+  if (networksNameSortBtn) {
+    networksNameSortBtn.addEventListener("click", () => {
+      if (networksSortMode !== "name:asc" && networksSortMode !== "name:desc") {
+        networksSortMode = "name:asc";
+      } else {
+        networksSortMode = networksSortMode === "name:asc" ? "name:desc" : "name:asc";
+      }
+      updateNetworksSortUI();
+      if (networksCache.length > 0) {
+        renderNetworks(networksCache);
+      }
+    });
+  }
+  if (networksStackSortBtn) {
+    networksStackSortBtn.addEventListener("click", () => {
+      if (networksSortMode !== "stack:asc" && networksSortMode !== "stack:desc") {
+        networksSortMode = "stack:asc";
+      } else {
+        networksSortMode = networksSortMode === "stack:asc" ? "stack:desc" : "stack:asc";
+      }
+      updateNetworksSortUI();
+      if (networksCache.length > 0) {
+        renderNetworks(networksCache);
+      }
+    });
+  }
+  if (networksSubnetSortBtn) {
+    networksSubnetSortBtn.addEventListener("click", () => {
+      if (networksSortMode !== "subnet:asc" && networksSortMode !== "subnet:desc") {
+        networksSortMode = "subnet:asc";
+      } else {
+        networksSortMode = networksSortMode === "subnet:asc" ? "subnet:desc" : "subnet:asc";
+      }
+      updateNetworksSortUI();
+      if (networksCache.length > 0) {
+        renderNetworks(networksCache);
+      }
+    });
+  }
+  if (networksGatewaySortBtn) {
+    networksGatewaySortBtn.addEventListener("click", () => {
+      if (networksSortMode !== "gateway:asc" && networksSortMode !== "gateway:desc") {
+        networksSortMode = "gateway:asc";
+      } else {
+        networksSortMode = networksSortMode === "gateway:asc" ? "gateway:desc" : "gateway:asc";
+      }
+      updateNetworksSortUI();
+      if (networksCache.length > 0) {
+        renderNetworks(networksCache);
+      }
+    });
+  }
+  if (networksPruneBtn) {
+    networksPruneBtn.addEventListener("click", () => {
+      if (!networksActionConfirming.has("prune")) {
+        networksActionConfirming.clear();
+        networksActionConfirming.add("prune");
+        updateNetworksConfirmButtons();
+        return;
+      }
+      runNetworkPrune();
+    });
+  }
+  if (volumesNameSortBtn) {
+    volumesNameSortBtn.addEventListener("click", () => {
+      if (volumesSortMode !== "name:asc" && volumesSortMode !== "name:desc") {
+        volumesSortMode = "name:asc";
+      } else {
+        volumesSortMode = volumesSortMode === "name:asc" ? "name:desc" : "name:asc";
+      }
+      updateVolumesSortUI();
+      if (volumesCache.length > 0) {
+        renderVolumes(volumesCache);
+      }
+    });
+  }
+  if (volumesStackSortBtn) {
+    volumesStackSortBtn.addEventListener("click", () => {
+      if (volumesSortMode !== "stack:asc" && volumesSortMode !== "stack:desc") {
+        volumesSortMode = "stack:asc";
+      } else {
+        volumesSortMode = volumesSortMode === "stack:asc" ? "stack:desc" : "stack:asc";
+      }
+      updateVolumesSortUI();
+      if (volumesCache.length > 0) {
+        renderVolumes(volumesCache);
+      }
+    });
+  }
+  if (volumesPruneBtn) {
+    volumesPruneBtn.addEventListener("click", () => {
+      if (!volumesActionConfirming.has("prune")) {
+        volumesActionConfirming.clear();
+        volumesActionConfirming.add("prune");
+        updateVolumesConfirmButtons();
+        return;
+      }
+      runVolumePrune();
+    });
+  }
   if (topbarContainersRefreshBtn) {
   topbarContainersRefreshBtn.addEventListener("click", async () => {
     pulseButton(topbarContainersRefreshBtn, 2000);
@@ -7720,6 +8955,12 @@ async function init() {
       } else if (containersViewMode === "images") {
         await refreshImages({ silent: true });
         notify({ type: "success", message: "Images refreshed" });
+      } else if (containersViewMode === "networks") {
+        await refreshNetworks({ silent: true });
+        notify({ type: "success", message: "Networks refreshed" });
+      } else if (containersViewMode === "volumes") {
+        await refreshVolumes({ silent: true });
+        notify({ type: "success", message: "Volumes refreshed" });
       } else if (containersViewMode === "resources") {
         await refreshContainers({ silent: true });
         await refreshContainersResources({ silent: true });
@@ -7799,6 +9040,30 @@ async function init() {
       setContainersViewMode(containersViewMode === "images" ? "table" : "images");
     });
   }
+  if (topbarContainersNetworksBtn) {
+    topbarContainersNetworksBtn.addEventListener("click", () => {
+      const enabled = currentConfig && currentConfig.experimental_features
+        ? Boolean(currentConfig.experimental_features.networks)
+        : false;
+      if (!enabled) {
+        showToast("Container networks is disabled in Experimental features.");
+        return;
+      }
+      setContainersViewMode(containersViewMode === "networks" ? "table" : "networks");
+    });
+  }
+  if (topbarContainersVolumesBtn) {
+    topbarContainersVolumesBtn.addEventListener("click", () => {
+      const enabled = currentConfig && currentConfig.experimental_features
+        ? Boolean(currentConfig.experimental_features.volumes)
+        : false;
+      if (!enabled) {
+        showToast("Container volumes is disabled in Experimental features.");
+        return;
+      }
+      setContainersViewMode(containersViewMode === "volumes" ? "table" : "volumes");
+    });
+  }
 
   if (imagesPullBtn) {
     imagesPullBtn.addEventListener("click", openImagesPullModal);
@@ -7860,6 +9125,26 @@ async function init() {
     const inside = target.closest("#images-prune-unused, #images-prune-dangling, #images-remove");
     if (!inside) {
       clearImagesConfirmations();
+    }
+  });
+
+  document.addEventListener("click", (event) => {
+    if (networksActionConfirming.size === 0) return;
+    const target = event.target;
+    if (!target || !target.closest) return;
+    const inside = target.closest("#networks-prune, .networks-remove-btn");
+    if (!inside) {
+      clearNetworksConfirmations();
+    }
+  });
+
+  document.addEventListener("click", (event) => {
+    if (volumesActionConfirming.size === 0) return;
+    const target = event.target;
+    if (!target || !target.closest) return;
+    const inside = target.closest("#volumes-prune, .volumes-remove-btn");
+    if (!inside) {
+      clearVolumesConfirmations();
     }
   });
 
@@ -7934,6 +9219,68 @@ async function init() {
       }
     });
   }
+  if (networkDetailsCloseBtn) {
+    networkDetailsCloseBtn.addEventListener("click", closeNetworkDetailsModal);
+  }
+  if (networkDetailsModal) {
+    networkDetailsModal.addEventListener("click", (event) => {
+      if (event.target && event.target.dataset && event.target.dataset.close) {
+        closeNetworkDetailsModal();
+      }
+    });
+  }
+  if (networkConnectCloseBtn) {
+    networkConnectCloseBtn.addEventListener("click", closeNetworkConnectModal);
+  }
+  if (networkConnectCancelBtn) {
+    networkConnectCancelBtn.addEventListener("click", closeNetworkConnectModal);
+  }
+  if (networkConnectConfirmBtn) {
+    networkConnectConfirmBtn.addEventListener("click", runNetworkConnect);
+  }
+  if (networkConnectModal) {
+    networkConnectModal.addEventListener("click", (event) => {
+      if (event.target && event.target.dataset && event.target.dataset.close) {
+        closeNetworkConnectModal();
+      }
+    });
+  }
+  if (networkDisconnectCloseBtn) {
+    networkDisconnectCloseBtn.addEventListener("click", closeNetworkDisconnectModal);
+  }
+  if (networkDisconnectCancelBtn) {
+    networkDisconnectCancelBtn.addEventListener("click", closeNetworkDisconnectModal);
+  }
+  if (networkDisconnectConfirmBtn) {
+    networkDisconnectConfirmBtn.addEventListener("click", runNetworkDisconnect);
+  }
+  if (networkDisconnectModal) {
+    networkDisconnectModal.addEventListener("click", (event) => {
+      if (event.target && event.target.dataset && event.target.dataset.close) {
+        closeNetworkDisconnectModal();
+      }
+    });
+  }
+  if (volumeDetailsCloseBtn) {
+    volumeDetailsCloseBtn.addEventListener("click", closeVolumeDetailsModal);
+  }
+  if (volumeDetailsModal) {
+    volumeDetailsModal.addEventListener("click", (event) => {
+      if (event.target && event.target.dataset && event.target.dataset.close) {
+        closeVolumeDetailsModal();
+      }
+    });
+  }
+  if (volumeUsedByCloseBtn) {
+    volumeUsedByCloseBtn.addEventListener("click", closeVolumeUsedByModal);
+  }
+  if (volumeUsedByModal) {
+    volumeUsedByModal.addEventListener("click", (event) => {
+      if (event.target && event.target.dataset && event.target.dataset.close) {
+        closeVolumeUsedByModal();
+      }
+    });
+  }
   if (remoteModal) {
     remoteModal.addEventListener("click", (event) => {
       if (event.target && event.target.dataset && event.target.dataset.close) {
@@ -7964,6 +9311,21 @@ async function init() {
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && detailsModal && !detailsModal.classList.contains("hidden")) {
       closeDetailsModal();
+    }
+    if (event.key === "Escape" && networkDetailsModal && !networkDetailsModal.classList.contains("hidden")) {
+      closeNetworkDetailsModal();
+    }
+    if (event.key === "Escape" && networkConnectModal && !networkConnectModal.classList.contains("hidden")) {
+      closeNetworkConnectModal();
+    }
+    if (event.key === "Escape" && networkDisconnectModal && !networkDisconnectModal.classList.contains("hidden")) {
+      closeNetworkDisconnectModal();
+    }
+    if (event.key === "Escape" && volumeDetailsModal && !volumeDetailsModal.classList.contains("hidden")) {
+      closeVolumeDetailsModal();
+    }
+    if (event.key === "Escape" && volumeUsedByModal && !volumeUsedByModal.classList.contains("hidden")) {
+      closeVolumeUsedByModal();
     }
     if (event.key === "Escape" && policyModal && !policyModal.classList.contains("hidden")) {
       closePolicyModal();
@@ -8014,10 +9376,11 @@ async function init() {
 	  document.addEventListener(
 	    "click",
 	    (event) => {
-	      if (containersKillConfirming.size === 0) return;
+	      if (containersKillConfirming.size === 0 && containersRemoveConfirming.size === 0) return;
 	      const target = event.target;
 	      if (target && target.closest && target.closest(".containers-kill-btn")) return;
 	      clearContainersKillConfirmations();
+	      clearContainersRemoveConfirmations();
 	    },
 	    true
 	  );

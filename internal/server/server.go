@@ -282,6 +282,15 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/images/pull", s.handleImagesPull)
 	s.mux.HandleFunc("/api/images/prune", s.handleImagesPrune)
 	s.mux.HandleFunc("/api/images/remove", s.handleImagesRemove)
+	s.mux.HandleFunc("/api/networks", s.handleNetworks)
+	s.mux.HandleFunc("/api/networks/details", s.handleNetworkDetails)
+	s.mux.HandleFunc("/api/networks/remove", s.handleNetworksRemove)
+	s.mux.HandleFunc("/api/networks/prune", s.handleNetworksPrune)
+	s.mux.HandleFunc("/api/networks/connect", s.handleNetworkConnect)
+	s.mux.HandleFunc("/api/networks/disconnect", s.handleNetworkDisconnect)
+	s.mux.HandleFunc("/api/volumes", s.handleVolumes)
+	s.mux.HandleFunc("/api/volumes/remove", s.handleVolumesRemove)
+	s.mux.HandleFunc("/api/volumes/prune", s.handleVolumesPrune)
 	s.mux.HandleFunc("/api/stacks", s.handleStacks)
 	s.mux.HandleFunc("/api/stacks/get", s.handleStackGet)
 	s.mux.HandleFunc("/api/stacks/save", s.handleStackSave)
@@ -350,6 +359,10 @@ func (s *Server) agentAllowed(path string) bool {
 	case path == "/api/containers/logs":
 		return true
 	case strings.HasPrefix(path, "/api/images"):
+		return true
+	case strings.HasPrefix(path, "/api/networks"):
+		return true
+	case strings.HasPrefix(path, "/api/volumes"):
 		return true
 	case strings.HasPrefix(path, "/api/stacks"):
 		return true

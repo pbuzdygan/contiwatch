@@ -103,11 +103,11 @@ docker pull ghcr.io/<owner>/<repo>:dev_<version>
 - `discord_notify_on_container_updated`
 - `update_stopped_containers` (if `true`, `update` policy also updates stopped containers but keeps them stopped)
 - `prune_dangling_images` (if `true`, prune dangling images after updates)
-- `experimental_features` (object of feature flags: `containers`, `containers_sidebar`, `stacks`, `images`, `container_shell`, `container_logs`, `container_resources`)
+- `experimental_features` (object of feature flags: `containers`, `containers_sidebar`, `stacks`, `images`, `networks`, `volumes`, `container_shell`, `container_logs`, `container_resources`)
 - `experimental_features.container_shell` (enables container shell UI)
 - `experimental_features.container_logs` (enables container logs UI)
 - `experimental_features.container_resources` (enables container resources UI)
-- `experimental_features.stacks` / `experimental_features.images` (enables Container stacks/images buttons in the Containers top bar)
+- `experimental_features.stacks` / `experimental_features.images` / `experimental_features.networks` / `experimental_features.volumes` (enables Container stacks/images/networks/volumes buttons in the Containers top bar)
 - `experimental_features.containers_sidebar` (shows enabled container subfeatures in the sidebar as shortcuts)
 - `local_servers` (list of local Docker daemons with `name`, `socket`, and optional `maintenance`)
 - `remote_servers` (list of remote servers with `name`, `url`, optional `token`, and optional `maintenance`)

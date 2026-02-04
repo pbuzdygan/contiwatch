@@ -96,6 +96,24 @@
 	            >
 	              <span class="icon-action icon-cube-3d-sphere" aria-hidden="true"></span>
 	            </button>
+            <button
+              id="topbar-containers-networks"
+              class="secondary icon-action-btn has-tooltip"
+              type="button"
+              aria-label="Container networks"
+              data-tooltip="Container networks"
+            >
+              <span class="icon-action icon-network2" aria-hidden="true"></span>
+            </button>
+            <button
+              id="topbar-containers-volumes"
+              class="secondary icon-action-btn has-tooltip"
+              type="button"
+              aria-label="Container volumes"
+              data-tooltip="Container volumes"
+            >
+              <span class="icon-action icon-hard-drive" aria-hidden="true"></span>
+            </button>
 	            <span class="topbar-separator" aria-hidden="true"></span>
             <button
               id="topbar-containers-logs"
@@ -295,6 +313,14 @@
           <span class="sidebar-icon icon-action icon-cube-3d-sphere" aria-hidden="true"></span>
           <span class="sidebar-label">Images</span>
         </button>
+        <button type="button" class="sidebar-link containers-sidebar-link hidden" data-view="containers" data-containers-mode="networks" data-feature="networks">
+          <span class="sidebar-icon icon-action icon-network2" aria-hidden="true"></span>
+          <span class="sidebar-label">Networks</span>
+        </button>
+        <button type="button" class="sidebar-link containers-sidebar-link hidden" data-view="containers" data-containers-mode="volumes" data-feature="volumes">
+          <span class="sidebar-icon icon-action icon-hard-drive" aria-hidden="true"></span>
+          <span class="sidebar-label">Volumes</span>
+        </button>
         <button type="button" class="sidebar-link containers-sidebar-link hidden" data-view="containers" data-containers-mode="logs" data-feature="container_logs">
           <span class="sidebar-icon icon-action icon-logs" aria-hidden="true"></span>
           <span class="sidebar-label">Logs</span>
@@ -448,6 +474,16 @@
                 <input type="checkbox" id="exp-images">
                 <span class="toggle-track" aria-hidden="true"><span class="toggle-thumb"></span></span>
                 <span>Container images</span>
+              </label>
+              <label class="toggle-row">
+                <input type="checkbox" id="exp-networks">
+                <span class="toggle-track" aria-hidden="true"><span class="toggle-thumb"></span></span>
+                <span>Container networks</span>
+              </label>
+              <label class="toggle-row">
+                <input type="checkbox" id="exp-volumes">
+                <span class="toggle-track" aria-hidden="true"><span class="toggle-thumb"></span></span>
+                <span>Container volumes</span>
               </label>
             </div>
             <div class="settings-card about-card">
@@ -647,6 +683,99 @@
           </div>
           <div id="images-empty" class="hint hidden"></div>
         </div>
+        <div id="containers-networks-view" class="containers-networks-view hidden">
+          <div class="containers-networks-toolbar">
+            <div class="containers-networks-actions">
+              <button id="networks-prune" class="secondary icon-action-btn has-tooltip" type="button" aria-label="Prune unused" data-tooltip="Prune unused">
+                <span class="icon-action icon-square-minus" aria-hidden="true"></span>
+              </button>
+            </div>
+          </div>
+          <div class="containers-table-wrap">
+            <table class="containers-table networks-table">
+              <thead>
+                <tr>
+                  <th>
+                    <span class="containers-th-name-inner">
+                      <span>Name</span>
+                      <button id="networks-name-sort" class="containers-sort-btn" type="button" aria-label="Sort by name">
+                        <span class="icon-sort icon-sort-neutral" aria-hidden="true"></span>
+                      </button>
+                    </span>
+                  </th>
+                  <th>Status</th>
+                  <th>Driver</th>
+                  <th>
+                    <span class="containers-th-name-inner">
+                      <span>Stack</span>
+                      <button id="networks-stack-sort" class="containers-sort-btn" type="button" aria-label="Sort by stack">
+                        <span class="icon-sort icon-sort-neutral" aria-hidden="true"></span>
+                      </button>
+                    </span>
+                  </th>
+                  <th>
+                    <span class="containers-th-name-inner">
+                      <span>Subnet</span>
+                      <button id="networks-subnet-sort" class="containers-sort-btn" type="button" aria-label="Sort by subnet">
+                        <span class="icon-sort icon-sort-neutral" aria-hidden="true"></span>
+                      </button>
+                    </span>
+                  </th>
+                  <th>
+                    <span class="containers-th-name-inner">
+                      <span>Gateway</span>
+                      <button id="networks-gateway-sort" class="containers-sort-btn" type="button" aria-label="Sort by gateway">
+                        <span class="icon-sort icon-sort-neutral" aria-hidden="true"></span>
+                      </button>
+                    </span>
+                  </th>
+                  <th>Containers</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="networks-body"></tbody>
+            </table>
+          </div>
+          <div id="networks-empty" class="hint hidden"></div>
+        </div>
+        <div id="containers-volumes-view" class="containers-volumes-view hidden">
+          <div class="containers-volumes-toolbar">
+            <div class="containers-volumes-actions">
+              <button id="volumes-prune" class="secondary icon-action-btn has-tooltip" type="button" aria-label="Prune unused" data-tooltip="Prune unused">
+                <span class="icon-action icon-square-minus" aria-hidden="true"></span>
+              </button>
+            </div>
+          </div>
+          <div class="containers-table-wrap">
+            <table class="containers-table volumes-table">
+              <thead>
+                <tr>
+                  <th>
+                    <span class="containers-th-name-inner">
+                      <span>Name</span>
+                      <button id="volumes-name-sort" class="containers-sort-btn" type="button" aria-label="Sort by name">
+                        <span class="icon-sort icon-sort-neutral" aria-hidden="true"></span>
+                      </button>
+                    </span>
+                  </th>
+                  <th>Status</th>
+                  <th>
+                    <span class="containers-th-name-inner">
+                      <span>Stack</span>
+                      <button id="volumes-stack-sort" class="containers-sort-btn" type="button" aria-label="Sort by stack">
+                        <span class="icon-sort icon-sort-neutral" aria-hidden="true"></span>
+                      </button>
+                    </span>
+                  </th>
+                  <th>Used by</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="volumes-body"></tbody>
+            </table>
+          </div>
+          <div id="volumes-empty" class="hint hidden"></div>
+        </div>
         <div id="containers-shell-layout" class="containers-shell-layout hidden">
           <div class="containers-shell-list">
             <div class="containers-shell-list-header">Name</div>
@@ -806,6 +935,81 @@
           <button id="details-close" class="secondary btn-small" type="button">Close</button>
         </div>
         <div id="details-body" class="modal-body"></div>
+      </div>
+    </div>
+
+    <div id="volume-details-modal" class="modal hidden" aria-hidden="true" role="dialog" aria-modal="true">
+      <div class="modal-backdrop" data-close="true"></div>
+      <div class="modal-card" role="document">
+        <div class="modal-header">
+          <h3 id="volume-details-title">Volume details</h3>
+          <button id="volume-details-close" class="secondary btn-small" type="button">Close</button>
+        </div>
+        <div id="volume-details-body" class="modal-body"></div>
+      </div>
+    </div>
+
+    <div id="volume-usedby-modal" class="modal hidden" aria-hidden="true" role="dialog" aria-modal="true">
+      <div class="modal-backdrop" data-close="true"></div>
+      <div class="modal-card" role="document">
+        <div class="modal-header">
+          <h3 id="volume-usedby-title">Used by</h3>
+          <button id="volume-usedby-close" class="secondary btn-small" type="button">Close</button>
+        </div>
+        <div id="volume-usedby-body" class="modal-body"></div>
+      </div>
+    </div>
+
+    <div id="network-details-modal" class="modal hidden" aria-hidden="true" role="dialog" aria-modal="true">
+      <div class="modal-backdrop" data-close="true"></div>
+      <div class="modal-card" role="document">
+        <div class="modal-header">
+          <h3 id="network-details-title">Network details</h3>
+          <button id="network-details-close" class="secondary btn-small" type="button">Close</button>
+        </div>
+        <div id="network-details-body" class="modal-body"></div>
+      </div>
+    </div>
+
+    <div id="network-connect-modal" class="modal hidden" aria-hidden="true" role="dialog" aria-modal="true">
+      <div class="modal-backdrop" data-close="true"></div>
+      <div class="modal-card" role="document">
+        <div class="modal-header">
+          <h3 id="network-connect-title">Connect container</h3>
+          <button id="network-connect-close" class="secondary btn-small" type="button">Close</button>
+        </div>
+        <div class="modal-body">
+          <label class="stack-modal-field">
+            Container
+            <select id="network-connect-select"></select>
+          </label>
+          <div id="network-connect-error" class="stack-modal-error hidden" role="alert"></div>
+          <div class="settings-actions">
+            <button id="network-connect-confirm" type="button">Connect</button>
+            <button id="network-connect-cancel" class="secondary" type="button">Cancel</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="network-disconnect-modal" class="modal hidden" aria-hidden="true" role="dialog" aria-modal="true">
+      <div class="modal-backdrop" data-close="true"></div>
+      <div class="modal-card" role="document">
+        <div class="modal-header">
+          <h3 id="network-disconnect-title">Disconnect container</h3>
+          <button id="network-disconnect-close" class="secondary btn-small" type="button">Close</button>
+        </div>
+        <div class="modal-body">
+          <label class="stack-modal-field">
+            Container
+            <select id="network-disconnect-select"></select>
+          </label>
+          <div id="network-disconnect-error" class="stack-modal-error hidden" role="alert"></div>
+          <div class="settings-actions">
+            <button id="network-disconnect-confirm" type="button">Disconnect</button>
+            <button id="network-disconnect-cancel" class="secondary" type="button">Cancel</button>
+          </div>
+        </div>
       </div>
     </div>
 

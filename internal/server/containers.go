@@ -220,6 +220,9 @@ func (s *Server) applyContainerAction(cfg config.Config, name, containerID, acti
 	if err := applyContainerActionWithWatcher(ctx, watcher, containerID, action); err != nil {
 		return dockerwatcher.ContainerInfo{}, err
 	}
+	if action == "rm" {
+		return dockerwatcher.ContainerInfo{ID: containerID}, nil
+	}
 	info, err := watcher.Containers(ctx)
 	if err != nil {
 		return dockerwatcher.ContainerInfo{}, err
@@ -286,6 +289,8 @@ func applyContainerActionWithWatcher(ctx context.Context, watcher *dockerwatcher
 		return watcher.UnpauseContainer(ctx, containerID)
 	case "kill":
 		return watcher.KillContainer(ctx, containerID)
+	case "rm":
+		return watcher.RemoveContainer(ctx, containerID)
 	default:
 		return errors.New("unknown action")
 	}
