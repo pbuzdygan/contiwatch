@@ -11,7 +11,24 @@ const toastStackEl = document.getElementById("toast-stack");
 const statusHintEl = document.getElementById("status-hint");
 const configForm = document.getElementById("config-form");
 const schedulerEnabledInput = document.getElementById("scheduler-enabled");
-const scanIntervalInput = document.getElementById("scan-interval");
+const schedulerModeBasicBtn = document.getElementById("scheduler-mode-basic");
+const schedulerModeCronBtn = document.getElementById("scheduler-mode-cron");
+const schedulerBasicPanel = document.getElementById("scheduler-basic-panel");
+const schedulerCronPanel = document.getElementById("scheduler-cron-panel");
+const schedulerDaysWrap = document.querySelector(".scheduler-days");
+const schedulerDaysTrigger = document.getElementById("scheduler-days-trigger");
+const schedulerDaysMenu = document.getElementById("scheduler-days-menu");
+const schedulerBasicTimeInput = document.getElementById("scheduler-basic-time");
+const schedulerCronInput = document.getElementById("scheduler-cron-input");
+const schedulerCronErrorEl = document.getElementById("scheduler-cron-error");
+const schedulerTimezoneEl = document.getElementById("scheduler-timezone");
+const schedulerLegacyBanner = document.getElementById("scheduler-legacy-banner");
+const schedulerLegacyText = document.getElementById("scheduler-legacy-text");
+const schedulerLegacyMigrateBtn = document.getElementById("scheduler-legacy-migrate");
+const schedulerCronGuideBtn = document.getElementById("scheduler-cron-guide");
+const cronGuideModal = document.getElementById("cron-guide-modal");
+const cronGuideCloseBtn = document.getElementById("cron-guide-close");
+const cronGuideTimezoneEl = document.getElementById("cron-guide-timezone");
 const globalPolicySelect = document.getElementById("global-policy");
 const globalPolicyInfoBtn = document.getElementById("global-policy-info");
 const discordInput = document.getElementById("discord-url");
@@ -208,7 +225,6 @@ const aboutUpdateStatusEl = document.getElementById("about-update-status");
 const aboutUpdateLinkEl = document.getElementById("about-update-link");
 const aboutChannelEl = document.getElementById("about-channel");
 const testWebhookBtn = document.getElementById("test-webhook");
-const saveIntervalBtn = document.getElementById("save-interval");
 const detailsModal = document.getElementById("details-modal");
 const detailsTitle = document.getElementById("details-title");
 const detailsBody = document.getElementById("details-body");
@@ -259,7 +275,6 @@ let serversSearchQuery = "";
 let editingLocalServer = null;
 let editingRemoteServer = null;
 let serverModalTab = "remote";
-const schedulerAnchorKey = "contiwatch_scheduler_anchor";
 const serversViewStorageKey = "contiwatch_servers_view";
 let serversViewMode = "table";
 const containersResourcesViewStorageKey = "contiwatch_container_resources_view";
@@ -267,8 +282,11 @@ let containersResourcesViewMode = "cards";
 const sidebarCollapsedStorageKey = "contiwatch_sidebar_collapsed";
 const releaseCheckPollMs = 1000 * 60 * 60 * 6;
 const defaultReleaseRepo = "pbuzdygan/contiwatch";
-let lastSchedulerEnabled = null;
-let lastSchedulerIntervalSec = null;
+let schedulerMode = "basic";
+let schedulerPreviewTimer = null;
+let schedulerStatusNextRun = "";
+let schedulerSaveTimer = null;
+let schedulerLegacyIntervalMinutes = 0;
 let serverStream = null;
 let checkingStartMsByServerKey = {};
 let checkingDebounceTimersByServerKey = {};
@@ -315,6 +333,8 @@ let networksRefreshRequestId = 0;
 let networksRefreshAbort = null;
 let networkDetailsRequestId = 0;
 let networkDetailsAbort = null;
+let networkDetailsSortMode = "name:asc";
+let networkDetailsContainersCache = [];
 let networkContainersRequestId = 0;
 let networkContainersAbort = null;
 let currentNetworkSelection = null;
@@ -1863,7 +1883,9 @@ function renderStatus(results) {
     if (currentConfig && currentConfig.scheduler_enabled) {
       const schedulerWrap = document.createElement("span");
       schedulerWrap.className = "status-card-scheduler-wrap has-tooltip";
-      const tooltip = formatSchedulerNextRun(currentConfig);
+      const tooltip = schedulerStatusNextRun
+        ? `Next run: ${formatSchedulerTimestamp(schedulerStatusNextRun)}`
+        : "Scheduler enabled";
       schedulerWrap.setAttribute("data-tooltip", tooltip);
       schedulerWrap.setAttribute("aria-label", tooltip);
       schedulerWrap.dataset.tooltipScheduler = "true";
@@ -2922,52 +2944,151 @@ function applyTheme(mode) {
   }
 }
 
-function loadSchedulerAnchor() {
-  const raw = localStorage.getItem(schedulerAnchorKey);
-  if (!raw) return null;
+function formatSchedulerTimestamp(value) {
+  if (!value) return "—";
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  const options = {
+    year: "numeric",
+    month: "short",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  };
+  if (currentTimeZone) {
+    return new Intl.DateTimeFormat("sv-SE", { ...options, timeZone: currentTimeZone }).format(date);
+  }
+  return date.toLocaleString([], options);
+}
+
+async function refreshSchedulerStatus() {
+  if (!schedulerStateEl) return;
   try {
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed.anchorMs !== "number" || typeof parsed.intervalSec !== "number") {
-      return null;
+    const payload = await fetchJSON("/api/scheduler/status?count=1");
+    schedulerStatusNextRun = Array.isArray(payload && payload.next_runs) && payload.next_runs.length > 0
+      ? payload.next_runs[0]
+      : "";
+    if (schedulerNextRunEl) {
+      schedulerNextRunEl.textContent = schedulerStatusNextRun ? `Next run: ${formatSchedulerTimestamp(schedulerStatusNextRun)}` : "";
     }
-    return parsed;
+    const enabled = Boolean(payload && payload.enabled);
+    schedulerStateEl.dataset.enabled = enabled ? "true" : "false";
+    const tooltip = enabled && schedulerStatusNextRun
+      ? `Next run: ${formatSchedulerTimestamp(schedulerStatusNextRun)}`
+      : "Scheduler disabled";
+    schedulerStateEl.setAttribute("data-tooltip", tooltip);
+    schedulerStateEl.setAttribute("aria-label", tooltip);
+    schedulerStateEl.dataset.tooltipScheduler = "true";
   } catch {
-    return null;
+    // Ignore scheduler status errors in UI.
   }
 }
 
-function saveSchedulerAnchor(anchorMs, intervalSec) {
-  localStorage.setItem(schedulerAnchorKey, JSON.stringify({ anchorMs, intervalSec }));
+function updateSchedulerTimezone() {
+  const label = currentTimeZone ? `Timezone: ${currentTimeZone} (container)` : "Timezone: container";
+  if (schedulerTimezoneEl) schedulerTimezoneEl.textContent = label;
+  if (cronGuideTimezoneEl) cronGuideTimezoneEl.textContent = currentTimeZone || "container";
 }
 
-function clearSchedulerAnchor() {
-  localStorage.removeItem(schedulerAnchorKey);
+function setSchedulerDaysMenuOpen(isOpen) {
+  if (!schedulerDaysMenu || !schedulerDaysTrigger) return;
+  schedulerDaysMenu.classList.toggle("hidden", !isOpen);
+  schedulerDaysTrigger.classList.toggle("is-open", isOpen);
+  schedulerDaysTrigger.setAttribute("aria-expanded", isOpen ? "true" : "false");
 }
 
-function getSchedulerNextRun(cfg) {
-  const enabled = Boolean(cfg && cfg.scheduler_enabled);
-  if (!enabled) {
-    return null;
+function setSchedulerMode(mode) {
+  schedulerMode = mode === "cron" ? "cron" : "basic";
+  if (schedulerModeBasicBtn) schedulerModeBasicBtn.classList.toggle("is-active", schedulerMode === "basic");
+  if (schedulerModeCronBtn) schedulerModeCronBtn.classList.toggle("is-active", schedulerMode === "cron");
+  if (schedulerBasicPanel) schedulerBasicPanel.classList.toggle("hidden", schedulerMode !== "basic");
+  if (schedulerCronPanel) schedulerCronPanel.classList.toggle("hidden", schedulerMode !== "cron");
+  if (schedulerMode !== "basic") setSchedulerDaysMenuOpen(false);
+}
+
+function setSchedulerBasicDays(days) {
+  if (!schedulerDaysWrap) return;
+  const selected = new Set((days || []).map((day) => String(day)));
+  schedulerDaysWrap.querySelectorAll(".scheduler-day").forEach((btn) => {
+    const day = btn.getAttribute("data-day");
+    btn.classList.toggle("is-active", selected.has(day));
+  });
+}
+
+function getSchedulerBasicDays() {
+  if (!schedulerDaysWrap) return [];
+  const days = [];
+  schedulerDaysWrap.querySelectorAll(".scheduler-day.is-active").forEach((btn) => {
+    const day = Number(btn.getAttribute("data-day"));
+    if (Number.isFinite(day)) days.push(day);
+  });
+  return days;
+}
+
+function setSchedulerCronError(message) {
+  if (!schedulerCronErrorEl) return;
+  const text = String(message || "").trim();
+  schedulerCronErrorEl.textContent = text;
+  schedulerCronErrorEl.classList.toggle("hidden", !text);
+}
+
+function setLegacySchedulerBanner(intervalMinutes) {
+  if (!schedulerLegacyBanner || !schedulerLegacyText) return;
+  if (!intervalMinutes || intervalMinutes <= 0) {
+    schedulerLegacyBanner.classList.add("hidden");
+    schedulerLegacyIntervalMinutes = 0;
+    return;
   }
-  const intervalSec = Number(cfg.scan_interval_sec);
-  if (!Number.isFinite(intervalSec) || intervalSec <= 0) {
-    return null;
+  schedulerLegacyIntervalMinutes = intervalMinutes;
+  schedulerLegacyText.textContent = `Legacy interval schedule detected (every ${intervalMinutes} min).`;
+  schedulerLegacyBanner.classList.remove("hidden");
+}
+
+function scheduleSchedulerPreview() {
+  if (schedulerPreviewTimer) window.clearTimeout(schedulerPreviewTimer);
+  schedulerPreviewTimer = window.setTimeout(() => {
+    refreshSchedulerPreview().catch(() => {});
+  }, 250);
+}
+
+function scheduleSchedulerSave() {
+  if (schedulerSaveTimer) window.clearTimeout(schedulerSaveTimer);
+  schedulerSaveTimer = window.setTimeout(async () => {
+    try {
+      if (schedulerMode === "basic") {
+        const days = getSchedulerBasicDays();
+        const timeValue = schedulerBasicTimeInput ? schedulerBasicTimeInput.value : "";
+        if (days.length === 0 || !timeValue) return;
+      } else if (schedulerMode === "cron") {
+        const expr = schedulerCronInput ? schedulerCronInput.value.trim() : "";
+        if (!expr) return;
+      }
+      await saveConfig({ useWebhookInput: false });
+      await refreshConfig();
+    } catch (err) {
+      showToast(err.message || "Failed to save scheduler.");
+    }
+  }, 500);
+}
+
+async function refreshSchedulerPreview() {
+  if (schedulerMode === "basic") {
+    setSchedulerCronError("");
+    return;
   }
-  const stored = loadSchedulerAnchor();
-  if (!stored || stored.intervalSec !== intervalSec) {
-    const anchorMs = Date.now();
-    saveSchedulerAnchor(anchorMs, intervalSec);
-    return new Date(anchorMs + intervalSec * 1000);
+  if (!schedulerCronInput) return;
+  const expr = schedulerCronInput.value.trim();
+  if (!expr) {
+    setSchedulerCronError("Cron expression is required.");
+    return;
   }
-  const intervalMs = intervalSec * 1000;
-  const now = Date.now();
-  const anchorMs = stored.anchorMs;
-  if (now <= anchorMs) {
-    return new Date(anchorMs + intervalMs);
+  const query = new URLSearchParams({ expr, count: "10" });
+  const payload = await fetchJSON(`/api/scheduler/preview/cron?${query.toString()}`);
+  if (payload && payload.error) {
+    setSchedulerCronError(payload.error);
+    return;
   }
-  const elapsed = now - anchorMs;
-  const cycles = Math.floor(elapsed / intervalMs) + 1;
-  return new Date(anchorMs + cycles * intervalMs);
+  setSchedulerCronError("");
 }
 
 function initThemeToggle() {
@@ -2987,7 +3108,6 @@ async function refreshConfig() {
   const cfg = await fetchJSON("/api/config");
   currentConfig = cfg;
   schedulerEnabledInput.checked = Boolean(cfg.scheduler_enabled);
-  scanIntervalInput.value = Math.max(1, Math.round(cfg.scan_interval_sec / 60));
   globalPolicySelect.value = cfg.global_policy;
   discordInput.value = cfg.discord_webhook_url || "";
   discordEnabledInput.checked = cfg.discord_notifications_enabled !== false;
@@ -3013,72 +3133,50 @@ async function refreshConfig() {
   if (expVolumesInput) expVolumesInput.checked = Boolean(exp.volumes);
   if (expNetworksInput) expNetworksInput.checked = Boolean(exp.networks);
   currentTimeZone = cfg.time_zone ? String(cfg.time_zone).trim() : "";
+  updateSchedulerTimezone();
+  const plan = cfg.scheduler_plan || {};
+  const isLegacyPlan = plan.mode && plan.mode !== "basic" && plan.mode !== "cron";
+  const legacyIntervalMinutes = Math.max(1, Math.round(Number(cfg.scan_interval_sec || 0) / 60));
+  if (isLegacyPlan) {
+    setLegacySchedulerBanner(legacyIntervalMinutes);
+  } else {
+    setLegacySchedulerBanner(0);
+  }
+  if (plan.mode === "cron") {
+    setSchedulerMode("cron");
+    if (schedulerCronInput) schedulerCronInput.value = plan.cron ? plan.cron.expr || "" : "";
+  } else {
+    setSchedulerMode("basic");
+    const basicDays = plan.basic && Array.isArray(plan.basic.days) ? plan.basic.days : [1, 2, 3, 4, 5];
+    setSchedulerBasicDays(basicDays);
+    if (schedulerBasicTimeInput) schedulerBasicTimeInput.value = plan.basic && plan.basic.time ? plan.basic.time : "03:00";
+  }
   setContainersLogsTimestamps(containersLogsTimestamps);
   applyExperimentalFeatures(cfg);
-  const enabled = Boolean(cfg.scheduler_enabled);
-  const intervalSec = Number(cfg.scan_interval_sec);
-  const enableChanged = lastSchedulerEnabled === null ? false : enabled !== lastSchedulerEnabled;
-  const intervalChanged = lastSchedulerIntervalSec === null ? false : intervalSec !== lastSchedulerIntervalSec;
-  if (!enabled) {
-    clearSchedulerAnchor();
-  } else if (enableChanged || intervalChanged) {
-    saveSchedulerAnchor(Date.now(), intervalSec);
-  } else {
-    getSchedulerNextRun(cfg);
-  }
-  lastSchedulerEnabled = enabled;
-  lastSchedulerIntervalSec = intervalSec;
-  updateSchedulerNextRun(cfg);
-    if (schedulerStateEl) {
-      schedulerStateEl.dataset.enabled = enabled ? "true" : "false";
-      const tooltip = enabled ? formatSchedulerNextRun(cfg) : "Scheduler disabled";
-      schedulerStateEl.setAttribute("data-tooltip", tooltip);
-      schedulerStateEl.setAttribute("aria-label", tooltip);
-      schedulerStateEl.dataset.tooltipScheduler = "true";
-    }
-  }
-
-function formatSchedulerNextRun(cfg) {
-  const enabled = Boolean(cfg && cfg.scheduler_enabled);
-  if (!enabled) {
-    return "Next run: enable scheduler to check.";
-  }
-  const interval = Number(cfg.scan_interval_sec);
-  if (!Number.isFinite(interval) || interval <= 0) {
-    return "Next run: unavailable.";
-  }
-  const nextRun = getSchedulerNextRun(cfg);
-  if (!nextRun) {
-    return "Next run: unavailable.";
-  }
-  const timeLabel = nextRun.toLocaleString([], {
-    year: "numeric",
-    month: "short",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-  return `Next run: ${timeLabel}`;
-}
-
-function updateSchedulerNextRun(cfg) {
-  if (!schedulerNextRunEl) return;
-  schedulerNextRunEl.textContent = formatSchedulerNextRun(cfg);
+  await refreshSchedulerStatus();
+  scheduleSchedulerPreview();
 }
 
 function buildConfigPayload(options = {}) {
-  const intervalMinutes = Number(scanIntervalInput.value);
   const currentInterval = currentConfig ? Number(currentConfig.scan_interval_sec) : 0;
-  const nextInterval = Number.isFinite(intervalMinutes) && intervalMinutes > 0
-    ? intervalMinutes * 60
-    : (currentInterval > 0 ? currentInterval : 0);
+  const nextInterval = currentInterval > 0 ? currentInterval : 0;
   const useWebhookInput = Boolean(options.useWebhookInput);
   const webhookValue = useWebhookInput
     ? discordInput.value.trim()
     : (currentConfig ? currentConfig.discord_webhook_url || "" : discordInput.value.trim());
+  const schedulerPlan = schedulerMode === "cron"
+    ? { mode: "cron", cron: { expr: schedulerCronInput ? schedulerCronInput.value.trim() : "" } }
+    : {
+        mode: "basic",
+        basic: {
+          days: getSchedulerBasicDays(),
+          time: schedulerBasicTimeInput ? schedulerBasicTimeInput.value : "",
+        },
+      };
   return {
     scheduler_enabled: schedulerEnabledInput.checked,
     scan_interval_sec: nextInterval,
+    scheduler_plan: schedulerPlan,
     global_policy: globalPolicySelect.value,
     discord_webhook_url: webhookValue,
     discord_notifications_enabled: discordEnabledInput.checked,
@@ -3109,7 +3207,7 @@ async function saveConfig(options = {}) {
     body: JSON.stringify(payload),
   });
   currentConfig = updated;
-  updateSchedulerNextRun(updated);
+  await refreshSchedulerStatus();
   return updated;
 }
 
@@ -3206,6 +3304,32 @@ function formatImageCreated(value) {
 
 function normalizeContainerState(state) {
   return String(state || "").toLowerCase();
+}
+
+function parseIPv4(value) {
+  const text = String(value || "").trim();
+  if (!text) return null;
+  const parts = text.split(".");
+  if (parts.length !== 4) return null;
+  const numbers = parts.map((part) => {
+    if (!/^\d{1,3}$/.test(part)) return null;
+    const num = Number(part);
+    if (!Number.isFinite(num) || num < 0 || num > 255) return null;
+    return num;
+  });
+  if (numbers.some((num) => num === null)) return null;
+  return numbers;
+}
+
+function compareIPv4(a, b, dir) {
+  const aParts = parseIPv4(a);
+  const bParts = parseIPv4(b);
+  if (!aParts || !bParts) return null;
+  for (let i = 0; i < 4; i += 1) {
+    if (aParts[i] === bParts[i]) continue;
+    return dir === "desc" ? bParts[i] - aParts[i] : aParts[i] - bParts[i];
+  }
+  return 0;
 }
 
 function containersSort(list, mode) {
@@ -3899,6 +4023,8 @@ function compareContainersResourcesValues(a, b, dir) {
   if (typeof a === "number" && typeof b === "number") {
     return dir === "desc" ? b - a : a - b;
   }
+  const ipCompare = compareIPv4(a, b, dir);
+  if (ipCompare !== null) return ipCompare;
   return dir === "desc"
     ? String(b).localeCompare(String(a), undefined, { numeric: true, sensitivity: "base" })
     : String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: "base" });
@@ -6223,6 +6349,139 @@ function buildNetworkDetailsRow(label, value) {
   return group;
 }
 
+function buildNetworkDetailsMetaGroup(details) {
+  const group = document.createElement("div");
+  group.className = "details-group";
+  const header = document.createElement("div");
+  header.className = "details-group-header";
+  header.innerHTML = '<span class="details-group-label">Overview</span>';
+  const body = document.createElement("div");
+  body.className = "details-body-text network-details-meta";
+  const items = [
+    { label: "Created", value: details && details.created_at },
+    { label: "Scope", value: details && details.scope },
+    { label: "Driver", value: details && details.driver },
+  ];
+  items.forEach((item) => {
+    const wrapper = document.createElement("div");
+    wrapper.className = "network-details-meta-item";
+    const label = document.createElement("div");
+    label.className = "network-details-meta-label";
+    label.textContent = item.label;
+    const value = document.createElement("div");
+    value.className = "network-details-meta-value";
+    value.textContent = item.value || "—";
+    wrapper.append(label, value);
+    body.appendChild(wrapper);
+  });
+  group.append(header, body);
+  return group;
+}
+
+function updateNetworkDetailsSortUI(container) {
+  if (!container) return;
+  const labels = { name: "name", ip: "IP", mac: "MAC" };
+  const buttons = container.querySelectorAll("[data-network-details-sort]");
+  buttons.forEach((btn) => {
+    const key = btn.getAttribute("data-network-details-sort");
+    const icon = btn.querySelector(".icon-sort");
+    if (!icon || !key) return;
+    const label = labels[key] || key;
+    icon.classList.remove("icon-sort-neutral", "icon-sort-asc", "icon-sort-desc");
+    if (networkDetailsSortMode === `${key}:asc`) {
+      icon.classList.add("icon-sort-asc");
+      btn.setAttribute("aria-label", `Sort ${label} Z → A`);
+      return;
+    }
+    if (networkDetailsSortMode === `${key}:desc`) {
+      icon.classList.add("icon-sort-desc");
+      btn.setAttribute("aria-label", `Sort ${label} A → Z`);
+      return;
+    }
+    icon.classList.add("icon-sort-neutral");
+    btn.setAttribute("aria-label", `Sort by ${label}`);
+  });
+}
+
+function networkDetailsSort(list, mode) {
+  const [field, order] = String(mode || "name:asc").split(":");
+  const dir = order === "desc" ? -1 : 1;
+  const sorted = Array.isArray(list) ? [...list] : [];
+  sorted.sort((a, b) => {
+    if (field === "ip") {
+      const ipCompare = compareIPv4(a.ip, b.ip, order === "desc" ? "desc" : "asc");
+      if (ipCompare !== null) return ipCompare;
+    }
+    const aVal = normalizeQuery(field === "ip" ? a.ip : field === "mac" ? a.mac : a.name);
+    const bVal = normalizeQuery(field === "ip" ? b.ip : field === "mac" ? b.mac : b.name);
+    if (aVal < bVal) return -1 * dir;
+    if (aVal > bVal) return 1 * dir;
+    return 0;
+  });
+  return sorted;
+}
+
+function renderNetworkDetailsContainersTable(containerEl, list) {
+  if (!containerEl) return;
+  containerEl.innerHTML = "";
+  const table = document.createElement("table");
+  table.className = "network-details-table";
+  const thead = document.createElement("thead");
+  const headRow = document.createElement("tr");
+  const columns = [
+    { key: "name", label: "Name" },
+    { key: "ip", label: "IP" },
+    { key: "mac", label: "MAC" },
+  ];
+  columns.forEach((col) => {
+    const th = document.createElement("th");
+    const inner = document.createElement("span");
+    inner.className = "containers-th-name-inner";
+    const label = document.createElement("span");
+    label.textContent = col.label;
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "containers-sort-btn network-details-sort-btn";
+    btn.setAttribute("data-network-details-sort", col.key);
+    btn.setAttribute("aria-label", `Sort by ${col.label}`);
+    const icon = document.createElement("span");
+    icon.className = "icon-sort icon-sort-neutral";
+    icon.setAttribute("aria-hidden", "true");
+    btn.appendChild(icon);
+    inner.append(label, btn);
+    th.appendChild(inner);
+    headRow.appendChild(th);
+  });
+  thead.appendChild(headRow);
+  table.appendChild(thead);
+  const tbody = document.createElement("tbody");
+  const sorted = networkDetailsSort(list, networkDetailsSortMode);
+  sorted.forEach((entry) => {
+    const row = document.createElement("tr");
+    const nameCell = document.createElement("td");
+    nameCell.textContent = entry.name || entry.id || "—";
+    const ipCell = document.createElement("td");
+    ipCell.textContent = entry.ip || "—";
+    const macCell = document.createElement("td");
+    macCell.textContent = entry.mac || "—";
+    row.append(nameCell, ipCell, macCell);
+    tbody.appendChild(row);
+  });
+  table.appendChild(tbody);
+  containerEl.appendChild(table);
+  updateNetworkDetailsSortUI(table);
+  const buttons = table.querySelectorAll("[data-network-details-sort]");
+  buttons.forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const key = btn.getAttribute("data-network-details-sort");
+      if (!key) return;
+      const [field, order] = String(networkDetailsSortMode || "name:asc").split(":");
+      networkDetailsSortMode = field === key && order === "asc" ? `${key}:desc` : `${key}:asc`;
+      renderNetworkDetailsContainersTable(containerEl, list);
+    });
+  });
+}
+
 function setNetworkModalError(el, message) {
   if (!el) return;
   const text = String(message || "").trim();
@@ -6235,6 +6494,8 @@ async function openNetworkDetailsModal(network) {
   if (networkDetailsTitle) {
     networkDetailsTitle.textContent = network.name ? `Network: ${network.name}` : "Network details";
   }
+  networkDetailsSortMode = "name:asc";
+  networkDetailsContainersCache = [];
   networkDetailsBody.innerHTML = "";
   networkDetailsBody.appendChild(buildNetworkDetailsRow("Loading", "Loading network details…"));
   networkDetailsModal.classList.remove("hidden");
@@ -6257,9 +6518,7 @@ async function openNetworkDetailsModal(network) {
     }
     const details = payload.network || {};
     networkDetailsBody.innerHTML = "";
-    networkDetailsBody.appendChild(buildNetworkDetailsRow("Created", details.created_at));
-    networkDetailsBody.appendChild(buildNetworkDetailsRow("Scope", details.scope));
-    networkDetailsBody.appendChild(buildNetworkDetailsRow("Driver", details.driver));
+    networkDetailsBody.appendChild(buildNetworkDetailsMetaGroup(details));
     const subnets = Array.isArray(details.subnets) ? details.subnets : [];
     if (subnets.length === 0) {
       networkDetailsBody.appendChild(buildNetworkDetailsRow("Subnets", "—"));
@@ -6277,7 +6536,13 @@ async function openNetworkDetailsModal(network) {
         const li = document.createElement("li");
         const subnet = item && item.subnet ? item.subnet : "—";
         const gateway = item && item.gateway ? item.gateway : "—";
-        li.textContent = `Subnet: ${subnet} • Gateway: ${gateway}`;
+        const subnetLine = document.createElement("div");
+        subnetLine.className = "network-details-subnet";
+        subnetLine.textContent = `Subnet: ${subnet}`;
+        const gatewayLine = document.createElement("div");
+        gatewayLine.className = "network-details-gateway";
+        gatewayLine.textContent = `Gateway: ${gateway}`;
+        li.append(subnetLine, gatewayLine);
         list.appendChild(li);
       });
       body.appendChild(list);
@@ -6295,23 +6560,8 @@ async function openNetworkDetailsModal(network) {
     if (containers.length === 0) {
       containersBody.textContent = "—";
     } else {
-      const table = document.createElement("table");
-      table.className = "network-details-table";
-      table.innerHTML = "<thead><tr><th>Name</th><th>IP</th><th>MAC</th></tr></thead>";
-      const tbody = document.createElement("tbody");
-      containers.forEach((entry) => {
-        const row = document.createElement("tr");
-        const nameCell = document.createElement("td");
-        nameCell.textContent = entry.name || entry.id || "—";
-        const ipCell = document.createElement("td");
-        ipCell.textContent = entry.ip || "—";
-        const macCell = document.createElement("td");
-        macCell.textContent = entry.mac || "—";
-        row.append(nameCell, ipCell, macCell);
-        tbody.appendChild(row);
-      });
-      table.appendChild(tbody);
-      containersBody.appendChild(table);
+      networkDetailsContainersCache = containers;
+      renderNetworkDetailsContainersTable(containersBody, networkDetailsContainersCache);
     }
     containersGroup.append(containersHeader, containersBody);
     networkDetailsBody.appendChild(containersGroup);
@@ -6500,6 +6750,7 @@ async function runNetworkRemove(network) {
 
 async function runNetworkConnect() {
   if (!currentNetworkSelection || !networkConnectSelect) return;
+  const selectedNetwork = currentNetworkSelection;
   const containerID = networkConnectSelect.value;
   if (!containerID) {
     setNetworkModalError(networkConnectErrorEl, "Select a container.");
@@ -6510,11 +6761,11 @@ async function runNetworkConnect() {
     await fetchJSON("/api/networks/connect", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ scope: containersSelectedScope, network_id: currentNetworkSelection.id, container_id: containerID }),
+      body: JSON.stringify({ scope: containersSelectedScope, network_id: selectedNetwork.id, container_id: containerID }),
     });
     closeNetworkConnectModal();
     await refreshNetworks({ silent: true });
-    notify({ type: "success", message: `Connected to ${currentNetworkSelection.name}` });
+    notify({ type: "success", message: `Connected to ${selectedNetwork.name || selectedNetwork.id.slice(0, 12)}` });
   } catch (err) {
     setNetworkModalError(networkConnectErrorEl, err.message || "Connect failed.");
     notify({ type: "error", message: err.message || "Connect failed." });
@@ -6523,6 +6774,7 @@ async function runNetworkConnect() {
 
 async function runNetworkDisconnect() {
   if (!currentNetworkSelection || !networkDisconnectSelect) return;
+  const selectedNetwork = currentNetworkSelection;
   const containerID = networkDisconnectSelect.value;
   if (!containerID) {
     setNetworkModalError(networkDisconnectErrorEl, "Select a container.");
@@ -6533,11 +6785,11 @@ async function runNetworkDisconnect() {
     await fetchJSON("/api/networks/disconnect", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ scope: containersSelectedScope, network_id: currentNetworkSelection.id, container_id: containerID }),
+      body: JSON.stringify({ scope: containersSelectedScope, network_id: selectedNetwork.id, container_id: containerID }),
     });
     closeNetworkDisconnectModal();
     await refreshNetworks({ silent: true });
-    notify({ type: "success", message: `Disconnected from ${currentNetworkSelection.name}` });
+    notify({ type: "success", message: `Disconnected from ${selectedNetwork.name || selectedNetwork.id.slice(0, 12)}` });
   } catch (err) {
     setNetworkModalError(networkDisconnectErrorEl, err.message || "Disconnect failed.");
     notify({ type: "error", message: err.message || "Disconnect failed." });
@@ -7839,8 +8091,8 @@ const coarsePointerQuery = window.matchMedia("(pointer: coarse)");
 
 function showTooltip(target) {
   if (target && target.dataset && target.dataset.tooltipScheduler === "true") {
-    const label = currentConfig && currentConfig.scheduler_enabled
-      ? formatSchedulerNextRun(currentConfig)
+    const label = schedulerStatusNextRun
+      ? `Next run: ${formatSchedulerTimestamp(schedulerStatusNextRun)}`
       : "Scheduler disabled";
     target.setAttribute("data-tooltip", label);
     target.setAttribute("aria-label", label);
@@ -8355,6 +8607,95 @@ function attachImmediateSave(input) {
 }
 
 attachImmediateSave(schedulerEnabledInput);
+if (schedulerModeBasicBtn) {
+  schedulerModeBasicBtn.addEventListener("click", () => {
+    setSchedulerMode("basic");
+    scheduleSchedulerPreview();
+    scheduleSchedulerSave();
+  });
+}
+if (schedulerModeCronBtn) {
+  schedulerModeCronBtn.addEventListener("click", () => {
+    setSchedulerMode("cron");
+    scheduleSchedulerPreview();
+    scheduleSchedulerSave();
+  });
+}
+if (schedulerDaysTrigger && schedulerDaysMenu) {
+  schedulerDaysTrigger.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const isOpen = !schedulerDaysMenu.classList.contains("hidden");
+    setSchedulerDaysMenuOpen(!isOpen);
+  });
+  document.addEventListener("click", (event) => {
+    if (schedulerDaysMenu.classList.contains("hidden")) return;
+    if (schedulerDaysMenu.contains(event.target) || schedulerDaysTrigger.contains(event.target)) return;
+    setSchedulerDaysMenuOpen(false);
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    if (schedulerDaysMenu.classList.contains("hidden")) return;
+    setSchedulerDaysMenuOpen(false);
+    schedulerDaysTrigger.focus();
+  });
+}
+if (schedulerDaysWrap) {
+  schedulerDaysWrap.addEventListener("click", (event) => {
+    const btn = event.target.closest(".scheduler-day");
+    if (!btn) return;
+    btn.classList.toggle("is-active");
+    scheduleSchedulerPreview();
+    scheduleSchedulerSave();
+  });
+}
+if (schedulerBasicTimeInput) {
+  schedulerBasicTimeInput.addEventListener("change", () => {
+    scheduleSchedulerPreview();
+    scheduleSchedulerSave();
+  });
+}
+if (schedulerCronInput) {
+  schedulerCronInput.addEventListener("input", () => {
+    scheduleSchedulerPreview();
+    scheduleSchedulerSave();
+  });
+}
+if (schedulerCronGuideBtn && cronGuideModal) {
+  schedulerCronGuideBtn.addEventListener("click", () => {
+    cronGuideModal.classList.remove("hidden");
+  });
+}
+if (schedulerLegacyMigrateBtn) {
+  schedulerLegacyMigrateBtn.addEventListener("click", () => {
+    const minutes = schedulerLegacyIntervalMinutes > 0 ? schedulerLegacyIntervalMinutes : 15;
+    const expr = `*/${minutes} * * * *`;
+    if (schedulerCronInput) schedulerCronInput.value = expr;
+    setSchedulerMode("cron");
+    setSchedulerCronError("");
+    scheduleSchedulerPreview();
+    scheduleSchedulerSave();
+  });
+}
+if (cronGuideCloseBtn && cronGuideModal) {
+  cronGuideCloseBtn.addEventListener("click", () => {
+    cronGuideModal.classList.add("hidden");
+  });
+}
+if (cronGuideModal) {
+  cronGuideModal.addEventListener("click", (event) => {
+    if (event.target && event.target.getAttribute("data-close") === "true") {
+      cronGuideModal.classList.add("hidden");
+    }
+    const example = event.target && event.target.closest ? event.target.closest(".cron-example-btn") : null;
+    if (example && schedulerCronInput) {
+      schedulerCronInput.value = example.getAttribute("data-cron") || "";
+      setSchedulerMode("cron");
+      scheduleSchedulerPreview();
+      scheduleSchedulerSave();
+    }
+  });
+}
 attachImmediateSave(updateStoppedInput);
 attachImmediateSave(pruneDanglingInput);
 attachImmediateSave(discordEnabledInput);
@@ -8408,7 +8749,7 @@ configForm.addEventListener("submit", async (event) => {
   try {
     await saveConfig({ useWebhookInput: false });
     await refreshConfig();
-    flashButton(saveIntervalBtn, "Saved", "btn-success");
+    notify({ type: "success", message: "Settings saved" });
   } catch (err) {
     showToast(err.message || "Failed to save setting.");
   }

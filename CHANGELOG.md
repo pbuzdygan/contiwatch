@@ -3,13 +3,22 @@
 ## v1.2.5
 
 ## Bug fixes
+- UI: mobile and responsive view improvements, among other things:
+    - horizontal scrolling now works properly on mobile
+    - a bit more space for Logs, Shell and Resources content
+- Container Networks: fixing Connect/Disconnect action where using ```name``` of network was causing ```null``` exception. Now action is buffered with fallback to ```id``` when ```name``` is empty.
+- IP columns: correcting IP sorting - now it compares each of the 4 octets as numbers, so ```10.0.0.2``` correctly sorts before ```10.0.0.100```
+
 
 ## New features
 - Containers: added Remove action (docker rm) - now possible to remove stopped container directly from UI.
 - Containers: added Volumes view (list, details modal, safe remove with blockers, and prune unused).
 - Containers: added Networks view (list, details, safe remove, prune, connect/disconnect).
+- Scheduler: new Basic and Advanced options to schedule update/update check. Basic: simple day and hour picker, Advanced: cron expression syntax
 
 ## Improvements
+- UI: Container Networks - improving UI ergonomy
+- UI: Settings - improving menu ergonomy
 
 ## v1.2.4
 

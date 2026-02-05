@@ -413,6 +413,12 @@ main {
   overscroll-behavior: contain;
 }
 
+/* Allow grid children to shrink; otherwise wide tables force the whole page wider
+   and horizontal scrolling inside .containers-table-wrap stops working. */
+main > section {
+  min-width: 0;
+}
+
 body {
   padding-left: var(--sidebar-width);
 }
@@ -2717,8 +2723,30 @@ input::placeholder {
 
 .containers-table {
   width: 100%;
+  /* Ensure horizontal scrolling is possible on narrow screens (table columns use % widths). */
+  min-width: 760px;
   border-collapse: collapse;
   table-layout: auto;
+}
+
+.containers-main-table {
+  min-width: 1100px;
+}
+
+.stacks-table {
+  min-width: 820px;
+}
+
+.images-table {
+  min-width: 980px;
+}
+
+.networks-table {
+  min-width: 1040px;
+}
+
+.volumes-table {
+  min-width: 900px;
 }
 
 .containers-table th,
@@ -2863,7 +2891,8 @@ input::placeholder {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  height: 100%;
+  /* Needed for nested scroll areas (logs output, resources table, xterm viewport). */
+  min-height: 0;
 }
 
 .containers-shell-terminal.shell-active {
@@ -2891,6 +2920,7 @@ input::placeholder {
   margin: var(--s-3);
   flex: 1;
   overflow: auto;
+  min-height: 0;
 }
 
 #containers-resources-table-wrap .containers-table td:last-child {
@@ -2965,6 +2995,7 @@ input::placeholder {
   gap: var(--s-2);
   overflow: auto;
   flex: 1;
+  min-height: 0;
   align-items: start;
   align-content: start;
   width: 100%;
@@ -3159,7 +3190,8 @@ input::placeholder {
   display: flex;
   flex-direction: column;
   gap: var(--s-2);
-  height: 100%;
+  flex: 1;
+  min-height: 0;
   padding: var(--s-2);
 }
 
@@ -3338,6 +3370,7 @@ input::placeholder {
   display: flex;
   flex-direction: column;
   gap: var(--s-3);
+  min-width: 0;
 }
 
 .containers-stacks-toolbar {
@@ -3351,18 +3384,21 @@ input::placeholder {
   display: flex;
   flex-direction: column;
   gap: var(--s-3);
+  min-width: 0;
 }
 
 .containers-networks-view {
   display: flex;
   flex-direction: column;
   gap: var(--s-3);
+  min-width: 0;
 }
 
 .containers-volumes-view {
   display: flex;
   flex-direction: column;
   gap: var(--s-3);
+  min-width: 0;
 }
 
 .containers-images-toolbar {
@@ -3512,6 +3548,14 @@ input::placeholder {
   gap: 6px;
 }
 
+.network-details-subnet {
+  font-weight: 600;
+}
+
+.network-details-gateway {
+  color: var(--color-text-muted);
+}
+
 .network-details-table {
   width: 100%;
   border-collapse: collapse;
@@ -3530,6 +3574,36 @@ input::placeholder {
 .network-details-table td {
   padding: 6px 0;
   border-top: 1px solid color-mix(in srgb, var(--color-border), transparent 30%);
+}
+
+.network-details-meta {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--s-3);
+}
+
+.network-details-meta-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.network-details-meta-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+}
+
+.network-details-meta-value {
+  color: var(--color-text);
+  font-size: 0.9rem;
+}
+
+@media (max-width: 680px) {
+  .network-details-meta {
+    grid-template-columns: 1fr;
+  }
 }
 
 .volumes-table th:nth-child(1),
@@ -4408,6 +4482,10 @@ input::placeholder {
     grid-column: span 2;
   }
 
+  #view-settings {
+    grid-column: span 2;
+  }
+
   #view-containers,
   #view-stacks,
   #view-images,
@@ -4582,13 +4660,26 @@ input::placeholder {
 
   .containers-shell-layout {
     flex-direction: column;
+  }
+
+  /* In split modes (shell/logs/resources) the panel must fill the available height
+     so the inner log/output areas can scroll. */
+  #view-containers.shell-mode {
+    /* Match main's padding so the split view uses the true visible area on mobile. */
+    height: calc(100dvh - var(--mobile-nav-h, 0px) - var(--s-3) - var(--s-4));
+    min-height: 0;
+  }
+
+  #view-containers.shell-mode .containers-shell-layout {
+    flex: 1;
     height: auto;
     max-height: none;
+    min-height: 0;
   }
 
   .containers-shell-list {
     width: 100%;
-    max-height: 220px;
+    max-height: min(220px, 34dvh);
   }
 
   .logs-actions {
@@ -4891,7 +4982,7 @@ input::placeholder {
 
 .settings-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
   gap: var(--s-4);
 }
 
@@ -4956,6 +5047,172 @@ input::placeholder {
   gap: var(--s-2);
   font-size: inherit;
   line-height: 1.2;
+}
+
+.scheduler-settings {
+  display: grid;
+  gap: var(--s-3);
+}
+
+.scheduler-mode-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-2);
+  flex-wrap: wrap;
+}
+
+.scheduler-mode-toggle .toggle-btn.is-active {
+  background: color-mix(in srgb, var(--color-primary), transparent 86%);
+  border-color: color-mix(in srgb, var(--color-primary), transparent 60%);
+  color: var(--color-primary);
+}
+
+.scheduler-panel {
+  display: grid;
+  gap: var(--s-2);
+}
+
+.scheduler-basic-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--s-3);
+  flex-wrap: wrap;
+}
+
+.scheduler-days-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+}
+
+.scheduler-days-field .settings-label-title {
+  font-size: 0.85rem;
+  font-weight: 400;
+}
+
+.scheduler-days-dropdown {
+  position: relative;
+}
+
+.scheduler-days-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 40px;
+  padding: 0;
+  border-radius: var(--r-control);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+  cursor: pointer;
+  transition: border-color 0.2s ease, background 0.2s ease, color 0.2s ease;
+}
+
+.scheduler-days-trigger:hover {
+  background: color-mix(in srgb, var(--color-surface), var(--color-text) 6%);
+  border-color: color-mix(in srgb, var(--color-border), var(--color-text) 12%);
+  color: var(--color-text);
+}
+
+.scheduler-days-trigger.is-open {
+  border-color: color-mix(in srgb, var(--color-primary), transparent 40%);
+  background: color-mix(in srgb, var(--color-primary), transparent 88%);
+  color: var(--color-primary);
+}
+
+.scheduler-days-icon {
+  width: 24px;
+  height: 24px;
+  display: block;
+}
+
+.scheduler-days-menu {
+  position: absolute;
+  top: calc(100% + var(--s-1));
+  left: 0;
+  z-index: 8;
+  min-width: 200px;
+  padding: var(--s-2);
+  border-radius: var(--r-control);
+  border: 1px solid color-mix(in srgb, var(--color-border), transparent 20%);
+  background: var(--color-surface);
+  box-shadow: 0 12px 24px rgba(0, 0, 0, 0.14);
+}
+
+.scheduler-legacy-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-2);
+  padding: var(--s-2) var(--s-3);
+  border: 1px solid color-mix(in srgb, var(--color-warning), transparent 55%);
+  border-radius: var(--r-control);
+  background: color-mix(in srgb, var(--color-warning), transparent 90%);
+  color: var(--color-text);
+  font-size: 0.85rem;
+}
+
+.scheduler-days {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--s-2);
+}
+
+.scheduler-day {
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.scheduler-day.is-active {
+  border-color: color-mix(in srgb, var(--color-primary), transparent 40%);
+  background: color-mix(in srgb, var(--color-primary), transparent 86%);
+  color: var(--color-primary);
+}
+
+.scheduler-time-field input,
+.scheduler-cron-field input {
+  width: 100%;
+}
+
+.scheduler-time-field {
+  min-width: 160px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-1);
+  font-size: 0.85rem;
+}
+
+.scheduler-time-field input {
+  width: 140px;
+}
+
+.scheduler-cron-field input {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+.cron-guide-section + .cron-guide-section {
+  margin-top: var(--s-3);
+}
+
+.cron-guide-title {
+  font-weight: 600;
+  margin-bottom: var(--s-2);
+}
+
+.cron-guide-row code,
+.cron-guide-section code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+}
+
+.cron-guide-examples {
+  display: grid;
+  gap: var(--s-2);
 }
 
 .settings-row.policy-row select {

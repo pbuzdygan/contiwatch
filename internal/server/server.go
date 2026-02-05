@@ -40,8 +40,10 @@ type Server struct {
 
 	schedulerMu       sync.Mutex
 	schedulerCancel   context.CancelFunc
-	schedulerInterval time.Duration
+	schedulerKey      string
+	schedulerMode     string
 	schedulerEnabled  bool
+	schedulerNextRun  time.Time
 	schedulerParent   context.Context
 
 	logMu  sync.RWMutex
@@ -272,6 +274,9 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/scan/state", s.handleScanState)
 	s.mux.HandleFunc("/api/scan", s.handleScan)
 	s.mux.HandleFunc("/api/scan/stop", s.handleScanStop)
+	s.mux.HandleFunc("/api/scheduler/status", s.handleSchedulerStatus)
+	s.mux.HandleFunc("/api/scheduler/preview/basic", s.handleSchedulerPreviewBasic)
+	s.mux.HandleFunc("/api/scheduler/preview/cron", s.handleSchedulerPreviewCron)
 	s.mux.HandleFunc("/api/update/", s.handleUpdateContainer)
 	s.mux.HandleFunc("/api/containers", s.handleContainers)
 	s.mux.HandleFunc("/api/containers/action", s.handleContainerAction)
@@ -344,6 +349,12 @@ func (s *Server) agentAllowed(path string) bool {
 		return true
 	case path == "/api/scan/stop":
 		return true
+	case path == "/api/scheduler/status":
+		return true
+	case path == "/api/scheduler/preview/basic":
+		return true
+	case path == "/api/scheduler/preview/cron":
+		return true
 	case path == "/api/logs":
 		return true
 	case path == "/api/notifications/test":
@@ -392,9 +403,26 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, err)
 			return
 		}
+		if payload.SchedulerEnabled || shouldApplySchedulerPlan(payload) {
+			validateCfg := before
+			validateCfg.SchedulerEnabled = payload.SchedulerEnabled
+			if shouldApplySchedulerPlan(payload) {
+				validateCfg.SchedulerPlan = payload.SchedulerPlan
+			}
+			if payload.ScanIntervalSec > 0 {
+				validateCfg.ScanIntervalSec = payload.ScanIntervalSec
+			}
+			if _, err := buildSchedulerPlan(validateCfg); err != nil && payload.SchedulerEnabled {
+				writeError(w, http.StatusBadRequest, err)
+				return
+			}
+		}
 		updated, err := s.store.Update(func(cfg *config.Config) {
 			cfg.ScanIntervalSec = payload.ScanIntervalSec
 			cfg.SchedulerEnabled = payload.SchedulerEnabled
+			if shouldApplySchedulerPlan(payload) {
+				cfg.SchedulerPlan = payload.SchedulerPlan
+			}
 			cfg.GlobalPolicy = payload.GlobalPolicy
 			cfg.DiscordWebhookURL = payload.DiscordWebhookURL
 			if payload.DiscordNotificationsEnabled != nil {
@@ -423,6 +451,37 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 		}
 		if before.ScanIntervalSec != updated.ScanIntervalSec {
 			changes = append(changes, fmt.Sprintf("scan_interval_sec=%d", updated.ScanIntervalSec))
+		}
+		if before.SchedulerPlan.Mode != updated.SchedulerPlan.Mode {
+			changes = append(changes, fmt.Sprintf("scheduler_mode=%s", updated.SchedulerPlan.Mode))
+		} else if updated.SchedulerPlan.Mode == config.SchedulerModeBasic &&
+			(updated.SchedulerPlan.Basic != nil || before.SchedulerPlan.Basic != nil) {
+			beforeBasic := before.SchedulerPlan.Basic
+			afterBasic := updated.SchedulerPlan.Basic
+			beforeTime := ""
+			afterTime := ""
+			if beforeBasic != nil {
+				beforeTime = beforeBasic.Time
+			}
+			if afterBasic != nil {
+				afterTime = afterBasic.Time
+			}
+			if beforeTime != afterTime {
+				changes = append(changes, fmt.Sprintf("scheduler_basic_time=%s", afterTime))
+			}
+		} else if updated.SchedulerPlan.Mode == config.SchedulerModeCron &&
+			(updated.SchedulerPlan.Cron != nil || before.SchedulerPlan.Cron != nil) {
+			beforeExpr := ""
+			afterExpr := ""
+			if before.SchedulerPlan.Cron != nil {
+				beforeExpr = before.SchedulerPlan.Cron.Expr
+			}
+			if updated.SchedulerPlan.Cron != nil {
+				afterExpr = updated.SchedulerPlan.Cron.Expr
+			}
+			if beforeExpr != afterExpr {
+				changes = append(changes, "scheduler_cron=updated")
+			}
 		}
 		if before.GlobalPolicy != updated.GlobalPolicy {
 			changes = append(changes, fmt.Sprintf("global_policy=%s→%s", before.GlobalPolicy, updated.GlobalPolicy))
@@ -1988,10 +2047,6 @@ func (s *Server) UpdateSchedulerLocked(cfg config.Config) {
 	}
 
 	enabled := cfg.SchedulerEnabled
-	interval := time.Duration(cfg.ScanIntervalSec) * time.Second
-	if interval <= 0 {
-		interval = 5 * time.Minute
-	}
 
 	// Stop scheduler if disabled.
 	if !enabled {
@@ -2003,12 +2058,21 @@ func (s *Server) UpdateSchedulerLocked(cfg config.Config) {
 			s.addLog("info", "scheduler disabled")
 		}
 		s.schedulerEnabled = false
-		s.schedulerInterval = 0
+		s.schedulerKey = ""
+		s.schedulerMode = ""
+		s.schedulerNextRun = time.Time{}
 		return
 	}
 
+	plan, err := buildSchedulerPlan(cfg)
+	if err != nil {
+		s.addLog("error", fmt.Sprintf("scheduler config invalid: %v", err))
+		return
+	}
+	key := schedulerPlanKey(plan)
+
 	// No change.
-	if s.schedulerCancel != nil && s.schedulerEnabled && s.schedulerInterval == interval {
+	if s.schedulerCancel != nil && s.schedulerEnabled && s.schedulerKey == key {
 		return
 	}
 
@@ -2021,37 +2085,15 @@ func (s *Server) UpdateSchedulerLocked(cfg config.Config) {
 	runCtx, cancel := context.WithCancel(s.schedulerParent)
 	s.schedulerCancel = cancel
 	s.schedulerEnabled = true
-	s.schedulerInterval = interval
-	s.addLog("info", fmt.Sprintf("scheduler enabled (interval=%s)", interval))
+	s.schedulerKey = key
+	s.schedulerMode = plan.mode
+	if plan.mode == config.SchedulerModeLegacy {
+		s.addLog("info", fmt.Sprintf("scheduler enabled (interval=%s)", plan.interval))
+	} else {
+		s.addLog("info", fmt.Sprintf("scheduler enabled (mode=%s)", plan.mode))
+	}
 
-	go func() {
-		ticker := time.NewTicker(interval)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-runCtx.Done():
-				return
-			case <-ticker.C:
-				currentCfg := s.store.Get()
-				s.setAllScanStates(currentCfg, scanStatePending)
-				s.addLog("info", "scheduled scan started")
-				result, err := s.runScan(runCtx)
-				if err != nil && !errors.Is(err, errScanInProgress) {
-					s.addLog("error", fmt.Sprintf("scheduled scan failed: %v", err))
-				}
-				if len(currentCfg.RemoteServers) > 0 {
-					s.addLog("info", fmt.Sprintf("scheduled remote scans started: servers=%d", len(currentCfg.RemoteServers)))
-					remoteCtx, cancel := context.WithTimeout(runCtx, 2*time.Minute)
-					s.triggerRemoteScans(remoteCtx, currentCfg.RemoteServers)
-					cancel()
-					s.addLog("info", "scheduled remote scans finished")
-				}
-				if err == nil {
-					s.addLog("info", fmt.Sprintf("scheduled scan finished: containers=%d", len(result.Containers)))
-				}
-			}
-		}
-	}()
+	go s.runSchedulerLoop(runCtx, plan)
 }
 
 func writeJSON(w http.ResponseWriter, status int, payload interface{}) {
