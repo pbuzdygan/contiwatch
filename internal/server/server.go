@@ -759,7 +759,7 @@ func (s *Server) handleNotificationsTest(w http.ResponseWriter, r *http.Request)
 	}
 	client := notify.NewDiscordClient(webhookURL)
 	const discordBlue = 0x3498DB
-	if err := client.SendEmbed("Contiwatch test", "Webhook verified.", discordBlue); err != nil {
+	if err := client.SendEmbedWithLogo("Contiwatch test", "Webhook verified.", discordBlue); err != nil {
 		s.addLog("warn", fmt.Sprintf("Webhook test - Failed: %v", err))
 		writeError(w, http.StatusBadRequest, err)
 		return
@@ -925,8 +925,7 @@ func (s *Server) handleScan(w http.ResponseWriter, r *http.Request) {
 		}
 		s.addLog("info", fmt.Sprintf("remote scan finished: %s %s", remote.Name, s.formatScanSummary(result)))
 		s.logDigestUnknown(result)
-		s.sendScanNotification(cfg, result)
-		if _, err := s.autoUpdateRemote(ctx, cfg, remote, result); err != nil {
+		if _, err := s.autoUpdateRemote(ctx, cfg, remote, &result); err != nil {
 			if ctx.Err() != nil {
 				s.setScanState(false, remote.Name, scanStateCancelled)
 			} else {
@@ -936,6 +935,7 @@ func (s *Server) handleScan(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadGateway, err)
 			return
 		}
+		s.sendScanNotification(cfg, result)
 		s.setScanState(false, remote.Name, scanStateDone)
 		s.updateLastScans(result)
 		s.addLog("info", fmt.Sprintf("manual scan finished: containers=%d", len(result.Containers)))
@@ -1114,7 +1114,7 @@ func (s *Server) handleUpdateContainer(w http.ResponseWriter, r *http.Request) {
 		shortID(result.AppliedImageID),
 		result.Message,
 	)
-	s.logUpdateResult(cfg, serverLabel, serverScope, result, isRemote)
+	s.logUpdateResult(cfg, serverLabel, serverScope, result, isRemote, true)
 
 	s.lastScanMutex.Lock()
 	for i := range s.lastScan.Containers {
@@ -1613,9 +1613,7 @@ func (s *Server) triggerRemoteScans(ctx context.Context, remotes []config.Remote
 		}
 		s.addLog("info", fmt.Sprintf("remote scan finished: %s %s", remote.Name, s.formatScanSummary(result)))
 		s.logDigestUnknown(result)
-		s.updateLastScans(result)
-		s.sendScanNotification(cfg, result)
-		if _, err := s.autoUpdateRemote(ctx, cfg, remote, result); err != nil {
+		if _, err := s.autoUpdateRemote(ctx, cfg, remote, &result); err != nil {
 			if ctx.Err() != nil {
 				s.setScanState(false, remote.Name, scanStateCancelled)
 			} else {
@@ -1625,6 +1623,8 @@ func (s *Server) triggerRemoteScans(ctx context.Context, remotes []config.Remote
 			failCount++
 			continue
 		}
+		s.updateLastScans(result)
+		s.sendScanNotification(cfg, result)
 		s.setScanState(false, remote.Name, scanStateDone)
 		successCount++
 	}
@@ -1688,16 +1688,17 @@ func (s *Server) buildScanSummary(result dockerwatcher.ScanResult) scanSummary {
 			summary.updated++
 			summary.updatedNames = append(summary.updatedNames, container.Name)
 		}
-		if !container.UpdateAvailable {
+		hasUpdate := container.UpdateAvailable || container.Updated
+		if !hasUpdate {
 			continue
 		}
 		summary.updates++
 		summary.updateNames = append(summary.updateNames, container.Name)
-		if strings.HasPrefix(container.Error, "skipped:") {
+		if container.UpdateAvailable && strings.HasPrefix(container.Error, "skipped:") {
 			summary.skipped++
 			continue
 		}
-		if container.Policy == config.PolicyUpdate && !container.Updated {
+		if container.UpdateAvailable && container.Policy == config.PolicyUpdate && !container.Updated {
 			summary.ready++
 		}
 	}
@@ -1730,12 +1731,10 @@ func (s *Server) sendScanNotification(cfg config.Config, result dockerwatcher.Sc
 	lines := []string{
 		fmt.Sprintf("Server: %s (%s)", serverLabel, scope),
 		fmt.Sprintf("Scanned images: %d", summary.total),
-		fmt.Sprintf("Skipped: %d", summary.skipped),
 	}
 	if notifyUpdates {
 		lines = append(lines,
 			fmt.Sprintf("Updates available: %d", summary.updates),
-			fmt.Sprintf("Ready to update: %d", summary.ready),
 		)
 	}
 	if notifyUpdated {
@@ -1749,7 +1748,7 @@ func (s *Server) sendScanNotification(cfg config.Config, result dockerwatcher.Sc
 		description += "\n\nContainers updated:\n- " + strings.Join(summary.updatedNames, "\n- ")
 	}
 	const discordBlue = 0x3498DB
-	_ = s.discord.SendEmbed("Contiwatch updates:", description, discordBlue)
+	_ = s.discord.SendEmbedWithLogo("Contiwatch updates", description, discordBlue)
 }
 
 func (s *Server) sendUpdateNotification(cfg config.Config, serverName string, result dockerwatcher.UpdateResult) {
@@ -1774,10 +1773,10 @@ func (s *Server) sendUpdateNotification(cfg config.Config, serverName string, re
 		result.CurrentState,
 	)
 	const discordBlue = 0x3498DB
-	_ = s.discord.SendEmbed("Contiwatch updates:", description, discordBlue)
+	_ = s.discord.SendEmbedWithLogo("Contiwatch updates", description, discordBlue)
 }
 
-func (s *Server) logUpdateResult(cfg config.Config, serverLabel, serverScope string, result dockerwatcher.UpdateResult, isRemote bool) {
+func (s *Server) logUpdateResult(cfg config.Config, serverLabel, serverScope string, result dockerwatcher.UpdateResult, isRemote bool, notifyDiscord bool) {
 	imageInfo := ""
 	if result.OldImageID != "" || result.NewImageID != "" || result.AppliedImageID != "" {
 		imageInfo = fmt.Sprintf(" [old=%s new=%s applied=%s]", shortID(result.OldImageID), shortID(result.NewImageID), shortID(result.AppliedImageID))
@@ -1796,10 +1795,15 @@ func (s *Server) logUpdateResult(cfg config.Config, serverLabel, serverScope str
 	} else {
 		s.addLog("info", fmt.Sprintf("update skipped %s on %s (%s)%s: %s", result.Name, serverLabel, serverScope, imageInfo, result.Message))
 	}
-	s.sendUpdateNotification(cfg, serverLabel, result)
+	if notifyDiscord {
+		s.sendUpdateNotification(cfg, serverLabel, result)
+	}
 }
 
-func (s *Server) autoUpdateRemote(ctx context.Context, cfg config.Config, remote config.RemoteServer, result dockerwatcher.ScanResult) (int, error) {
+func (s *Server) autoUpdateRemote(ctx context.Context, cfg config.Config, remote config.RemoteServer, result *dockerwatcher.ScanResult) (int, error) {
+	if result == nil {
+		return 0, nil
+	}
 	targets := []dockerwatcher.ContainerStatus{}
 	for _, container := range result.Containers {
 		if !container.UpdateAvailable {
@@ -1848,7 +1852,8 @@ func (s *Server) autoUpdateRemote(ctx context.Context, cfg config.Config, remote
 				continue
 			}
 		}
-		s.logUpdateResult(cfg, remote.Name, "remote", updateResult, true)
+		s.logUpdateResult(cfg, remote.Name, "remote", updateResult, true, false)
+		updateScanResultContainer(result, container.ID, updateResult)
 		if updateResult.Updated {
 			updatedCount++
 		}
@@ -1963,7 +1968,7 @@ func (s *Server) autoUpdateLocal(ctx context.Context, cfg config.Config, local c
 			s.addLog("error", fmt.Sprintf("update failed: %s: %v", container.ID, err))
 			continue
 		}
-		s.logUpdateResult(cfg, local.Name, "local", updateResult, false)
+		s.logUpdateResult(cfg, local.Name, "local", updateResult, false, false)
 		if updateResult.Updated {
 			updatedCount++
 		}

@@ -9,7 +9,6 @@
 - Container Networks: fixing Connect/Disconnect action where using ```name``` of network was causing ```null``` exception. Now action is buffered with fallback to ```id``` when ```name``` is empty.
 - IP columns: correcting IP sorting - now it compares each of the 4 octets as numbers, so ```10.0.0.2``` correctly sorts before ```10.0.0.100```
 
-
 ## New features
 - Containers: added Remove action (docker rm) - now possible to remove stopped container directly from UI.
 - Containers: added Volumes view (list, details modal, safe remove with blockers, and prune unused).
@@ -19,6 +18,7 @@
 ## Improvements
 - UI: Container Networks - improving UI ergonomy
 - UI: Settings - improving menu ergonomy
+- Webhook notification: unifying notification content and merging them to avoid frequent and detailed notification "spam"
 
 ## v1.2.4
 

@@ -190,7 +190,7 @@ func main() {
 		const discordBlue = 0x3498DB
 		discordClient := notify.NewDiscordClient(cfg.DiscordWebhookURL)
 		go func() {
-			if err := discordClient.SendEmbed("Contiwatch started", description, discordBlue); err != nil {
+			if err := discordClient.SendEmbedWithLogo("Contiwatch started", description, discordBlue); err != nil {
 				log.Printf("startup: discord notification failed: %v", err)
 			}
 		}()
