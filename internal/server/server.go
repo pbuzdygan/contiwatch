@@ -40,8 +40,10 @@ type Server struct {
 
 	schedulerMu       sync.Mutex
 	schedulerCancel   context.CancelFunc
-	schedulerInterval time.Duration
+	schedulerKey      string
+	schedulerMode     string
 	schedulerEnabled  bool
+	schedulerNextRun  time.Time
 	schedulerParent   context.Context
 
 	logMu  sync.RWMutex
@@ -272,6 +274,9 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/scan/state", s.handleScanState)
 	s.mux.HandleFunc("/api/scan", s.handleScan)
 	s.mux.HandleFunc("/api/scan/stop", s.handleScanStop)
+	s.mux.HandleFunc("/api/scheduler/status", s.handleSchedulerStatus)
+	s.mux.HandleFunc("/api/scheduler/preview/basic", s.handleSchedulerPreviewBasic)
+	s.mux.HandleFunc("/api/scheduler/preview/cron", s.handleSchedulerPreviewCron)
 	s.mux.HandleFunc("/api/update/", s.handleUpdateContainer)
 	s.mux.HandleFunc("/api/containers", s.handleContainers)
 	s.mux.HandleFunc("/api/containers/action", s.handleContainerAction)
@@ -282,6 +287,15 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/images/pull", s.handleImagesPull)
 	s.mux.HandleFunc("/api/images/prune", s.handleImagesPrune)
 	s.mux.HandleFunc("/api/images/remove", s.handleImagesRemove)
+	s.mux.HandleFunc("/api/networks", s.handleNetworks)
+	s.mux.HandleFunc("/api/networks/details", s.handleNetworkDetails)
+	s.mux.HandleFunc("/api/networks/remove", s.handleNetworksRemove)
+	s.mux.HandleFunc("/api/networks/prune", s.handleNetworksPrune)
+	s.mux.HandleFunc("/api/networks/connect", s.handleNetworkConnect)
+	s.mux.HandleFunc("/api/networks/disconnect", s.handleNetworkDisconnect)
+	s.mux.HandleFunc("/api/volumes", s.handleVolumes)
+	s.mux.HandleFunc("/api/volumes/remove", s.handleVolumesRemove)
+	s.mux.HandleFunc("/api/volumes/prune", s.handleVolumesPrune)
 	s.mux.HandleFunc("/api/stacks", s.handleStacks)
 	s.mux.HandleFunc("/api/stacks/get", s.handleStackGet)
 	s.mux.HandleFunc("/api/stacks/save", s.handleStackSave)
@@ -335,6 +349,12 @@ func (s *Server) agentAllowed(path string) bool {
 		return true
 	case path == "/api/scan/stop":
 		return true
+	case path == "/api/scheduler/status":
+		return true
+	case path == "/api/scheduler/preview/basic":
+		return true
+	case path == "/api/scheduler/preview/cron":
+		return true
 	case path == "/api/logs":
 		return true
 	case path == "/api/notifications/test":
@@ -350,6 +370,10 @@ func (s *Server) agentAllowed(path string) bool {
 	case path == "/api/containers/logs":
 		return true
 	case strings.HasPrefix(path, "/api/images"):
+		return true
+	case strings.HasPrefix(path, "/api/networks"):
+		return true
+	case strings.HasPrefix(path, "/api/volumes"):
 		return true
 	case strings.HasPrefix(path, "/api/stacks"):
 		return true
@@ -379,9 +403,26 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, err)
 			return
 		}
+		if payload.SchedulerEnabled || shouldApplySchedulerPlan(payload) {
+			validateCfg := before
+			validateCfg.SchedulerEnabled = payload.SchedulerEnabled
+			if shouldApplySchedulerPlan(payload) {
+				validateCfg.SchedulerPlan = payload.SchedulerPlan
+			}
+			if payload.ScanIntervalSec > 0 {
+				validateCfg.ScanIntervalSec = payload.ScanIntervalSec
+			}
+			if _, err := buildSchedulerPlan(validateCfg); err != nil && payload.SchedulerEnabled {
+				writeError(w, http.StatusBadRequest, err)
+				return
+			}
+		}
 		updated, err := s.store.Update(func(cfg *config.Config) {
 			cfg.ScanIntervalSec = payload.ScanIntervalSec
 			cfg.SchedulerEnabled = payload.SchedulerEnabled
+			if shouldApplySchedulerPlan(payload) {
+				cfg.SchedulerPlan = payload.SchedulerPlan
+			}
 			cfg.GlobalPolicy = payload.GlobalPolicy
 			cfg.DiscordWebhookURL = payload.DiscordWebhookURL
 			if payload.DiscordNotificationsEnabled != nil {
@@ -410,6 +451,37 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 		}
 		if before.ScanIntervalSec != updated.ScanIntervalSec {
 			changes = append(changes, fmt.Sprintf("scan_interval_sec=%d", updated.ScanIntervalSec))
+		}
+		if before.SchedulerPlan.Mode != updated.SchedulerPlan.Mode {
+			changes = append(changes, fmt.Sprintf("scheduler_mode=%s", updated.SchedulerPlan.Mode))
+		} else if updated.SchedulerPlan.Mode == config.SchedulerModeBasic &&
+			(updated.SchedulerPlan.Basic != nil || before.SchedulerPlan.Basic != nil) {
+			beforeBasic := before.SchedulerPlan.Basic
+			afterBasic := updated.SchedulerPlan.Basic
+			beforeTime := ""
+			afterTime := ""
+			if beforeBasic != nil {
+				beforeTime = beforeBasic.Time
+			}
+			if afterBasic != nil {
+				afterTime = afterBasic.Time
+			}
+			if beforeTime != afterTime {
+				changes = append(changes, fmt.Sprintf("scheduler_basic_time=%s", afterTime))
+			}
+		} else if updated.SchedulerPlan.Mode == config.SchedulerModeCron &&
+			(updated.SchedulerPlan.Cron != nil || before.SchedulerPlan.Cron != nil) {
+			beforeExpr := ""
+			afterExpr := ""
+			if before.SchedulerPlan.Cron != nil {
+				beforeExpr = before.SchedulerPlan.Cron.Expr
+			}
+			if updated.SchedulerPlan.Cron != nil {
+				afterExpr = updated.SchedulerPlan.Cron.Expr
+			}
+			if beforeExpr != afterExpr {
+				changes = append(changes, "scheduler_cron=updated")
+			}
 		}
 		if before.GlobalPolicy != updated.GlobalPolicy {
 			changes = append(changes, fmt.Sprintf("global_policy=%s→%s", before.GlobalPolicy, updated.GlobalPolicy))
@@ -687,7 +759,7 @@ func (s *Server) handleNotificationsTest(w http.ResponseWriter, r *http.Request)
 	}
 	client := notify.NewDiscordClient(webhookURL)
 	const discordBlue = 0x3498DB
-	if err := client.SendEmbed("Contiwatch test", "Webhook verified.", discordBlue); err != nil {
+	if err := client.SendEmbedWithLogo("Contiwatch test", "Webhook verified.", discordBlue); err != nil {
 		s.addLog("warn", fmt.Sprintf("Webhook test - Failed: %v", err))
 		writeError(w, http.StatusBadRequest, err)
 		return
@@ -853,8 +925,7 @@ func (s *Server) handleScan(w http.ResponseWriter, r *http.Request) {
 		}
 		s.addLog("info", fmt.Sprintf("remote scan finished: %s %s", remote.Name, s.formatScanSummary(result)))
 		s.logDigestUnknown(result)
-		s.sendScanNotification(cfg, result)
-		if _, err := s.autoUpdateRemote(ctx, cfg, remote, result); err != nil {
+		if _, err := s.autoUpdateRemote(ctx, cfg, remote, &result); err != nil {
 			if ctx.Err() != nil {
 				s.setScanState(false, remote.Name, scanStateCancelled)
 			} else {
@@ -864,6 +935,7 @@ func (s *Server) handleScan(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadGateway, err)
 			return
 		}
+		s.sendScanNotification(cfg, result)
 		s.setScanState(false, remote.Name, scanStateDone)
 		s.updateLastScans(result)
 		s.addLog("info", fmt.Sprintf("manual scan finished: containers=%d", len(result.Containers)))
@@ -1042,7 +1114,7 @@ func (s *Server) handleUpdateContainer(w http.ResponseWriter, r *http.Request) {
 		shortID(result.AppliedImageID),
 		result.Message,
 	)
-	s.logUpdateResult(cfg, serverLabel, serverScope, result, isRemote)
+	s.logUpdateResult(cfg, serverLabel, serverScope, result, isRemote, true)
 
 	s.lastScanMutex.Lock()
 	for i := range s.lastScan.Containers {
@@ -1541,9 +1613,7 @@ func (s *Server) triggerRemoteScans(ctx context.Context, remotes []config.Remote
 		}
 		s.addLog("info", fmt.Sprintf("remote scan finished: %s %s", remote.Name, s.formatScanSummary(result)))
 		s.logDigestUnknown(result)
-		s.updateLastScans(result)
-		s.sendScanNotification(cfg, result)
-		if _, err := s.autoUpdateRemote(ctx, cfg, remote, result); err != nil {
+		if _, err := s.autoUpdateRemote(ctx, cfg, remote, &result); err != nil {
 			if ctx.Err() != nil {
 				s.setScanState(false, remote.Name, scanStateCancelled)
 			} else {
@@ -1553,6 +1623,8 @@ func (s *Server) triggerRemoteScans(ctx context.Context, remotes []config.Remote
 			failCount++
 			continue
 		}
+		s.updateLastScans(result)
+		s.sendScanNotification(cfg, result)
 		s.setScanState(false, remote.Name, scanStateDone)
 		successCount++
 	}
@@ -1616,16 +1688,17 @@ func (s *Server) buildScanSummary(result dockerwatcher.ScanResult) scanSummary {
 			summary.updated++
 			summary.updatedNames = append(summary.updatedNames, container.Name)
 		}
-		if !container.UpdateAvailable {
+		hasUpdate := container.UpdateAvailable || container.Updated
+		if !hasUpdate {
 			continue
 		}
 		summary.updates++
 		summary.updateNames = append(summary.updateNames, container.Name)
-		if strings.HasPrefix(container.Error, "skipped:") {
+		if container.UpdateAvailable && strings.HasPrefix(container.Error, "skipped:") {
 			summary.skipped++
 			continue
 		}
-		if container.Policy == config.PolicyUpdate && !container.Updated {
+		if container.UpdateAvailable && container.Policy == config.PolicyUpdate && !container.Updated {
 			summary.ready++
 		}
 	}
@@ -1658,12 +1731,10 @@ func (s *Server) sendScanNotification(cfg config.Config, result dockerwatcher.Sc
 	lines := []string{
 		fmt.Sprintf("Server: %s (%s)", serverLabel, scope),
 		fmt.Sprintf("Scanned images: %d", summary.total),
-		fmt.Sprintf("Skipped: %d", summary.skipped),
 	}
 	if notifyUpdates {
 		lines = append(lines,
 			fmt.Sprintf("Updates available: %d", summary.updates),
-			fmt.Sprintf("Ready to update: %d", summary.ready),
 		)
 	}
 	if notifyUpdated {
@@ -1677,7 +1748,7 @@ func (s *Server) sendScanNotification(cfg config.Config, result dockerwatcher.Sc
 		description += "\n\nContainers updated:\n- " + strings.Join(summary.updatedNames, "\n- ")
 	}
 	const discordBlue = 0x3498DB
-	_ = s.discord.SendEmbed("Contiwatch updates:", description, discordBlue)
+	_ = s.discord.SendEmbedWithLogo("Contiwatch updates", description, discordBlue)
 }
 
 func (s *Server) sendUpdateNotification(cfg config.Config, serverName string, result dockerwatcher.UpdateResult) {
@@ -1702,10 +1773,10 @@ func (s *Server) sendUpdateNotification(cfg config.Config, serverName string, re
 		result.CurrentState,
 	)
 	const discordBlue = 0x3498DB
-	_ = s.discord.SendEmbed("Contiwatch updates:", description, discordBlue)
+	_ = s.discord.SendEmbedWithLogo("Contiwatch updates", description, discordBlue)
 }
 
-func (s *Server) logUpdateResult(cfg config.Config, serverLabel, serverScope string, result dockerwatcher.UpdateResult, isRemote bool) {
+func (s *Server) logUpdateResult(cfg config.Config, serverLabel, serverScope string, result dockerwatcher.UpdateResult, isRemote bool, notifyDiscord bool) {
 	imageInfo := ""
 	if result.OldImageID != "" || result.NewImageID != "" || result.AppliedImageID != "" {
 		imageInfo = fmt.Sprintf(" [old=%s new=%s applied=%s]", shortID(result.OldImageID), shortID(result.NewImageID), shortID(result.AppliedImageID))
@@ -1724,10 +1795,15 @@ func (s *Server) logUpdateResult(cfg config.Config, serverLabel, serverScope str
 	} else {
 		s.addLog("info", fmt.Sprintf("update skipped %s on %s (%s)%s: %s", result.Name, serverLabel, serverScope, imageInfo, result.Message))
 	}
-	s.sendUpdateNotification(cfg, serverLabel, result)
+	if notifyDiscord {
+		s.sendUpdateNotification(cfg, serverLabel, result)
+	}
 }
 
-func (s *Server) autoUpdateRemote(ctx context.Context, cfg config.Config, remote config.RemoteServer, result dockerwatcher.ScanResult) (int, error) {
+func (s *Server) autoUpdateRemote(ctx context.Context, cfg config.Config, remote config.RemoteServer, result *dockerwatcher.ScanResult) (int, error) {
+	if result == nil {
+		return 0, nil
+	}
 	targets := []dockerwatcher.ContainerStatus{}
 	for _, container := range result.Containers {
 		if !container.UpdateAvailable {
@@ -1776,7 +1852,8 @@ func (s *Server) autoUpdateRemote(ctx context.Context, cfg config.Config, remote
 				continue
 			}
 		}
-		s.logUpdateResult(cfg, remote.Name, "remote", updateResult, true)
+		s.logUpdateResult(cfg, remote.Name, "remote", updateResult, true, false)
+		updateScanResultContainer(result, container.ID, updateResult)
 		if updateResult.Updated {
 			updatedCount++
 		}
@@ -1891,7 +1968,7 @@ func (s *Server) autoUpdateLocal(ctx context.Context, cfg config.Config, local c
 			s.addLog("error", fmt.Sprintf("update failed: %s: %v", container.ID, err))
 			continue
 		}
-		s.logUpdateResult(cfg, local.Name, "local", updateResult, false)
+		s.logUpdateResult(cfg, local.Name, "local", updateResult, false, false)
 		if updateResult.Updated {
 			updatedCount++
 		}
@@ -1975,10 +2052,6 @@ func (s *Server) UpdateSchedulerLocked(cfg config.Config) {
 	}
 
 	enabled := cfg.SchedulerEnabled
-	interval := time.Duration(cfg.ScanIntervalSec) * time.Second
-	if interval <= 0 {
-		interval = 5 * time.Minute
-	}
 
 	// Stop scheduler if disabled.
 	if !enabled {
@@ -1990,12 +2063,21 @@ func (s *Server) UpdateSchedulerLocked(cfg config.Config) {
 			s.addLog("info", "scheduler disabled")
 		}
 		s.schedulerEnabled = false
-		s.schedulerInterval = 0
+		s.schedulerKey = ""
+		s.schedulerMode = ""
+		s.schedulerNextRun = time.Time{}
 		return
 	}
 
+	plan, err := buildSchedulerPlan(cfg)
+	if err != nil {
+		s.addLog("error", fmt.Sprintf("scheduler config invalid: %v", err))
+		return
+	}
+	key := schedulerPlanKey(plan)
+
 	// No change.
-	if s.schedulerCancel != nil && s.schedulerEnabled && s.schedulerInterval == interval {
+	if s.schedulerCancel != nil && s.schedulerEnabled && s.schedulerKey == key {
 		return
 	}
 
@@ -2008,37 +2090,15 @@ func (s *Server) UpdateSchedulerLocked(cfg config.Config) {
 	runCtx, cancel := context.WithCancel(s.schedulerParent)
 	s.schedulerCancel = cancel
 	s.schedulerEnabled = true
-	s.schedulerInterval = interval
-	s.addLog("info", fmt.Sprintf("scheduler enabled (interval=%s)", interval))
+	s.schedulerKey = key
+	s.schedulerMode = plan.mode
+	if plan.mode == config.SchedulerModeLegacy {
+		s.addLog("info", fmt.Sprintf("scheduler enabled (interval=%s)", plan.interval))
+	} else {
+		s.addLog("info", fmt.Sprintf("scheduler enabled (mode=%s)", plan.mode))
+	}
 
-	go func() {
-		ticker := time.NewTicker(interval)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-runCtx.Done():
-				return
-			case <-ticker.C:
-				currentCfg := s.store.Get()
-				s.setAllScanStates(currentCfg, scanStatePending)
-				s.addLog("info", "scheduled scan started")
-				result, err := s.runScan(runCtx)
-				if err != nil && !errors.Is(err, errScanInProgress) {
-					s.addLog("error", fmt.Sprintf("scheduled scan failed: %v", err))
-				}
-				if len(currentCfg.RemoteServers) > 0 {
-					s.addLog("info", fmt.Sprintf("scheduled remote scans started: servers=%d", len(currentCfg.RemoteServers)))
-					remoteCtx, cancel := context.WithTimeout(runCtx, 2*time.Minute)
-					s.triggerRemoteScans(remoteCtx, currentCfg.RemoteServers)
-					cancel()
-					s.addLog("info", "scheduled remote scans finished")
-				}
-				if err == nil {
-					s.addLog("info", fmt.Sprintf("scheduled scan finished: containers=%d", len(result.Containers)))
-				}
-			}
-		}
-	}()
+	go s.runSchedulerLoop(runCtx, plan)
 }
 
 func writeJSON(w http.ResponseWriter, status int, payload interface{}) {

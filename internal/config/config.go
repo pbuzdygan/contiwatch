@@ -26,6 +26,7 @@ type LocalServer struct {
 type Config struct {
 	ScanIntervalSec                 int                  `json:"scan_interval_sec"`
 	SchedulerEnabled                bool                 `json:"scheduler_enabled"`
+	SchedulerPlan                   SchedulerPlan        `json:"scheduler_plan"`
 	GlobalPolicy                    string               `json:"global_policy"`
 	DiscordWebhookURL               string               `json:"discord_webhook_url"`
 	DiscordNotificationsEnabled     *bool                `json:"discord_notifications_enabled"`
@@ -40,26 +41,50 @@ type Config struct {
 	RemoteServers                   []RemoteServer       `json:"remote_servers"`
 }
 
+type SchedulerPlan struct {
+	Mode  string         `json:"mode"`
+	Basic *SchedulerBasic `json:"basic,omitempty"`
+	Cron  *SchedulerCron  `json:"cron,omitempty"`
+}
+
+type SchedulerBasic struct {
+	Days []int `json:"days"`
+	Time string `json:"time"`
+}
+
+type SchedulerCron struct {
+	Expr string `json:"expr"`
+}
+
 type ExperimentalFeatures struct {
-	Containers        bool `json:"containers"`
-	Stacks            bool `json:"stacks"`
-	Images            bool `json:"images"`
-	ContainerShell    bool `json:"container_shell"`
-	ContainerLogs     bool `json:"container_logs"`
+	Containers         bool `json:"containers"`
+	Stacks             bool `json:"stacks"`
+	Images             bool `json:"images"`
+	Volumes            bool `json:"volumes"`
+	Networks           bool `json:"networks"`
+	ContainerShell     bool `json:"container_shell"`
+	ContainerLogs      bool `json:"container_logs"`
 	ContainerResources bool `json:"container_resources"`
-	ContainersSidebar bool `json:"containers_sidebar"`
+	ContainersSidebar  bool `json:"containers_sidebar"`
 }
 
 const (
 	PolicyUpdate     = "update"
 	PolicyNotifyOnly = "notify_only"
 	PolicySkip       = "skip"
+
+	SchedulerModeLegacy = "interval_legacy"
+	SchedulerModeBasic  = "basic"
+	SchedulerModeCron   = "cron"
 )
 
 func DefaultConfig() Config {
 	return Config{
 		ScanIntervalSec:                 60 * 1440,
 		SchedulerEnabled:                false,
+		SchedulerPlan: SchedulerPlan{
+			Mode: SchedulerModeLegacy,
+		},
 		GlobalPolicy:                    PolicyNotifyOnly,
 		DiscordWebhookURL:               "",
 		DiscordNotificationsEnabled:     boolPtr(false),
@@ -120,6 +145,9 @@ func (s *Store) load() error {
 	if cfg.ScanIntervalSec <= 0 {
 		cfg.ScanIntervalSec = DefaultConfig().ScanIntervalSec
 	}
+	if cfg.SchedulerPlan.Mode == "" {
+		cfg.SchedulerPlan = DefaultConfig().SchedulerPlan
+	}
 	if cfg.ScanIntervalSec == 300 &&
 		!cfg.SchedulerEnabled &&
 		cfg.DiscordWebhookURL == "" &&
@@ -169,6 +197,9 @@ func (s *Store) Update(update func(*Config)) (Config, error) {
 	update(&s.config)
 	if s.config.ScanIntervalSec <= 0 {
 		s.config.ScanIntervalSec = DefaultConfig().ScanIntervalSec
+	}
+	if s.config.SchedulerPlan.Mode == "" {
+		s.config.SchedulerPlan = DefaultConfig().SchedulerPlan
 	}
 	if s.config.GlobalPolicy == "" {
 		s.config.GlobalPolicy = DefaultConfig().GlobalPolicy

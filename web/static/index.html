@@ -63,70 +63,93 @@
         <div id="topbar-containers" class="topbar-status hidden">
           <h2>Containers</h2>
           <div class="actions containers-topbar-actions">
-            <div class="containers-server-picker">
-              <button id="topbar-containers-server-btn" class="secondary containers-server-btn" type="button" aria-haspopup="listbox" aria-expanded="false">
-                <span class="containers-server-btn-content"></span>
-              </button>
-              <div id="topbar-containers-server-menu" class="containers-server-menu hidden" role="listbox" tabindex="-1"></div>
+            <div class="containers-topbar-primary">
+              <div class="containers-server-picker">
+                <button id="topbar-containers-server-btn" class="secondary containers-server-btn" type="button" aria-haspopup="listbox" aria-expanded="false">
+                  <span class="containers-server-btn-content"></span>
+                </button>
+                <div id="topbar-containers-server-menu" class="containers-server-menu hidden" role="listbox" tabindex="-1"></div>
+              </div>
+              <div id="containers-topbar-search-slot" class="containers-topbar-search-slot" aria-hidden="true"></div>
             </div>
-	            <button
-	              id="topbar-containers-refresh"
-	              class="secondary icon-action-btn has-tooltip"
-	              type="button"
-	              aria-label="Refresh"
-	              data-tooltip="Refresh"
-	            >
-	              <span class="icon-action icon-reload" aria-hidden="true"></span>
-	            </button>
-	            <button
-	              id="topbar-containers-stacks"
-	              class="secondary icon-action-btn has-tooltip"
-              type="button"
-              aria-label="Container stacks"
-              data-tooltip="Container stacks"
-            >
-              <span class="icon-action icon-stack-3" aria-hidden="true"></span>
-            </button>
-            <button
-              id="topbar-containers-images"
-              class="secondary icon-action-btn has-tooltip"
-              type="button"
-              aria-label="Container images"
-              data-tooltip="Container images"
-	            >
-	              <span class="icon-action icon-cube-3d-sphere" aria-hidden="true"></span>
-	            </button>
-	            <span class="topbar-separator" aria-hidden="true"></span>
-            <button
-              id="topbar-containers-logs"
-              class="secondary icon-action-btn has-tooltip"
-              type="button"
-              aria-label="Container logs"
-              data-tooltip="Container logs"
-            >
-              <span class="icon-action icon-logs" aria-hidden="true"></span>
-            </button>
-            <button
-              id="topbar-containers-resources"
-              class="secondary icon-action-btn has-tooltip"
-              type="button"
-              aria-label="Container resources"
-              data-tooltip="Container resources"
-            >
-              <span class="icon-action icon-device-desktop-analytics" aria-hidden="true"></span>
-            </button>
-            <button
-              id="topbar-containers-shell"
-              class="secondary icon-action-btn has-tooltip"
-              type="button"
-              aria-label="Container shell"
-              data-tooltip="Container shell"
-	            >
-	              <span class="icon-action icon-terminal-2" aria-hidden="true"></span>
-	            </button>
-	            <div id="topbar-containers-status" class="containers-status"></div>
-	          </div>
-	        </div>
+            <div class="containers-topbar-secondary">
+              <button
+                id="topbar-containers-refresh"
+                class="secondary icon-action-btn has-tooltip"
+                type="button"
+                aria-label="Refresh"
+                data-tooltip="Refresh"
+              >
+                <span class="icon-action icon-reload" aria-hidden="true"></span>
+              </button>
+              <button
+                id="topbar-containers-stacks"
+                class="secondary icon-action-btn has-tooltip"
+                type="button"
+                aria-label="Container stacks"
+                data-tooltip="Container stacks"
+              >
+                <span class="icon-action icon-stack-3" aria-hidden="true"></span>
+              </button>
+              <button
+                id="topbar-containers-images"
+                class="secondary icon-action-btn has-tooltip"
+                type="button"
+                aria-label="Container images"
+                data-tooltip="Container images"
+              >
+                <span class="icon-action icon-cube-3d-sphere" aria-hidden="true"></span>
+              </button>
+              <button
+                id="topbar-containers-networks"
+                class="secondary icon-action-btn has-tooltip"
+                type="button"
+                aria-label="Container networks"
+                data-tooltip="Container networks"
+              >
+                <span class="icon-action icon-network2" aria-hidden="true"></span>
+              </button>
+              <button
+                id="topbar-containers-volumes"
+                class="secondary icon-action-btn has-tooltip"
+                type="button"
+                aria-label="Container volumes"
+                data-tooltip="Container volumes"
+              >
+                <span class="icon-action icon-hard-drive" aria-hidden="true"></span>
+              </button>
+              <span class="topbar-separator" aria-hidden="true"></span>
+              <button
+                id="topbar-containers-logs"
+                class="secondary icon-action-btn has-tooltip"
+                type="button"
+                aria-label="Container logs"
+                data-tooltip="Container logs"
+              >
+                <span class="icon-action icon-logs" aria-hidden="true"></span>
+              </button>
+              <button
+                id="topbar-containers-resources"
+                class="secondary icon-action-btn has-tooltip"
+                type="button"
+                aria-label="Container resources"
+                data-tooltip="Container resources"
+              >
+                <span class="icon-action icon-device-desktop-analytics" aria-hidden="true"></span>
+              </button>
+              <button
+                id="topbar-containers-shell"
+                class="secondary icon-action-btn has-tooltip"
+                type="button"
+                aria-label="Container shell"
+                data-tooltip="Container shell"
+              >
+                <span class="icon-action icon-terminal-2" aria-hidden="true"></span>
+              </button>
+              <div id="topbar-containers-status" class="containers-status"></div>
+            </div>
+          </div>
+        </div>
         <div id="topbar-servers" class="topbar-status hidden">
           <h2>Servers</h2>
           <div class="actions servers-topbar-actions">
@@ -295,6 +318,14 @@
           <span class="sidebar-icon icon-action icon-cube-3d-sphere" aria-hidden="true"></span>
           <span class="sidebar-label">Images</span>
         </button>
+        <button type="button" class="sidebar-link containers-sidebar-link hidden" data-view="containers" data-containers-mode="networks" data-feature="networks">
+          <span class="sidebar-icon icon-action icon-network2" aria-hidden="true"></span>
+          <span class="sidebar-label">Networks</span>
+        </button>
+        <button type="button" class="sidebar-link containers-sidebar-link hidden" data-view="containers" data-containers-mode="volumes" data-feature="volumes">
+          <span class="sidebar-icon icon-action icon-hard-drive" aria-hidden="true"></span>
+          <span class="sidebar-label">Volumes</span>
+        </button>
         <button type="button" class="sidebar-link containers-sidebar-link hidden" data-view="containers" data-containers-mode="logs" data-feature="container_logs">
           <span class="sidebar-icon icon-action icon-logs" aria-hidden="true"></span>
           <span class="sidebar-label">Logs</span>
@@ -342,13 +373,64 @@
                 <span class="toggle-track" aria-hidden="true"><span class="toggle-thumb"></span></span>
                 <span>Scheduler enabled <span id="scheduler-next-run" class="scheduler-next"></span></span>
               </label>
-              <label class="interval-field">
-                Scan interval (minutes)
-                <div class="interval-actions">
-                  <input type="number" id="scan-interval" min="1" step="1">
-                  <button id="save-interval" type="submit">Save</button>
+              <div class="scheduler-settings">
+                <div id="scheduler-timezone" class="settings-hint">Timezone: —</div>
+                <div id="scheduler-legacy-banner" class="scheduler-legacy-banner hidden" role="status">
+                  <span id="scheduler-legacy-text">Legacy interval schedule detected.</span>
+                  <button id="scheduler-legacy-migrate" class="secondary btn-small" type="button">Migrate to cron</button>
                 </div>
-              </label>
+                <div class="scheduler-mode-toggle" role="group" aria-label="Scheduler mode">
+                  <button id="scheduler-mode-basic" class="toggle-btn is-active" type="button">Basic</button>
+                  <button id="scheduler-mode-cron" class="toggle-btn" type="button">Advanced (Cron)</button>
+                </div>
+                <div id="scheduler-basic-panel" class="scheduler-panel">
+                  <div class="scheduler-basic-row">
+                    <div class="scheduler-days-field">
+                      <span class="settings-label-title">Days</span>
+                      <div class="scheduler-days-dropdown">
+                        <button
+                          id="scheduler-days-trigger"
+                          class="scheduler-days-trigger"
+                          type="button"
+                          aria-haspopup="listbox"
+                          aria-expanded="false"
+                          aria-controls="scheduler-days-menu"
+                          aria-label="Select days of week"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" class="scheduler-days-icon icon icon-tabler icons-tabler-filled icon-tabler-calendar-week" width="28" height="28" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M16 2c.183 0 .355 .05 .502 .135l.033 .02c.28 .177 .465 .49 .465 .845v1h1a3 3 0 0 1 2.995 2.824l.005 .176v12a3 3 0 0 1 -2.824 2.995l-.176 .005h-12a3 3 0 0 1 -2.995 -2.824l-.005 -.176v-12a3 3 0 0 1 2.824 -2.995l.176 -.005h1v-1a1 1 0 0 1 .514 -.874l.093 -.046l.066 -.025l.1 -.029l.107 -.019l.12 -.007q .083 0 .161 .013l.122 .029l.04 .012l.06 .023c.328 .135 .568 .44 .61 .806l.007 .117v1h6v-1a1 1 0 0 1 1 -1m3 7h-14v9.625c0 .705 .386 1.286 .883 1.366l.117 .009h12c.513 0 .936 -.53 .993 -1.215l.007 -.16z" /><path d="M9.015 13a1 1 0 0 1 -1 1a1.001 1.001 0 1 1 -.005 -2c.557 0 1.005 .448 1.005 1" /><path d="M13.015 13a1 1 0 0 1 -1 1a1.001 1.001 0 1 1 -.005 -2c.557 0 1.005 .448 1.005 1" /><path d="M17.02 13a1 1 0 0 1 -1 1a1.001 1.001 0 1 1 -.005 -2c.557 0 1.005 .448 1.005 1" /><path d="M12.02 15a1 1 0 0 1 0 2a1.001 1.001 0 1 1 -.005 -2z" /><path d="M9.015 16a1 1 0 0 1 -1 1a1.001 1.001 0 1 1 -.005 -2c.557 0 1.005 .448 1.005 1" /></svg>
+                        </button>
+                        <div id="scheduler-days-menu" class="scheduler-days-menu hidden" role="listbox" aria-multiselectable="true">
+                          <div class="scheduler-days" role="group" aria-label="Days of week">
+                            <button class="scheduler-day" type="button" data-day="1">Mon</button>
+                            <button class="scheduler-day" type="button" data-day="2">Tue</button>
+                            <button class="scheduler-day" type="button" data-day="3">Wed</button>
+                            <button class="scheduler-day" type="button" data-day="4">Thu</button>
+                            <button class="scheduler-day" type="button" data-day="5">Fri</button>
+                            <button class="scheduler-day" type="button" data-day="6">Sat</button>
+                            <button class="scheduler-day" type="button" data-day="7">Sun</button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    <label class="scheduler-time-field">
+                      Time
+                      <input type="time" id="scheduler-basic-time" value="03:00">
+                    </label>
+                  </div>
+                </div>
+                <div id="scheduler-cron-panel" class="scheduler-panel hidden">
+                  <label class="scheduler-cron-field">
+                    <span class="settings-label-title">
+                      Cron expression
+                      <button id="scheduler-cron-guide" class="info-icon-btn has-tooltip" type="button" data-tooltip="Cron guide" aria-label="Cron guide">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="info-icon icon icon-tabler icons-tabler-outline icon-tabler-info-circle" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M3 12a9 9 0 1 0 18 0a9 9 0 0 0 -18 0" /><path d="M12 9h.01" /><path d="M11 12h1v4h1" /></svg>
+                      </button>
+                    </span>
+                    <input type="text" id="scheduler-cron-input" placeholder="0 3 * * 1-5">
+                  </label>
+                  <div id="scheduler-cron-error" class="settings-hint hidden"></div>
+                </div>
+              </div>
               <label class="toggle-row">
                 <input type="checkbox" id="update-stopped">
                 <span class="toggle-track" aria-hidden="true"><span class="toggle-thumb"></span></span>
@@ -448,6 +530,16 @@
                 <input type="checkbox" id="exp-images">
                 <span class="toggle-track" aria-hidden="true"><span class="toggle-thumb"></span></span>
                 <span>Container images</span>
+              </label>
+              <label class="toggle-row">
+                <input type="checkbox" id="exp-networks">
+                <span class="toggle-track" aria-hidden="true"><span class="toggle-thumb"></span></span>
+                <span>Container networks</span>
+              </label>
+              <label class="toggle-row">
+                <input type="checkbox" id="exp-volumes">
+                <span class="toggle-track" aria-hidden="true"><span class="toggle-thumb"></span></span>
+                <span>Container volumes</span>
               </label>
             </div>
             <div class="settings-card about-card">
@@ -647,6 +739,99 @@
           </div>
           <div id="images-empty" class="hint hidden"></div>
         </div>
+        <div id="containers-networks-view" class="containers-networks-view hidden">
+          <div class="containers-networks-toolbar">
+            <div class="containers-networks-actions">
+              <button id="networks-prune" class="secondary icon-action-btn has-tooltip" type="button" aria-label="Prune unused" data-tooltip="Prune unused">
+                <span class="icon-action icon-square-minus" aria-hidden="true"></span>
+              </button>
+            </div>
+          </div>
+          <div class="containers-table-wrap">
+            <table class="containers-table networks-table">
+              <thead>
+                <tr>
+                  <th>
+                    <span class="containers-th-name-inner">
+                      <span>Name</span>
+                      <button id="networks-name-sort" class="containers-sort-btn" type="button" aria-label="Sort by name">
+                        <span class="icon-sort icon-sort-neutral" aria-hidden="true"></span>
+                      </button>
+                    </span>
+                  </th>
+                  <th>Status</th>
+                  <th>Driver</th>
+                  <th>
+                    <span class="containers-th-name-inner">
+                      <span>Stack</span>
+                      <button id="networks-stack-sort" class="containers-sort-btn" type="button" aria-label="Sort by stack">
+                        <span class="icon-sort icon-sort-neutral" aria-hidden="true"></span>
+                      </button>
+                    </span>
+                  </th>
+                  <th>
+                    <span class="containers-th-name-inner">
+                      <span>Subnet</span>
+                      <button id="networks-subnet-sort" class="containers-sort-btn" type="button" aria-label="Sort by subnet">
+                        <span class="icon-sort icon-sort-neutral" aria-hidden="true"></span>
+                      </button>
+                    </span>
+                  </th>
+                  <th>
+                    <span class="containers-th-name-inner">
+                      <span>Gateway</span>
+                      <button id="networks-gateway-sort" class="containers-sort-btn" type="button" aria-label="Sort by gateway">
+                        <span class="icon-sort icon-sort-neutral" aria-hidden="true"></span>
+                      </button>
+                    </span>
+                  </th>
+                  <th>Containers</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="networks-body"></tbody>
+            </table>
+          </div>
+          <div id="networks-empty" class="hint hidden"></div>
+        </div>
+        <div id="containers-volumes-view" class="containers-volumes-view hidden">
+          <div class="containers-volumes-toolbar">
+            <div class="containers-volumes-actions">
+              <button id="volumes-prune" class="secondary icon-action-btn has-tooltip" type="button" aria-label="Prune unused" data-tooltip="Prune unused">
+                <span class="icon-action icon-square-minus" aria-hidden="true"></span>
+              </button>
+            </div>
+          </div>
+          <div class="containers-table-wrap">
+            <table class="containers-table volumes-table">
+              <thead>
+                <tr>
+                  <th>
+                    <span class="containers-th-name-inner">
+                      <span>Name</span>
+                      <button id="volumes-name-sort" class="containers-sort-btn" type="button" aria-label="Sort by name">
+                        <span class="icon-sort icon-sort-neutral" aria-hidden="true"></span>
+                      </button>
+                    </span>
+                  </th>
+                  <th>Status</th>
+                  <th>
+                    <span class="containers-th-name-inner">
+                      <span>Stack</span>
+                      <button id="volumes-stack-sort" class="containers-sort-btn" type="button" aria-label="Sort by stack">
+                        <span class="icon-sort icon-sort-neutral" aria-hidden="true"></span>
+                      </button>
+                    </span>
+                  </th>
+                  <th>Used by</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="volumes-body"></tbody>
+            </table>
+          </div>
+          <div id="volumes-empty" class="hint hidden"></div>
+        </div>
         <div id="containers-shell-layout" class="containers-shell-layout hidden">
           <div class="containers-shell-list">
             <div class="containers-shell-list-header">Name</div>
@@ -806,6 +991,109 @@
           <button id="details-close" class="secondary btn-small" type="button">Close</button>
         </div>
         <div id="details-body" class="modal-body"></div>
+      </div>
+    </div>
+
+    <div id="volume-details-modal" class="modal hidden" aria-hidden="true" role="dialog" aria-modal="true">
+      <div class="modal-backdrop" data-close="true"></div>
+      <div class="modal-card" role="document">
+        <div class="modal-header">
+          <h3 id="volume-details-title">Volume details</h3>
+          <button id="volume-details-close" class="secondary btn-small" type="button">Close</button>
+        </div>
+        <div id="volume-details-body" class="modal-body"></div>
+      </div>
+    </div>
+
+    <div id="volume-usedby-modal" class="modal hidden" aria-hidden="true" role="dialog" aria-modal="true">
+      <div class="modal-backdrop" data-close="true"></div>
+      <div class="modal-card" role="document">
+        <div class="modal-header">
+          <h3 id="volume-usedby-title">Used by</h3>
+          <button id="volume-usedby-close" class="secondary btn-small" type="button">Close</button>
+        </div>
+        <div id="volume-usedby-body" class="modal-body"></div>
+      </div>
+    </div>
+
+    <div id="network-details-modal" class="modal hidden" aria-hidden="true" role="dialog" aria-modal="true">
+      <div class="modal-backdrop" data-close="true"></div>
+      <div class="modal-card" role="document">
+        <div class="modal-header">
+          <h3 id="network-details-title">Network details</h3>
+          <button id="network-details-close" class="secondary btn-small" type="button">Close</button>
+        </div>
+        <div id="network-details-body" class="modal-body"></div>
+      </div>
+    </div>
+
+    <div id="network-connect-modal" class="modal hidden" aria-hidden="true" role="dialog" aria-modal="true">
+      <div class="modal-backdrop" data-close="true"></div>
+      <div class="modal-card" role="document">
+        <div class="modal-header">
+          <h3 id="network-connect-title">Connect container</h3>
+          <button id="network-connect-close" class="secondary btn-small" type="button">Close</button>
+        </div>
+        <div class="modal-body">
+          <label class="stack-modal-field">
+            Container
+            <select id="network-connect-select"></select>
+          </label>
+          <div id="network-connect-error" class="stack-modal-error hidden" role="alert"></div>
+          <div class="settings-actions">
+            <button id="network-connect-confirm" type="button">Connect</button>
+            <button id="network-connect-cancel" class="secondary" type="button">Cancel</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="network-disconnect-modal" class="modal hidden" aria-hidden="true" role="dialog" aria-modal="true">
+      <div class="modal-backdrop" data-close="true"></div>
+      <div class="modal-card" role="document">
+        <div class="modal-header">
+          <h3 id="network-disconnect-title">Disconnect container</h3>
+          <button id="network-disconnect-close" class="secondary btn-small" type="button">Close</button>
+        </div>
+        <div class="modal-body">
+          <label class="stack-modal-field">
+            Container
+            <select id="network-disconnect-select"></select>
+          </label>
+          <div id="network-disconnect-error" class="stack-modal-error hidden" role="alert"></div>
+          <div class="settings-actions">
+            <button id="network-disconnect-confirm" type="button">Disconnect</button>
+            <button id="network-disconnect-cancel" class="secondary" type="button">Cancel</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="cron-guide-modal" class="modal hidden" aria-hidden="true" role="dialog" aria-modal="true">
+      <div class="modal-backdrop" data-close="true"></div>
+      <div class="modal-card" role="document">
+        <div class="modal-header">
+          <h3>Cron guide</h3>
+          <button id="cron-guide-close" class="secondary btn-small" type="button">Close</button>
+        </div>
+        <div id="cron-guide-body" class="modal-body">
+          <p>Format: <code>min hour day-of-month month day-of-week</code> (5 fields).</p>
+          <p>Timezone: <span id="cron-guide-timezone">container</span></p>
+          <div class="cron-guide-section">
+            <div class="cron-guide-title">Operators</div>
+            <div class="cron-guide-row"><code>*</code> any value, <code>,</code> list, <code>-</code> range, <code>/</code> step</div>
+          </div>
+          <div class="cron-guide-section">
+            <div class="cron-guide-title">Examples</div>
+            <div class="cron-guide-examples">
+              <button class="secondary cron-example-btn" type="button" data-cron="*/15 * * * *">Every 15 minutes</button>
+              <button class="secondary cron-example-btn" type="button" data-cron="0 3 * * *">Daily at 03:00</button>
+              <button class="secondary cron-example-btn" type="button" data-cron="30 2 * * 1-5">Mon–Fri at 02:30</button>
+              <button class="secondary cron-example-btn" type="button" data-cron="10 4 * * 0">Sun at 04:10</button>
+            </div>
+          </div>
+          <p class="settings-hint">Tip: day-of-week uses 0 or 7 for Sunday, 1 for Monday.</p>
+        </div>
       </div>
     </div>
 

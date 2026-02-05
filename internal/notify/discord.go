@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"os"
+	"strings"
 	"time"
 )
 
@@ -20,8 +22,10 @@ type discordEmbed struct {
 }
 
 type discordPayload struct {
-	Content string         `json:"content,omitempty"`
-	Embeds  []discordEmbed `json:"embeds,omitempty"`
+	Content   string         `json:"content,omitempty"`
+	Username  string         `json:"username,omitempty"`
+	AvatarURL string         `json:"avatar_url,omitempty"`
+	Embeds    []discordEmbed `json:"embeds,omitempty"`
 }
 
 func NewDiscordClient(webhookURL string) *DiscordClient {
@@ -48,6 +52,33 @@ func (d *DiscordClient) SendEmbed(title, description string, color int) error {
 	payload := discordPayload{
 		Embeds: []discordEmbed{
 			{Title: title, Description: description, Color: color},
+		},
+	}
+	return d.post(payload)
+}
+
+func (d *DiscordClient) SendEmbedWithLogo(title, description string, color int) error {
+	if d == nil || d.WebhookURL == "" {
+		return errors.New("discord webhook url is empty")
+	}
+	avatarURL := func() string {
+		base := strings.TrimSpace(os.Getenv("CONTIWATCH_PUBLIC_URL"))
+		if base == "" {
+			return ""
+		}
+		base = strings.TrimRight(base, "/")
+		return base + "/icons/contiwatch_logo_small.png"
+	}()
+
+	payload := discordPayload{
+		Username:  title,
+		AvatarURL: avatarURL,
+		Embeds: []discordEmbed{
+			{
+				Title:       "",
+				Description: description,
+				Color:       color,
+			},
 		},
 	}
 	return d.post(payload)

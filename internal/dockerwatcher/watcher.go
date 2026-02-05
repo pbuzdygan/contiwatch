@@ -20,6 +20,7 @@ import (
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/network"
+	"github.com/docker/docker/api/types/volume"
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/stdcopy"
 )
@@ -89,6 +90,64 @@ type ImageInfo struct {
 	CreatedAt       string `json:"created_at"`
 	ContainersCount int64  `json:"containers_count"`
 	Dangling        bool   `json:"dangling"`
+}
+
+type VolumeUsedBy struct {
+	ID    string `json:"id"`
+	Name  string `json:"name"`
+	Stack string `json:"stack"`
+}
+
+type VolumeInfo struct {
+	Name       string            `json:"name"`
+	Driver     string            `json:"driver"`
+	Stack      string            `json:"stack"`
+	UsedBy     []VolumeUsedBy    `json:"used_by"`
+	Mountpoint string            `json:"mountpoint"`
+	Labels     map[string]string `json:"labels"`
+	CreatedAt  string            `json:"created_at"`
+	Scope      string            `json:"scope"`
+}
+
+type NetworkInfo struct {
+	ID              string `json:"id"`
+	Name            string `json:"name"`
+	Driver          string `json:"driver"`
+	Stack           string `json:"stack"`
+	Subnet          string `json:"subnet"`
+	Gateway         string `json:"gateway"`
+	ContainersCount int    `json:"containers_count"`
+	Scope           string `json:"scope"`
+	System          bool   `json:"system"`
+}
+
+type NetworkSubnet struct {
+	Subnet  string `json:"subnet"`
+	Gateway string `json:"gateway"`
+}
+
+type NetworkContainer struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+	IP   string `json:"ip"`
+	MAC  string `json:"mac"`
+}
+
+type NetworkDetails struct {
+	ID         string             `json:"id"`
+	Name       string             `json:"name"`
+	Driver     string             `json:"driver"`
+	CreatedAt  string             `json:"created_at"`
+	Scope      string             `json:"scope"`
+	Subnets    []NetworkSubnet    `json:"subnets"`
+	Containers []NetworkContainer `json:"containers"`
+	System     bool               `json:"system"`
+}
+
+type NetworkUsedBy struct {
+	ID    string `json:"id"`
+	Name  string `json:"name"`
+	Stack string `json:"stack"`
 }
 
 type UpdateResult struct {
@@ -738,6 +797,353 @@ func (w *Watcher) PruneImages(ctx context.Context, mode string) (int, uint64, er
 	return deleted, report.SpaceReclaimed, nil
 }
 
+func (w *Watcher) ListVolumes(ctx context.Context) ([]VolumeInfo, error) {
+	volumesResp, err := w.client.VolumeList(ctx, volume.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	containers, err := w.client.ContainerList(ctx, types.ContainerListOptions{All: true})
+	if err != nil {
+		return nil, err
+	}
+	usage := map[string]map[string]VolumeUsedBy{}
+	for _, container := range containers {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		stack := ""
+		if container.Labels != nil {
+			stack = container.Labels["com.docker.compose.project"]
+		}
+		name := ""
+		if len(container.Names) > 0 {
+			name = strings.TrimPrefix(container.Names[0], "/")
+		}
+		for _, mount := range container.Mounts {
+			if mount.Type != "volume" || mount.Name == "" {
+				continue
+			}
+			if _, ok := usage[mount.Name]; !ok {
+				usage[mount.Name] = map[string]VolumeUsedBy{}
+			}
+			if _, ok := usage[mount.Name][container.ID]; ok {
+				continue
+			}
+			usage[mount.Name][container.ID] = VolumeUsedBy{
+				ID:    container.ID,
+				Name:  name,
+				Stack: stack,
+			}
+		}
+	}
+	result := make([]VolumeInfo, 0, len(volumesResp.Volumes))
+	for _, volumeItem := range volumesResp.Volumes {
+		if volumeItem == nil {
+			continue
+		}
+		stack := ""
+		if volumeItem.Labels != nil {
+			stack = volumeItem.Labels["com.docker.compose.project"]
+		}
+		if stack == "" {
+			stack = "—"
+		}
+		usedBy := []VolumeUsedBy{}
+		if containerMap, ok := usage[volumeItem.Name]; ok {
+			for _, entry := range containerMap {
+				usedBy = append(usedBy, entry)
+			}
+			sort.Slice(usedBy, func(i, j int) bool {
+				return usedBy[i].Name < usedBy[j].Name
+			})
+		}
+		result = append(result, VolumeInfo{
+			Name:       volumeItem.Name,
+			Driver:     volumeItem.Driver,
+			Stack:      stack,
+			UsedBy:     usedBy,
+			Mountpoint: volumeItem.Mountpoint,
+			Labels:     volumeItem.Labels,
+			CreatedAt:  volumeItem.CreatedAt,
+			Scope:      volumeItem.Scope,
+		})
+	}
+	return result, nil
+}
+
+func (w *Watcher) VolumeUsage(ctx context.Context, volumeName string) ([]VolumeUsedBy, error) {
+	volumeName = strings.TrimSpace(volumeName)
+	if volumeName == "" {
+		return nil, errors.New("volume name is required")
+	}
+	containers, err := w.client.ContainerList(ctx, types.ContainerListOptions{All: true})
+	if err != nil {
+		return nil, err
+	}
+	usage := map[string]VolumeUsedBy{}
+	for _, container := range containers {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		stack := ""
+		if container.Labels != nil {
+			stack = container.Labels["com.docker.compose.project"]
+		}
+		name := ""
+		if len(container.Names) > 0 {
+			name = strings.TrimPrefix(container.Names[0], "/")
+		}
+		for _, mount := range container.Mounts {
+			if mount.Type != "volume" || mount.Name != volumeName {
+				continue
+			}
+			if _, ok := usage[container.ID]; ok {
+				continue
+			}
+			usage[container.ID] = VolumeUsedBy{
+				ID:    container.ID,
+				Name:  name,
+				Stack: stack,
+			}
+		}
+	}
+	result := make([]VolumeUsedBy, 0, len(usage))
+	for _, entry := range usage {
+		result = append(result, entry)
+	}
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].Name < result[j].Name
+	})
+	return result, nil
+}
+
+func (w *Watcher) RemoveVolume(ctx context.Context, name string) error {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return errors.New("volume name is required")
+	}
+	return w.client.VolumeRemove(ctx, name, false)
+}
+
+func (w *Watcher) PruneVolumes(ctx context.Context) ([]string, uint64, error) {
+	report, err := w.client.VolumesPrune(ctx, filters.NewArgs())
+	if err != nil {
+		return nil, 0, err
+	}
+	return report.VolumesDeleted, report.SpaceReclaimed, nil
+}
+
+func (w *Watcher) ListNetworks(ctx context.Context) ([]NetworkInfo, error) {
+	networks, err := w.client.NetworkList(ctx, types.NetworkListOptions{})
+	if err != nil {
+		return nil, err
+	}
+	containers, err := w.client.ContainerList(ctx, types.ContainerListOptions{All: true})
+	if err != nil {
+		return nil, err
+	}
+	counts := map[string]int{}
+	for _, container := range containers {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		if container.NetworkSettings == nil || container.NetworkSettings.Networks == nil {
+			continue
+		}
+		for name := range container.NetworkSettings.Networks {
+			counts[name] += 1
+		}
+	}
+	result := make([]NetworkInfo, 0, len(networks))
+	for _, netItem := range networks {
+		if ctx.Err() != nil {
+			return result, ctx.Err()
+		}
+		stack := ""
+		if netItem.Labels != nil {
+			stack = netItem.Labels["com.docker.compose.project"]
+		}
+		if stack == "" {
+			stack = "—"
+		}
+		subnet, gateway := summarizeNetworkIPAM(netItem.IPAM.Config)
+		name := netItem.Name
+		result = append(result, NetworkInfo{
+			ID:              netItem.ID,
+			Name:            name,
+			Driver:          netItem.Driver,
+			Stack:           stack,
+			Subnet:          subnet,
+			Gateway:         gateway,
+			ContainersCount: counts[name],
+			Scope:           netItem.Scope,
+			System:          isSystemNetwork(name),
+		})
+	}
+	return result, nil
+}
+
+func (w *Watcher) NetworkDetails(ctx context.Context, networkID string) (NetworkDetails, error) {
+	networkID = strings.TrimSpace(networkID)
+	if networkID == "" {
+		return NetworkDetails{}, errors.New("network id is required")
+	}
+	inspect, err := w.client.NetworkInspect(ctx, networkID, types.NetworkInspectOptions{})
+	if err != nil {
+		return NetworkDetails{}, err
+	}
+	subnets := make([]NetworkSubnet, 0)
+	for _, cfg := range inspect.IPAM.Config {
+		subnets = append(subnets, NetworkSubnet{
+			Subnet:  normalizeSubnetValue(cfg.Subnet),
+			Gateway: normalizeSubnetValue(cfg.Gateway),
+		})
+	}
+	containers := make([]NetworkContainer, 0)
+	for id, endpoint := range inspect.Containers {
+		ip := normalizeSubnetValue(endpoint.IPv4Address)
+		if ip != "" && strings.Contains(ip, "/") {
+			ip = strings.Split(ip, "/")[0]
+		}
+		containers = append(containers, NetworkContainer{
+			ID:   id,
+			Name: endpoint.Name,
+			IP:   ip,
+			MAC:  normalizeSubnetValue(endpoint.MacAddress),
+		})
+	}
+	sort.Slice(containers, func(i, j int) bool {
+		return containers[i].Name < containers[j].Name
+	})
+	return NetworkDetails{
+		ID:         inspect.ID,
+		Name:       inspect.Name,
+		Driver:     inspect.Driver,
+		CreatedAt:  inspect.Created.Format(time.RFC3339),
+		Scope:      inspect.Scope,
+		Subnets:    subnets,
+		Containers: containers,
+		System:     isSystemNetwork(inspect.Name),
+	}, nil
+}
+
+func (w *Watcher) NetworkUsage(ctx context.Context, networkID string) ([]NetworkUsedBy, error) {
+	networkID = strings.TrimSpace(networkID)
+	if networkID == "" {
+		return nil, errors.New("network id is required")
+	}
+	inspect, err := w.client.NetworkInspect(ctx, networkID, types.NetworkInspectOptions{})
+	if err != nil {
+		return nil, err
+	}
+	name := inspect.Name
+	if name == "" {
+		return []NetworkUsedBy{}, nil
+	}
+	containers, err := w.client.ContainerList(ctx, types.ContainerListOptions{All: true})
+	if err != nil {
+		return nil, err
+	}
+	usage := map[string]NetworkUsedBy{}
+	for _, container := range containers {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		if container.NetworkSettings == nil || container.NetworkSettings.Networks == nil {
+			continue
+		}
+		if _, ok := container.NetworkSettings.Networks[name]; !ok {
+			continue
+		}
+		stack := ""
+		if container.Labels != nil {
+			stack = container.Labels["com.docker.compose.project"]
+		}
+		cName := ""
+		if len(container.Names) > 0 {
+			cName = strings.TrimPrefix(container.Names[0], "/")
+		}
+		usage[container.ID] = NetworkUsedBy{
+			ID:    container.ID,
+			Name:  cName,
+			Stack: stack,
+		}
+	}
+	result := make([]NetworkUsedBy, 0, len(usage))
+	for _, entry := range usage {
+		result = append(result, entry)
+	}
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].Name < result[j].Name
+	})
+	return result, nil
+}
+
+func (w *Watcher) RemoveNetwork(ctx context.Context, networkID string) error {
+	networkID = strings.TrimSpace(networkID)
+	if networkID == "" {
+		return errors.New("network id is required")
+	}
+	return w.client.NetworkRemove(ctx, networkID)
+}
+
+func (w *Watcher) PruneNetworks(ctx context.Context) ([]string, error) {
+	report, err := w.client.NetworksPrune(ctx, filters.NewArgs())
+	if err != nil {
+		return nil, err
+	}
+	return report.NetworksDeleted, nil
+}
+
+func (w *Watcher) ConnectNetwork(ctx context.Context, networkID, containerID string) error {
+	networkID = strings.TrimSpace(networkID)
+	containerID = strings.TrimSpace(containerID)
+	if networkID == "" || containerID == "" {
+		return errors.New("network id and container id are required")
+	}
+	return w.client.NetworkConnect(ctx, networkID, containerID, nil)
+}
+
+func (w *Watcher) DisconnectNetwork(ctx context.Context, networkID, containerID string) error {
+	networkID = strings.TrimSpace(networkID)
+	containerID = strings.TrimSpace(containerID)
+	if networkID == "" || containerID == "" {
+		return errors.New("network id and container id are required")
+	}
+	return w.client.NetworkDisconnect(ctx, networkID, containerID, false)
+}
+
+func summarizeNetworkIPAM(configs []network.IPAMConfig) (string, string) {
+	if len(configs) == 0 {
+		return "—", "—"
+	}
+	if len(configs) > 1 {
+		return "Multiple", "Multiple"
+	}
+	subnet := normalizeSubnetValue(configs[0].Subnet)
+	gateway := normalizeSubnetValue(configs[0].Gateway)
+	if subnet == "" {
+		subnet = "—"
+	}
+	if gateway == "" {
+		gateway = "—"
+	}
+	return subnet, gateway
+}
+
+func normalizeSubnetValue(value string) string {
+	return strings.TrimSpace(value)
+}
+
+func isSystemNetwork(name string) bool {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "bridge", "host", "none", "docker_gwbridge", "ingress":
+		return true
+	default:
+		return false
+	}
+}
+
 func (w *Watcher) remoteImageDigest(ctx context.Context, imageRef string) (string, error) {
 	inspect, err := w.client.DistributionInspect(ctx, imageRef, "")
 	if err != nil {
@@ -871,6 +1277,13 @@ func (w *Watcher) UpdateContainerForceStart(ctx context.Context, containerID str
 
 func (w *Watcher) StartContainer(ctx context.Context, containerID string) error {
 	return w.client.ContainerStart(ctx, strings.TrimSpace(containerID), types.ContainerStartOptions{})
+}
+
+func (w *Watcher) RemoveContainer(ctx context.Context, containerID string) error {
+	return w.client.ContainerRemove(ctx, strings.TrimSpace(containerID), types.ContainerRemoveOptions{
+		Force:         false,
+		RemoveVolumes: false,
+	})
 }
 
 func (w *Watcher) StopContainer(ctx context.Context, containerID string, timeoutSec int) error {
