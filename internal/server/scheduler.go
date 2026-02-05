@@ -105,6 +105,48 @@ func (s *Server) handleSchedulerStatus(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, resp)
 }
 
+func DescribeScheduler(cfg config.Config) string {
+	if !cfg.SchedulerEnabled {
+		return "Scheduler: disabled"
+	}
+	plan, err := buildSchedulerPlan(cfg)
+	if err != nil {
+		return fmt.Sprintf("Scheduler: enabled (invalid: %v)", err)
+	}
+	switch plan.mode {
+	case config.SchedulerModeLegacy:
+		if plan.interval > 0 {
+			return "Scheduler: enabled (every " + plan.interval.String() + ")"
+		}
+		return "Scheduler: enabled"
+	case config.SchedulerModeBasic:
+		basic := cfg.SchedulerPlan.Basic
+		if basic == nil {
+			return "Scheduler: enabled (basic)"
+		}
+		days := formatBasicDays(basic.Days)
+		at := strings.TrimSpace(basic.Time)
+		if at == "" {
+			at = "??:??"
+		}
+		if days != "" {
+			return fmt.Sprintf("Scheduler: enabled (basic: %s at %s)", days, at)
+		}
+		return fmt.Sprintf("Scheduler: enabled (basic at %s)", at)
+	case config.SchedulerModeCron:
+		expr := ""
+		if cfg.SchedulerPlan.Cron != nil {
+			expr = strings.TrimSpace(cfg.SchedulerPlan.Cron.Expr)
+		}
+		if expr != "" {
+			return fmt.Sprintf("Scheduler: enabled (cron: %s)", expr)
+		}
+		return "Scheduler: enabled (cron)"
+	default:
+		return "Scheduler: enabled"
+	}
+}
+
 func buildSchedulerPlan(cfg config.Config) (schedulerPlan, error) {
 	mode := strings.TrimSpace(cfg.SchedulerPlan.Mode)
 	if mode == "" {
@@ -155,6 +197,40 @@ func buildCronFromBasic(days []int, timeValue string) (string, error) {
 		return "", err
 	}
 	return fmt.Sprintf("%d %d * * %s", minute, hour, dowList), nil
+}
+
+func formatBasicDays(days []int) string {
+	if len(days) == 0 {
+		return ""
+	}
+	names := map[int]string{
+		1: "Mon",
+		2: "Tue",
+		3: "Wed",
+		4: "Thu",
+		5: "Fri",
+		6: "Sat",
+		7: "Sun",
+	}
+	unique := map[int]struct{}{}
+	for _, day := range days {
+		if day < 1 || day > 7 {
+			continue
+		}
+		unique[day] = struct{}{}
+	}
+	ordered := make([]int, 0, len(unique))
+	for day := range unique {
+		ordered = append(ordered, day)
+	}
+	sort.Ints(ordered)
+	parts := make([]string, 0, len(ordered))
+	for _, day := range ordered {
+		if name, ok := names[day]; ok {
+			parts = append(parts, name)
+		}
+	}
+	return strings.Join(parts, ", ")
 }
 
 func normalizeBasicDays(days []int) (string, error) {
