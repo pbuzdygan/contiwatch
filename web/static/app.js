@@ -255,6 +255,8 @@ let currentView = "status";
 let updateInProgress = false;
 let logsRefreshTimer = null;
 let releaseCheckTimer = null;
+let lastReleaseUpdateAvailable = false;
+let lastReleaseUpdateTag = "";
 let currentConfig = null;
 let cachedLocals = [];
 let cachedRemotes = [];
@@ -7658,6 +7660,20 @@ function applyReleaseBadge(release) {
   }
 }
 
+function maybeNotifyReleaseUpdate(release) {
+  if (!release || !release.update_available || !release.latest || !release.latest.url) {
+    lastReleaseUpdateAvailable = false;
+    return;
+  }
+  const label = release.latest.tag || release.latest.version || "";
+  if (!lastReleaseUpdateAvailable || (label && label !== lastReleaseUpdateTag)) {
+    const message = label ? `Update available: ${label}` : "Update available";
+    notify({ type: "info", message, timeoutMs: 9000 });
+  }
+  lastReleaseUpdateAvailable = true;
+  lastReleaseUpdateTag = label;
+}
+
 async function fetchMeta() {
   try {
     return await fetchJSON("/api/meta");
@@ -7688,6 +7704,7 @@ async function refreshReleaseStatus() {
   }
   applyAppVersion(meta);
   applyReleaseBadge(release);
+  maybeNotifyReleaseUpdate(release);
 }
 
 async function refreshLogs() {

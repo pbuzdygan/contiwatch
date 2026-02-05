@@ -83,11 +83,10 @@ func (s *Server) handleRelease(w http.ResponseWriter, r *http.Request) {
 	}
 	state := s.getReleaseCheckState()
 	if state.CheckedAt.IsZero() || time.Since(state.CheckedAt) > releaseCheckInterval {
-		go func() {
-			ctx, cancel := context.WithTimeout(context.Background(), releaseCheckTimeout)
-			defer cancel()
-			s.refreshReleaseCheck(ctx)
-		}()
+		ctx, cancel := context.WithTimeout(context.Background(), releaseCheckTimeout)
+		s.refreshReleaseCheck(ctx)
+		cancel()
+		state = s.getReleaseCheckState()
 	}
 	resp := releaseCheckResponse{
 		Meta:            meta,

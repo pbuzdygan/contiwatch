@@ -129,8 +129,6 @@ func main() {
 	srv.UpdateDiscord(cfg.DiscordWebhookURL)
 
 	addr := resolveAddr()
-	schedulerInterval := time.Duration(cfg.ScanIntervalSec) * time.Second
-
 	log.Printf("startup: http addr=%s", addr)
 	if configExisted {
 		log.Printf("startup: config path=%s (loaded)", configPath)
@@ -174,19 +172,11 @@ func main() {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	if !cfg.SchedulerEnabled {
-		log.Printf("startup: scheduler=disabled (default)")
-	} else {
-		if schedulerInterval <= 0 {
-			log.Printf("startup: scheduler=enabled (default interval)")
-		} else {
-			log.Printf("startup: scheduler=enabled (interval=%s)", schedulerInterval)
-		}
-	}
+	log.Printf("startup: %s", server.DescribeScheduler(cfg))
 	srv.StartScheduler(ctx)
 
 	if cfg.DiscordWebhookURL != "" && discordNotificationsEnabled(cfg) && discordNotifyOnStartEnabled(cfg) {
-		description := buildStartupDiscordDescription(addr, configPath, configExisted, cfg, schedulerInterval)
+		description := buildStartupDiscordDescription(addr, configPath, configExisted, cfg)
 		const discordBlue = 0x3498DB
 		discordClient := notify.NewDiscordClient(cfg.DiscordWebhookURL)
 		go func() {
@@ -290,14 +280,8 @@ func envBool(name string) bool {
 	}
 }
 
-func buildStartupDiscordDescription(addr, configPath string, configExisted bool, cfg config.Config, schedulerInterval time.Duration) string {
-	schedulerLine := "Scheduler: disabled"
-	if cfg.SchedulerEnabled {
-		schedulerLine = "Scheduler: enabled"
-		if schedulerInterval > 0 {
-			schedulerLine = "Scheduler: enabled (every " + schedulerInterval.String() + ")"
-		}
-	}
+func buildStartupDiscordDescription(addr, configPath string, configExisted bool, cfg config.Config) string {
+	schedulerLine := server.DescribeScheduler(cfg)
 
 	remoteLine := "Remote servers: none configured"
 	remoteNames := []string{}
