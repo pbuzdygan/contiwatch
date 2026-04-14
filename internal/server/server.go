@@ -38,22 +38,33 @@ type Server struct {
 	updateRunning bool
 	scanCancel    context.CancelFunc
 
-	schedulerMu       sync.Mutex
-	schedulerCancel   context.CancelFunc
-	schedulerKey      string
-	schedulerMode     string
-	schedulerEnabled  bool
-	schedulerNextRun  time.Time
-	schedulerParent   context.Context
+	schedulerMu      sync.Mutex
+	schedulerCancel  context.CancelFunc
+	schedulerKey     string
+	schedulerMode    string
+	schedulerEnabled bool
+	schedulerNextRun time.Time
+	schedulerParent  context.Context
 
 	logMu  sync.RWMutex
 	logs   []logEntry
 	logSeq int64
 
-	agentMode         bool
-	agentToken        string
-	version           string
-	remoteScanRunning atomic.Int64
+	agentMode             bool
+	agentToken            string
+	controllerAuthEnabled bool
+	controllerAuthUser    string
+	controllerAuthPass    string
+	pinGuardEnabled       bool
+	pinHash               string
+	pinSalt               string
+	pinSessionTTL         time.Duration
+	pinMinResponseDelay   time.Duration
+	pinMu                 sync.Mutex
+	pinSessions           map[string]pinSessionEntry
+	pinAttempts           map[string]pinAttemptEntry
+	version               string
+	remoteScanRunning     atomic.Int64
 
 	serverInfoMu      sync.RWMutex
 	serverInfo        map[string]serverInfoSnapshot
@@ -95,16 +106,38 @@ func New(store *config.Store, watcher *dockerwatcher.Watcher, agentMode bool, ag
 			statePath = path.Join(path.Dir(configPath), "scan_state.json")
 		}
 	}
+	controllerAuthEnabled, controllerAuthUser, controllerAuthPass := parseControllerAuthFromEnv()
+	pinGuardEnabled, configuredPin, pinSessionTTL, pinMinResponseDelay := parsePinGuardFromEnv()
+	pinSalt := ""
+	pinHash := ""
+	if pinGuardEnabled {
+		var err error
+		pinSalt, pinHash, err = initializePinGuardMaterial(configuredPin)
+		if err != nil {
+			log.Printf("startup: pin guard disabled due to invalid CONTIWATCH_APP_PIN: %v", err)
+			pinGuardEnabled = false
+		}
+	}
 	s := &Server{
-		store:      store,
-		watcher:    watcher,
-		mux:        http.NewServeMux(),
-		agentMode:  agentMode,
-		agentToken: agentToken,
-		version:    version,
-		scanStates: map[string]scanState{},
-		statePath:  statePath,
-		serverInfo: map[string]serverInfoSnapshot{},
+		store:                 store,
+		watcher:               watcher,
+		mux:                   http.NewServeMux(),
+		agentMode:             agentMode,
+		agentToken:            agentToken,
+		controllerAuthEnabled: controllerAuthEnabled,
+		controllerAuthUser:    controllerAuthUser,
+		controllerAuthPass:    controllerAuthPass,
+		pinGuardEnabled:       pinGuardEnabled,
+		pinHash:               pinHash,
+		pinSalt:               pinSalt,
+		pinSessionTTL:         pinSessionTTL,
+		pinMinResponseDelay:   pinMinResponseDelay,
+		pinSessions:           map[string]pinSessionEntry{},
+		pinAttempts:           map[string]pinAttemptEntry{},
+		version:               version,
+		scanStates:            map[string]scanState{},
+		statePath:             statePath,
+		serverInfo:            map[string]serverInfoSnapshot{},
 	}
 	s.routes()
 	s.loadScanState()
@@ -240,6 +273,7 @@ func (s *Server) applyScanState(result *dockerwatcher.ScanResult, local bool, na
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	applySecurityHeaders(w)
 	if s.agentMode {
 		if !strings.HasPrefix(r.URL.Path, "/api/") {
 			w.WriteHeader(http.StatusNotFound)
@@ -255,8 +289,57 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
+	} else if s.controllerAuthEnabled {
+		allowAnonymousHealth := r.URL.Path == "/api/health"
+		if !allowAnonymousHealth && !s.authorizeController(r) {
+			writeControllerAuthChallenge(w)
+			return
+		}
+	}
+	if !s.agentMode && s.pinGuardEnabled && strings.HasPrefix(r.URL.Path, "/api/") && !pinPublicAPIPath(r.URL.Path) {
+		if !s.pinSessionAuthorized(s.pinSessionTokenFromRequest(r)) {
+			writePinRequired(w)
+			return
+		}
 	}
 	s.mux.ServeHTTP(w, r)
+}
+
+type configResponse struct {
+	config.Config
+	DiscordWebhookConfigured bool `json:"discord_webhook_configured"`
+}
+
+func sanitizeConfigForResponse(cfg config.Config) configResponse {
+	webhookConfigured := strings.TrimSpace(cfg.DiscordWebhookURL) != ""
+	cfg.DiscordWebhookURL = ""
+	return configResponse{
+		Config:                   cfg,
+		DiscordWebhookConfigured: webhookConfigured,
+	}
+}
+
+type remoteServerResponse struct {
+	Name            string `json:"name"`
+	URL             string `json:"url"`
+	Token           string `json:"token,omitempty"`
+	TokenConfigured bool   `json:"token_configured"`
+	PublicIP        string `json:"public_ip,omitempty"`
+	Maintenance     bool   `json:"maintenance"`
+}
+
+func sanitizeRemoteServersForResponse(items []config.RemoteServer) []remoteServerResponse {
+	out := make([]remoteServerResponse, 0, len(items))
+	for _, item := range items {
+		out = append(out, remoteServerResponse{
+			Name:            item.Name,
+			URL:             item.URL,
+			TokenConfigured: strings.TrimSpace(item.Token) != "",
+			PublicIP:        item.PublicIP,
+			Maintenance:     item.Maintenance,
+		})
+	}
+	return out
 }
 
 func (s *Server) routes() {
@@ -308,6 +391,9 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/version", s.handleVersion)
 	s.mux.HandleFunc("/api/meta", s.handleMeta)
 	s.mux.HandleFunc("/api/release", s.handleRelease)
+	s.mux.HandleFunc("/api/pin/status", s.handlePinStatus)
+	s.mux.HandleFunc("/api/pin/verify", s.handlePinVerify)
+	s.mux.HandleFunc("/api/pin/logout", s.handlePinLogout)
 
 	if !s.agentMode {
 		staticDir := "/app/web/static"
@@ -395,13 +481,22 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		cfg := s.store.Get()
 		cfg.TimeZone = strings.TrimSpace(os.Getenv("TZ"))
-		writeJSON(w, http.StatusOK, cfg)
+		writeJSON(w, http.StatusOK, sanitizeConfigForResponse(cfg))
 	case http.MethodPut:
 		before := s.store.Get()
 		var payload config.Config
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 			writeError(w, http.StatusBadRequest, err)
 			return
+		}
+		webhookInput := strings.TrimSpace(payload.DiscordWebhookURL)
+		switch webhookInput {
+		case "", discordWebhookKeepSentinel, discordWebhookClearSentinel:
+		default:
+			if err := validateDiscordWebhookURL(webhookInput); err != nil {
+				writeError(w, http.StatusBadRequest, err)
+				return
+			}
 		}
 		if payload.SchedulerEnabled || shouldApplySchedulerPlan(payload) {
 			validateCfg := before
@@ -424,7 +519,20 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 				cfg.SchedulerPlan = payload.SchedulerPlan
 			}
 			cfg.GlobalPolicy = payload.GlobalPolicy
-			cfg.DiscordWebhookURL = payload.DiscordWebhookURL
+			switch webhookInput {
+			case "":
+				if before.DiscordWebhookURL != "" {
+					cfg.DiscordWebhookURL = before.DiscordWebhookURL
+				} else {
+					cfg.DiscordWebhookURL = ""
+				}
+			case discordWebhookKeepSentinel:
+				cfg.DiscordWebhookURL = before.DiscordWebhookURL
+			case discordWebhookClearSentinel:
+				cfg.DiscordWebhookURL = ""
+			default:
+				cfg.DiscordWebhookURL = webhookInput
+			}
 			if payload.DiscordNotificationsEnabled != nil {
 				cfg.DiscordNotificationsEnabled = payload.DiscordNotificationsEnabled
 			}
@@ -535,7 +643,7 @@ func (s *Server) handleConfig(w http.ResponseWriter, r *http.Request) {
 		if before.GlobalPolicy != updated.GlobalPolicy && len(updated.RemoteServers) > 0 {
 			go s.syncRemotePolicies(updated, updated.RemoteServers)
 		}
-		writeJSON(w, http.StatusOK, updated)
+		writeJSON(w, http.StatusOK, sanitizeConfigForResponse(updated))
 	default:
 		w.WriteHeader(http.StatusMethodNotAllowed)
 	}
@@ -545,18 +653,30 @@ func (s *Server) handleServers(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		cfg := s.store.Get()
-		writeJSON(w, http.StatusOK, cfg.RemoteServers)
+		writeJSON(w, http.StatusOK, sanitizeRemoteServersForResponse(cfg.RemoteServers))
 	case http.MethodPost:
 		var payload config.RemoteServer
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 			writeError(w, http.StatusBadRequest, err)
 			return
 		}
+		payload.Name = strings.TrimSpace(payload.Name)
+		payload.URL = strings.TrimSpace(payload.URL)
+		payload.PublicIP = strings.TrimSpace(payload.PublicIP)
 		if payload.Name == "" || payload.URL == "" {
 			writeError(w, http.StatusBadRequest, errors.New("name and url required"))
 			return
 		}
+		if err := validateRemoteServerURL(payload.URL); err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
 		cfg := s.store.Get()
+		existing, hasExisting := findRemoteServer(cfg.RemoteServers, payload.Name)
+		payload.Token = strings.TrimSpace(payload.Token)
+		if payload.Token == "" && hasExisting {
+			payload.Token = existing.Token
+		}
 		if localNameExists(cfg.LocalServers, payload.Name) {
 			writeError(w, http.StatusBadRequest, errors.New("name already used by local server"))
 			return
@@ -572,7 +692,7 @@ func (s *Server) handleServers(w http.ResponseWriter, r *http.Request) {
 		if remote, ok := findRemoteServer(updated.RemoteServers, payload.Name); ok {
 			go s.syncRemotePolicies(updated, []config.RemoteServer{remote})
 		}
-		writeJSON(w, http.StatusOK, updated.RemoteServers)
+		writeJSON(w, http.StatusOK, sanitizeRemoteServersForResponse(updated.RemoteServers))
 	default:
 		w.WriteHeader(http.StatusMethodNotAllowed)
 	}
@@ -651,7 +771,7 @@ func (s *Server) handleServerByName(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.refreshServerInfoCache(updated)
-	writeJSON(w, http.StatusOK, updated.RemoteServers)
+	writeJSON(w, http.StatusOK, sanitizeRemoteServersForResponse(updated.RemoteServers))
 }
 
 func (s *Server) handleServersInfo(w http.ResponseWriter, r *http.Request) {
@@ -753,8 +873,8 @@ func (s *Server) handleNotificationsTest(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	webhookURL := strings.TrimSpace(payload.WebhookURL)
-	if webhookURL == "" {
-		writeError(w, http.StatusBadRequest, errors.New("webhook_url is required"))
+	if err := validateDiscordWebhookURL(webhookURL); err != nil {
+		writeError(w, http.StatusBadRequest, err)
 		return
 	}
 	client := notify.NewDiscordClient(webhookURL)

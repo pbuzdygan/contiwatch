@@ -83,6 +83,13 @@ const sidebarSearch = document.getElementById("sidebar-search");
 const sidebarSearchCountEl = document.getElementById("sidebar-search-count");
 const sidebarSearchWrap = sidebarSearch ? sidebarSearch.closest(".topbar-search") : null;
 const sidebarCollapseToggleBtn = document.getElementById("sidebar-collapse-toggle");
+const pinLockBtn = document.getElementById("pin-lock-btn");
+const pinGuardOverlay = document.getElementById("pin-guard-overlay");
+const pinGuardForm = document.getElementById("pin-guard-form");
+const pinGuardInput = document.getElementById("pin-guard-input");
+const pinGuardErrorEl = document.getElementById("pin-guard-error");
+const pinGuardSubmitBtn = document.getElementById("pin-guard-submit");
+const pinGuardClearBtn = document.getElementById("pin-guard-clear");
 const themeToggleBtn = document.getElementById("theme-toggle");
 const themeLabel = document.getElementById("theme-label");
 const topbarEl = document.querySelector(".topbar");
@@ -258,6 +265,7 @@ let releaseCheckTimer = null;
 let lastReleaseUpdateAvailable = false;
 let lastReleaseUpdateTag = "";
 let currentConfig = null;
+const discordWebhookDefaultPlaceholder = "https://discord.com/api/webhooks/...";
 let cachedLocals = [];
 let cachedRemotes = [];
 let cachedServerInfo = {};
@@ -375,6 +383,11 @@ let stacksCache = new Map();
 let editingStackName = "";
 let composeEditor = null;
 let envEditor = null;
+let pinGuardEnabled = false;
+let pinGuardUnlocked = true;
+let pinGuardSubmitting = false;
+let pinUnlockPromise = null;
+let pinUnlockResolve = null;
 
 function showStackModalError(message) {
   if (!stackModalErrorEl) return;
@@ -473,12 +486,182 @@ function schedulePostSelfUpdateRefresh(serverKey, containerName) {
   window.setTimeout(tick, 1500);
 }
 
+function ensurePinUnlockPromise() {
+  if (pinUnlockPromise) return pinUnlockPromise;
+  pinUnlockPromise = new Promise((resolve) => {
+    pinUnlockResolve = resolve;
+  });
+  return pinUnlockPromise;
+}
+
+function resolvePinUnlock() {
+  if (!pinUnlockResolve) return;
+  pinUnlockResolve();
+  pinUnlockResolve = null;
+  pinUnlockPromise = null;
+}
+
+function setPinGuardError(message) {
+  if (!pinGuardErrorEl) return;
+  const text = String(message || "").trim();
+  pinGuardErrorEl.textContent = text;
+  pinGuardErrorEl.classList.toggle("hidden", !text);
+}
+
+function setPinGuardBusyState(busy) {
+  pinGuardSubmitting = Boolean(busy);
+  if (pinGuardInput) pinGuardInput.disabled = pinGuardSubmitting;
+  if (pinGuardSubmitBtn) pinGuardSubmitBtn.disabled = pinGuardSubmitting;
+  if (pinGuardClearBtn) pinGuardClearBtn.disabled = pinGuardSubmitting;
+}
+
+function setPinGuardState(enabled, unlocked) {
+  pinGuardEnabled = Boolean(enabled);
+  pinGuardUnlocked = !pinGuardEnabled || Boolean(unlocked);
+  if (pinLockBtn) {
+    pinLockBtn.classList.toggle("hidden", !pinGuardEnabled);
+  }
+  const shouldShowOverlay = pinGuardEnabled && !pinGuardUnlocked;
+  if (pinGuardOverlay) {
+    pinGuardOverlay.classList.toggle("hidden", !shouldShowOverlay);
+    pinGuardOverlay.setAttribute("aria-hidden", shouldShowOverlay ? "false" : "true");
+  }
+  if (shouldShowOverlay) {
+    ensurePinUnlockPromise();
+    closeContainersShellSession("pin guard lock");
+    closeContainersLogsSession("pin guard lock", { silent: true });
+    if (serverStream) {
+      try {
+        serverStream.close();
+      } catch {
+        // ignore
+      }
+      serverStream = null;
+    }
+    window.setTimeout(() => {
+      if (pinGuardInput) pinGuardInput.focus();
+    }, 0);
+  } else {
+    resolvePinUnlock();
+    setPinGuardError("");
+    setPinGuardBusyState(false);
+  }
+}
+
+function normalizePinGuardValue(value) {
+  return String(value || "").replace(/[^0-9]/g, "").slice(0, 8);
+}
+
+async function fetchPinGuardStatus() {
+  try {
+    const res = await fetch("/api/pin/status", { credentials: "same-origin" });
+    if (!res.ok) {
+      return { enabled: false, unlocked: true };
+    }
+    const payload = await res.json().catch(() => ({}));
+    return {
+      enabled: Boolean(payload.enabled),
+      unlocked: Boolean(payload.unlocked),
+    };
+  } catch {
+    return { enabled: false, unlocked: true };
+  }
+}
+
+async function bootstrapPinGuard() {
+  const status = await fetchPinGuardStatus();
+  setPinGuardState(status.enabled, status.unlocked);
+}
+
+function waitForPinUnlock() {
+  if (!pinGuardEnabled || pinGuardUnlocked) {
+    return Promise.resolve();
+  }
+  return ensurePinUnlockPromise();
+}
+
+function activatePinGuardLock(message) {
+  if (!pinGuardEnabled) return;
+  setPinGuardState(true, false);
+  setPinGuardError(message || "Session locked. Enter PIN.");
+}
+
+async function submitPinGuard() {
+  if (!pinGuardEnabled || pinGuardSubmitting) return;
+  const normalized = normalizePinGuardValue(pinGuardInput ? pinGuardInput.value : "");
+  if (pinGuardInput && pinGuardInput.value !== normalized) {
+    pinGuardInput.value = normalized;
+  }
+  if (normalized.length < 4 || normalized.length > 8) {
+    setPinGuardError("PIN must have 4-8 digits.");
+    if (pinGuardInput) pinGuardInput.focus();
+    return;
+  }
+  setPinGuardError("");
+  setPinGuardBusyState(true);
+  try {
+    const res = await fetch("/api/pin/verify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({ pin: normalized }),
+    });
+    const payload = await res.json().catch(() => ({}));
+    if (res.ok && payload && payload.ok) {
+      if (pinGuardInput) pinGuardInput.value = "";
+      setPinGuardState(true, true);
+      initServerStream();
+      return;
+    }
+    if (res.status === 429 || (payload && payload.error === "LOCKOUT")) {
+      const retryAfter = Number(payload && payload.retry_after_seconds ? payload.retry_after_seconds : res.headers.get("Retry-After"));
+      if (Number.isFinite(retryAfter) && retryAfter > 0) {
+        setPinGuardError(`Too many attempts. Wait ${retryAfter}s.`);
+      } else {
+        setPinGuardError("Too many attempts. Try again shortly.");
+      }
+    } else {
+      setPinGuardError("Wrong PIN.");
+    }
+    if (pinGuardInput) pinGuardInput.value = "";
+  } catch {
+    setPinGuardError("PIN verification failed.");
+  } finally {
+    setPinGuardBusyState(false);
+    if (pinGuardEnabled && !pinGuardUnlocked && pinGuardInput) {
+      pinGuardInput.focus();
+    }
+  }
+}
+
+async function lockPinGuardSession() {
+  if (!pinGuardEnabled) return;
+  try {
+    await fetch("/api/pin/logout", {
+      method: "POST",
+      credentials: "same-origin",
+    });
+  } catch {
+    // ignore
+  }
+  activatePinGuardLock("Session locked. Enter PIN.");
+}
+
 async function fetchJSON(url, options = {}) {
   const res = await fetch(url, options);
   if (!res.ok) {
     const payload = await res.json().catch(() => ({}));
+    if (res.status === 401 && payload && payload.error === "pin_required") {
+      activatePinGuardLock("Session locked. Enter PIN.");
+      const err = new Error("PIN required");
+      err.status = 401;
+      err.code = "pin_required";
+      throw err;
+    }
     const message = payload.error || `Request failed: ${res.status}`;
-    throw new Error(message);
+    const err = new Error(message);
+    err.status = res.status;
+    throw err;
   }
   return res.json();
 }
@@ -616,8 +799,9 @@ function applyServerModalTabState(tab) {
     remoteModalCompose.classList.toggle("is-disabled", isLocal);
     remoteModalCompose.setAttribute("aria-disabled", isLocal ? "true" : "false");
   }
-  if (!isLocal && remoteModalTokenInput && !remoteModalTokenInput.value.trim()) {
+  if (!isLocal && remoteModalTokenInput && !remoteModalTokenInput.value.trim() && !editingRemoteServer) {
     remoteModalTokenInput.value = generateToken(32);
+    remoteModalTokenInput.placeholder = "Generated API token";
     updateRemoteComposePreview();
   }
   if (isLocal) {
@@ -699,10 +883,14 @@ function openRemoteModal(mode, server) {
     remoteModalPublicIPInput.value = server ? server.public_ip || "" : "";
   }
   if (remoteModalTokenInput) {
+    remoteModalTokenInput.placeholder = "Generated API token";
     if (server && server.token) {
       remoteModalTokenInput.value = server.token;
+    } else if (server && server.token_configured) {
+      remoteModalTokenInput.value = "";
+      remoteModalTokenInput.placeholder = "Stored on server (leave empty to keep)";
     } else {
-      remoteModalTokenInput.value = generateToken(32);
+      remoteModalTokenInput.value = isEdit ? "" : generateToken(32);
     }
   }
   updateRemoteComposePreview();
@@ -3111,7 +3299,12 @@ async function refreshConfig() {
   currentConfig = cfg;
   schedulerEnabledInput.checked = Boolean(cfg.scheduler_enabled);
   globalPolicySelect.value = cfg.global_policy;
-  discordInput.value = cfg.discord_webhook_url || "";
+  if (discordInput) {
+    discordInput.value = "";
+    discordInput.placeholder = cfg.discord_webhook_configured
+      ? "Configured on server (hidden)"
+      : discordWebhookDefaultPlaceholder;
+  }
   discordEnabledInput.checked = cfg.discord_notifications_enabled !== false;
   if (discordStartupNotifyInput) {
     discordStartupNotifyInput.checked = cfg.discord_notify_on_start !== false;
@@ -3163,9 +3356,12 @@ function buildConfigPayload(options = {}) {
   const currentInterval = currentConfig ? Number(currentConfig.scan_interval_sec) : 0;
   const nextInterval = currentInterval > 0 ? currentInterval : 0;
   const useWebhookInput = Boolean(options.useWebhookInput);
-  const webhookValue = useWebhookInput
+  let webhookValue = useWebhookInput
     ? discordInput.value.trim()
     : (currentConfig ? currentConfig.discord_webhook_url || "" : discordInput.value.trim());
+  if (!useWebhookInput && currentConfig && currentConfig.discord_webhook_configured) {
+    webhookValue = "__keep__";
+  }
   const schedulerPlan = schedulerMode === "cron"
     ? { mode: "cron", cron: { expr: schedulerCronInput ? schedulerCronInput.value.trim() : "" } }
     : {
@@ -8956,6 +9152,39 @@ if (serverConnectionTypeSelect) {
 
 async function init() {
   sidebar.setAttribute("aria-hidden", "false");
+  if (pinGuardInput) {
+    pinGuardInput.addEventListener("input", () => {
+      const normalized = normalizePinGuardValue(pinGuardInput.value);
+      if (pinGuardInput.value !== normalized) {
+        pinGuardInput.value = normalized;
+      }
+      if (pinGuardErrorEl && !pinGuardErrorEl.classList.contains("hidden")) {
+        setPinGuardError("");
+      }
+    });
+  }
+  if (pinGuardClearBtn) {
+    pinGuardClearBtn.addEventListener("click", () => {
+      if (pinGuardInput) {
+        pinGuardInput.value = "";
+        pinGuardInput.focus();
+      }
+      setPinGuardError("");
+    });
+  }
+  if (pinGuardForm) {
+    pinGuardForm.addEventListener("submit", (event) => {
+      event.preventDefault();
+      submitPinGuard();
+    });
+  }
+  if (pinLockBtn) {
+    pinLockBtn.addEventListener("click", () => {
+      lockPinGuardSession();
+    });
+  }
+  await bootstrapPinGuard();
+  await waitForPinUnlock();
 
   if (sidebarSearch) {
     sidebarSearch.addEventListener("input", (event) => {

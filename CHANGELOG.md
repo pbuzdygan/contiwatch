@@ -1,5 +1,27 @@
 # Changelog
 
+## v1.3.0
+
+## Bug fixes
+- Security: fixed unrestricted controller API access by adding optional controller authentication (`CONTIWATCH_BASIC_AUTH` or `CONTIWATCH_AUTH_USER` + `CONTIWATCH_AUTH_PASS`).
+- Security: fixed secrets exposure in read APIs (`GET /api/config`, `GET /api/servers`) by hiding sensitive values and exposing only `*_configured` flags.
+- Security: fixed permissive WebSocket origin policy (`container shell/logs`) by validating origin.
+- Security: fixed unrestricted webhook test target by enforcing Discord webhook URL validation.
+- Security: fixed weak config file permission by storing `/data/config.json` with `0600`.
+- Security: fixed missing UI/API lock layer by adding PIN session enforcement for protected controller API endpoints.
+
+## New features
+- Security: added controller HTTP Basic Auth gate for UI/API in non-agent mode.
+- Security: added HTTP response hardening headers (CSP, `X-Frame-Options`, `nosniff`, `Referrer-Policy`, `Permissions-Policy`).
+- API: added safe secret update semantics using sentinels for webhook (`__keep__`, `__clear__`) and token-preserve on empty value for existing remote servers.
+- Security: added PIN Guard (`CONTIWATCH_APP_PIN`) with secure server-side PIN verification, HttpOnly session cookie, lockout/backoff protection, and `/api/pin/*` endpoints.
+
+## Imprevements
+- UI/Settings: Discord webhook value is now treated as hidden server-side secret (UI shows configured state instead of full value).
+- UI/Servers: remote token handling updated for hidden tokens (`token_configured`) with safe “leave empty to keep” behavior.
+- Docs: updated README with new security environment variables and secret-handling behavior.
+- UI/Security: added startup PIN unlock overlay and topbar lock action to re-lock session on demand.
+
 ## v1.2.5
 
 ## Bug fixes

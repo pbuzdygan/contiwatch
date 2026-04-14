@@ -11,7 +11,21 @@ services:
       # Default internal port can be changed - helpful when running in "network_mode: host" or other "direct IP" setups
       CONTIWATCH_ADDR: ":8080"
       CONTIWATCH_CONFIG: "/data/config.json"
+      # Optional timezone for scheduler/log timestamps
       TZ: Europe/Warsaw
+
+      # Optional: enable UI/API HTTP Basic Auth for controller mode
+      # Use either CONTIWATCH_BASIC_AUTH or CONTIWATCH_AUTH_USER + CONTIWATCH_AUTH_PASS
+      # CONTIWATCH_BASIC_AUTH: "admin:change_me_now"
+      # CONTIWATCH_AUTH_USER: "admin"
+      # CONTIWATCH_AUTH_PASS: "change_me_now"
+
+      # Optional: enable PIN guard for controller UI/API (must be 4-8 digits)
+      # CONTIWATCH_APP_PIN: "1234"
+      # Optional: PIN session lifetime in seconds (default 28800 = 8h)
+      # CONTIWATCH_PIN_SESSION_TTL_SEC: "28800"
+      # Optional: minimum response time for PIN verify (default 250ms)
+      # CONTIWATCH_PIN_MIN_RESPONSE_MS: "250"
     restart: unless-stopped
 
 volumes:

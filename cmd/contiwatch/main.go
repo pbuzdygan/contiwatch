@@ -145,6 +145,11 @@ func main() {
 	log.Printf("startup: discord notifications=%t", discordNotificationsEnabled(cfg))
 	log.Printf("startup: release=%s", version)
 	log.Printf("startup: agent mode=%t", agentMode)
+	if pin := strings.TrimSpace(os.Getenv("CONTIWATCH_APP_PIN")); pin == "" {
+		log.Printf("startup: pin guard=disabled")
+	} else {
+		log.Printf("startup: pin guard=enabled")
+	}
 	if agentMode {
 		log.Printf("startup: agent api=enabled (token required)")
 	}

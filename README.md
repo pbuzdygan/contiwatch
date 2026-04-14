@@ -54,6 +54,11 @@ docker run -d \
 
 Open `http://localhost:8080`.
 
+For a production-like controller deployment, do not stop at the minimal example above. In practice you should enable at least:
+- HTTP Basic Auth for the whole controller UI/API
+- PIN Guard for the interactive UI/API session layer
+- a non-default strong agent token for every remote agent
+
 ## Agent mode (remote)
 Run on a remote host with Docker socket access and a token:
 ```bash
@@ -84,12 +89,53 @@ docker pull ghcr.io/<owner>/<repo>:dev_<version>
 - `CONTIWATCH_ADDR` (default `:8080`)
 - `CONTIWATCH_CONFIG` (default `/data/config.json`)
 - `TZ` (optional; e.g. `Europe/Warsaw` for local timestamps)
+- `CONTIWATCH_BASIC_AUTH` (optional; `user:password` - enables HTTP Basic Auth for controller mode)
+- `CONTIWATCH_AUTH_USER` + `CONTIWATCH_AUTH_PASS` (optional alternative to `CONTIWATCH_BASIC_AUTH`)
+- `CONTIWATCH_APP_PIN` (optional; enables PIN guard for controller API/UI, value must be 4-8 digits)
+- `CONTIWATCH_PIN_SESSION_TTL_SEC` (optional; PIN session TTL in seconds, default `28800`)
+- `CONTIWATCH_PIN_MIN_RESPONSE_MS` (optional; minimum verify response time to reduce brute-force signal, default `250`)
 - `CONTIWATCH_AGENT` (optional; set to `true` to run in agent mode)
 - `CONTIWATCH_AGENT_TOKEN` (required in agent mode; bearer token for API access)
 - `CONTIWATCH_REPO` (optional; GitHub repo in `owner/name` form for release links/checks)
 - `CONTIWATCH_CHANNEL` (optional; `main` or `dev` for release checks)
 - `CONTIWATCH_RELEASE_CHECK` (optional; set to `0`/`false` to disable release checks)
 - `CONTIWATCH_GITHUB_TOKEN` (optional; token for private repos or higher GitHub API limits)
+
+## Recommended security setup
+For the controller instance, the recommended baseline is:
+- enable HTTP Basic Auth with `CONTIWATCH_BASIC_AUTH`, or `CONTIWATCH_AUTH_USER` + `CONTIWATCH_AUTH_PASS`
+- enable PIN Guard with `CONTIWATCH_APP_PIN`
+- keep the default config volume mounted on `/data`
+- use a strong unique `CONTIWATCH_AGENT_TOKEN` on every remote agent
+
+Example controller `docker-compose.yml` security block:
+
+```yaml
+environment:
+  CONTIWATCH_ADDR: ":8080"
+  CONTIWATCH_CONFIG: "/data/config.json"
+  TZ: Europe/Warsaw
+  CONTIWATCH_BASIC_AUTH: "admin:change_me_now"
+  CONTIWATCH_APP_PIN: "1234"
+  CONTIWATCH_PIN_SESSION_TTL_SEC: "28800"
+  CONTIWATCH_PIN_MIN_RESPONSE_MS: "250"
+```
+
+Example remote agent `compose_agent.yml` security block:
+
+```yaml
+environment:
+  CONTIWATCH_AGENT: "true"
+  CONTIWATCH_AGENT_TOKEN: "PUT_LONG_RANDOM_TOKEN_HERE"
+  CONTIWATCH_ADDR: ":8080"
+  CONTIWATCH_CONFIG: "/data/config.json"
+  TZ: Europe/Warsaw
+```
+
+Important:
+- `CONTIWATCH_APP_PIN` is for the controller only. Do not use it on remote agents.
+- PIN Guard does not replace controller auth. The strongest setup is Basic Auth + PIN Guard together.
+- Agent mode is protected by bearer token, not by PIN Guard.
 
 ## Config file
 `/data/config.json` fields include:
@@ -114,10 +160,26 @@ docker pull ghcr.io/<owner>/<repo>:dev_<version>
 - `remote_servers[].public_ip` (optional public IP/host used for opening container services from the UI)
 - `local_servers[].public_ip` (optional public IP/host used for opening container services from the UI)
 
+Security notes:
+- Config file is stored with restricted permissions (`0600`).
+- Sensitive values are not returned in full by controller read APIs:
+  - `GET /api/config` returns `discord_webhook_url` hidden and `discord_webhook_configured` flag.
+  - `GET /api/servers` returns remote token hidden and `token_configured` flag.
+- Controller hardening is environment-driven:
+  - `CONTIWATCH_BASIC_AUTH` or `CONTIWATCH_AUTH_USER` + `CONTIWATCH_AUTH_PASS` protects the whole controller UI/API.
+  - `CONTIWATCH_APP_PIN` adds a session lock layer for protected controller API endpoints and the browser UI.
+  - Remote agents stay token-protected through `CONTIWATCH_AGENT_TOKEN`.
+- To keep an existing secret when updating:
+  - send `discord_webhook_url="__keep__"` for config updates,
+  - send empty `token` for existing remote server updates.
+
 ## API
 - `GET /api/version`
 - `GET /api/meta` (version/channel/repo metadata used by the UI)
 - `GET /api/release` (latest release info + update availability)
+- `GET /api/pin/status`
+- `POST /api/pin/verify`
+- `POST /api/pin/logout`
 - `POST /api/scan` run scan
 - `POST /api/scan/stop` cancel scan
 - `GET /api/scan/state` scan running status
@@ -155,6 +217,9 @@ Notes:
 - `POST /api/update/{container_id}` returns `old_image_id`, `new_image_id`, and `applied_image_id` to help debug tag/image mismatches.
 - Periodic scans are disabled by default; enable via `scheduler_enabled` in the config (UI).
 - Agent mode exposes a limited API surface (token required).
+- Controller mode can be protected with HTTP Basic Auth (`CONTIWATCH_BASIC_AUTH` or `CONTIWATCH_AUTH_USER` + `CONTIWATCH_AUTH_PASS`).
+- If `CONTIWATCH_APP_PIN` is set, controller API requires an active PIN session (except `/api/health`, `/api/version`, `/api/meta`, `/api/release`, `/api/pin/*`).
+- Discord webhook test endpoint validates official Discord webhook URLs (`https://.../api/webhooks/...`).
 
 UI timing:
 - `Last scan` refers to the last update-check scan (`/api/scan` / agent `/api/status`).
@@ -164,6 +229,13 @@ UI timing:
 ```bash
 docker compose up -d --build
 ```
+
+If you want to use the new security features, edit [docker-compose.yml](/home/buzuser/github/contiwatch_dev/docker-compose.yml) before first start and uncomment/set:
+- `CONTIWATCH_BASIC_AUTH` or `CONTIWATCH_AUTH_USER` + `CONTIWATCH_AUTH_PASS`
+- `CONTIWATCH_APP_PIN`
+- optionally `CONTIWATCH_PIN_SESSION_TTL_SEC`
+
+For a remote agent, edit [compose_agent.yml](/home/buzuser/github/contiwatch_dev/compose_agent.yml) and set a long random `CONTIWATCH_AGENT_TOKEN`.
 
 Stop:
 ```bash
