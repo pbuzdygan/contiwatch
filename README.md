@@ -89,9 +89,8 @@ docker pull ghcr.io/<owner>/<repo>:dev_<version>
 - `CONTIWATCH_ADDR` (default `:8080`)
 - `CONTIWATCH_CONFIG` (default `/data/config.json`)
 - `TZ` (optional; e.g. `Europe/Warsaw` for local timestamps)
-- `CONTIWATCH_BASIC_AUTH` (optional; `user:password` - enables HTTP Basic Auth for controller mode)
-- `CONTIWATCH_AUTH_USER` + `CONTIWATCH_AUTH_PASS` (optional alternative to `CONTIWATCH_BASIC_AUTH`)
-- `CONTIWATCH_APP_PIN` (optional; enables PIN guard for controller API/UI, value must be 4-8 digits)
+- `APP_PIN` (required in controller mode; 4-8 digits)
+- `CONTIWATCH_APP_PIN` (optional backward-compatibility fallback for old deployments; use `APP_PIN` in new setup)
 - `CONTIWATCH_PIN_SESSION_TTL_SEC` (optional; PIN session TTL in seconds, default `28800`)
 - `CONTIWATCH_PIN_MIN_RESPONSE_MS` (optional; minimum verify response time to reduce brute-force signal, default `250`)
 - `CONTIWATCH_AGENT` (optional; set to `true` to run in agent mode)
@@ -102,9 +101,8 @@ docker pull ghcr.io/<owner>/<repo>:dev_<version>
 - `CONTIWATCH_GITHUB_TOKEN` (optional; token for private repos or higher GitHub API limits)
 
 ## Recommended security setup
-For the controller instance, the recommended baseline is:
-- enable HTTP Basic Auth with `CONTIWATCH_BASIC_AUTH`, or `CONTIWATCH_AUTH_USER` + `CONTIWATCH_AUTH_PASS`
-- enable PIN Guard with `CONTIWATCH_APP_PIN`
+For the controller instance, the enforced baseline is:
+- set `APP_PIN` (controller will not start without it)
 - keep the default config volume mounted on `/data`
 - use a strong unique `CONTIWATCH_AGENT_TOKEN` on every remote agent
 
@@ -115,8 +113,7 @@ environment:
   CONTIWATCH_ADDR: ":8080"
   CONTIWATCH_CONFIG: "/data/config.json"
   TZ: Europe/Warsaw
-  CONTIWATCH_BASIC_AUTH: "admin:change_me_now"
-  CONTIWATCH_APP_PIN: "1234"
+  APP_PIN: "1234"
   CONTIWATCH_PIN_SESSION_TTL_SEC: "28800"
   CONTIWATCH_PIN_MIN_RESPONSE_MS: "250"
 ```
@@ -133,8 +130,8 @@ environment:
 ```
 
 Important:
-- `CONTIWATCH_APP_PIN` is for the controller only. Do not use it on remote agents.
-- PIN Guard does not replace controller auth. The strongest setup is Basic Auth + PIN Guard together.
+- `APP_PIN` is for the controller only. Do not use it on remote agents.
+- Basic Auth has been removed from controller mode.
 - Agent mode is protected by bearer token, not by PIN Guard.
 
 ## Config file
@@ -166,8 +163,7 @@ Security notes:
   - `GET /api/config` returns `discord_webhook_url` hidden and `discord_webhook_configured` flag.
   - `GET /api/servers` returns remote token hidden and `token_configured` flag.
 - Controller hardening is environment-driven:
-  - `CONTIWATCH_BASIC_AUTH` or `CONTIWATCH_AUTH_USER` + `CONTIWATCH_AUTH_PASS` protects the whole controller UI/API.
-  - `CONTIWATCH_APP_PIN` adds a session lock layer for protected controller API endpoints and the browser UI.
+  - `APP_PIN` is required for controller startup and enables session gating for protected controller API endpoints and browser UI.
   - Remote agents stay token-protected through `CONTIWATCH_AGENT_TOKEN`.
 - To keep an existing secret when updating:
   - send `discord_webhook_url="__keep__"` for config updates,
@@ -217,8 +213,7 @@ Notes:
 - `POST /api/update/{container_id}` returns `old_image_id`, `new_image_id`, and `applied_image_id` to help debug tag/image mismatches.
 - Periodic scans are disabled by default; enable via `scheduler_enabled` in the config (UI).
 - Agent mode exposes a limited API surface (token required).
-- Controller mode can be protected with HTTP Basic Auth (`CONTIWATCH_BASIC_AUTH` or `CONTIWATCH_AUTH_USER` + `CONTIWATCH_AUTH_PASS`).
-- If `CONTIWATCH_APP_PIN` is set, controller API requires an active PIN session (except `/api/health`, `/api/version`, `/api/meta`, `/api/release`, `/api/pin/*`).
+- Controller mode requires `APP_PIN` and enforces active PIN session for protected API endpoints (except `/api/health`, `/api/version`, `/api/meta`, `/api/release`, `/api/pin/*`).
 - Discord webhook test endpoint validates official Discord webhook URLs (`https://.../api/webhooks/...`).
 
 UI timing:
@@ -230,9 +225,8 @@ UI timing:
 docker compose up -d --build
 ```
 
-If you want to use the new security features, edit [docker-compose.yml](/home/buzuser/github/contiwatch_dev/docker-compose.yml) before first start and uncomment/set:
-- `CONTIWATCH_BASIC_AUTH` or `CONTIWATCH_AUTH_USER` + `CONTIWATCH_AUTH_PASS`
-- `CONTIWATCH_APP_PIN`
+Before first start, edit [docker-compose.yml](/home/buzuser/github/contiwatch_dev/docker-compose.yml) and set:
+- `APP_PIN`
 - optionally `CONTIWATCH_PIN_SESSION_TTL_SEC`
 
 For a remote agent, edit [compose_agent.yml](/home/buzuser/github/contiwatch_dev/compose_agent.yml) and set a long random `CONTIWATCH_AGENT_TOKEN`.

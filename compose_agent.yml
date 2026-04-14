@@ -16,8 +16,8 @@ services:
       CONTIWATCH_ADDR: ":8080"
       CONTIWATCH_CONFIG: "/data/config.json"
       TZ: Europe/Warsaw
-      # Do not enable CONTIWATCH_APP_PIN on remote agents.
-      # PIN Guard is intended for controller UI/API access, while agent mode is protected by CONTIWATCH_AGENT_TOKEN.
+      # Do not enable APP_PIN on remote agents.
+      # PIN gate is required only for controller UI/API access, while agent mode is protected by CONTIWATCH_AGENT_TOKEN.
       # Optional hardening for agent release metadata / GitHub checks:
       # CONTIWATCH_REPO: "pbuzdygan/contiwatch"
       # CONTIWATCH_CHANNEL: "main"

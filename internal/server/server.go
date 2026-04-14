@@ -50,21 +50,18 @@ type Server struct {
 	logs   []logEntry
 	logSeq int64
 
-	agentMode             bool
-	agentToken            string
-	controllerAuthEnabled bool
-	controllerAuthUser    string
-	controllerAuthPass    string
-	pinGuardEnabled       bool
-	pinHash               string
-	pinSalt               string
-	pinSessionTTL         time.Duration
-	pinMinResponseDelay   time.Duration
-	pinMu                 sync.Mutex
-	pinSessions           map[string]pinSessionEntry
-	pinAttempts           map[string]pinAttemptEntry
-	version               string
-	remoteScanRunning     atomic.Int64
+	agentMode           bool
+	agentToken          string
+	pinGuardEnabled     bool
+	pinHash             string
+	pinSalt             string
+	pinSessionTTL       time.Duration
+	pinMinResponseDelay time.Duration
+	pinMu               sync.Mutex
+	pinSessions         map[string]pinSessionEntry
+	pinAttempts         map[string]pinAttemptEntry
+	version             string
+	remoteScanRunning   atomic.Int64
 
 	serverInfoMu      sync.RWMutex
 	serverInfo        map[string]serverInfoSnapshot
@@ -98,7 +95,7 @@ const (
 	scanStateError     = "error"
 )
 
-func New(store *config.Store, watcher *dockerwatcher.Watcher, agentMode bool, agentToken string, version string) *Server {
+func New(store *config.Store, watcher *dockerwatcher.Watcher, agentMode bool, agentToken string, version string) (*Server, error) {
 	statePath := ""
 	if store != nil {
 		configPath := strings.TrimSpace(store.Path())
@@ -106,44 +103,41 @@ func New(store *config.Store, watcher *dockerwatcher.Watcher, agentMode bool, ag
 			statePath = path.Join(path.Dir(configPath), "scan_state.json")
 		}
 	}
-	controllerAuthEnabled, controllerAuthUser, controllerAuthPass := parseControllerAuthFromEnv()
-	pinGuardEnabled, configuredPin, pinSessionTTL, pinMinResponseDelay := parsePinGuardFromEnv()
+	pinGuardEnabled, configuredPin, pinSessionTTL, pinMinResponseDelay, err := parsePinGuardFromEnv(agentMode)
+	if err != nil {
+		return nil, err
+	}
 	pinSalt := ""
 	pinHash := ""
 	if pinGuardEnabled {
-		var err error
 		pinSalt, pinHash, err = initializePinGuardMaterial(configuredPin)
 		if err != nil {
-			log.Printf("startup: pin guard disabled due to invalid CONTIWATCH_APP_PIN: %v", err)
-			pinGuardEnabled = false
+			return nil, err
 		}
 	}
 	s := &Server{
-		store:                 store,
-		watcher:               watcher,
-		mux:                   http.NewServeMux(),
-		agentMode:             agentMode,
-		agentToken:            agentToken,
-		controllerAuthEnabled: controllerAuthEnabled,
-		controllerAuthUser:    controllerAuthUser,
-		controllerAuthPass:    controllerAuthPass,
-		pinGuardEnabled:       pinGuardEnabled,
-		pinHash:               pinHash,
-		pinSalt:               pinSalt,
-		pinSessionTTL:         pinSessionTTL,
-		pinMinResponseDelay:   pinMinResponseDelay,
-		pinSessions:           map[string]pinSessionEntry{},
-		pinAttempts:           map[string]pinAttemptEntry{},
-		version:               version,
-		scanStates:            map[string]scanState{},
-		statePath:             statePath,
-		serverInfo:            map[string]serverInfoSnapshot{},
+		store:               store,
+		watcher:             watcher,
+		mux:                 http.NewServeMux(),
+		agentMode:           agentMode,
+		agentToken:          agentToken,
+		pinGuardEnabled:     pinGuardEnabled,
+		pinHash:             pinHash,
+		pinSalt:             pinSalt,
+		pinSessionTTL:       pinSessionTTL,
+		pinMinResponseDelay: pinMinResponseDelay,
+		pinSessions:         map[string]pinSessionEntry{},
+		pinAttempts:         map[string]pinAttemptEntry{},
+		version:             version,
+		scanStates:          map[string]scanState{},
+		statePath:           statePath,
+		serverInfo:          map[string]serverInfoSnapshot{},
 	}
 	s.routes()
 	s.loadScanState()
 	s.startServerInfoMonitor()
 	s.startReleaseCheckMonitor()
-	return s
+	return s, nil
 }
 
 func (s *Server) UpdateDiscord(webhookURL string) {
@@ -287,12 +281,6 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		if !s.agentAllowed(r.URL.Path) {
 			w.WriteHeader(http.StatusNotFound)
-			return
-		}
-	} else if s.controllerAuthEnabled {
-		allowAnonymousHealth := r.URL.Path == "/api/health"
-		if !allowAnonymousHealth && !s.authorizeController(r) {
-			writeControllerAuthChallenge(w)
 			return
 		}
 	}

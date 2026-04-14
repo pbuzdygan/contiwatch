@@ -1,11 +1,9 @@
 package server
 
 import (
-	"crypto/subtle"
 	"errors"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 )
 
@@ -13,40 +11,6 @@ const (
 	discordWebhookKeepSentinel  = "__keep__"
 	discordWebhookClearSentinel = "__clear__"
 )
-
-func parseControllerAuthFromEnv() (bool, string, string) {
-	basic := strings.TrimSpace(os.Getenv("CONTIWATCH_BASIC_AUTH"))
-	if basic != "" {
-		parts := strings.SplitN(basic, ":", 2)
-		if len(parts) == 2 && strings.TrimSpace(parts[0]) != "" && strings.TrimSpace(parts[1]) != "" {
-			return true, strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1])
-		}
-	}
-	user := strings.TrimSpace(os.Getenv("CONTIWATCH_AUTH_USER"))
-	pass := strings.TrimSpace(os.Getenv("CONTIWATCH_AUTH_PASS"))
-	if user != "" && pass != "" {
-		return true, user, pass
-	}
-	return false, "", ""
-}
-
-func (s *Server) authorizeController(r *http.Request) bool {
-	if s == nil || !s.controllerAuthEnabled {
-		return true
-	}
-	user, pass, ok := r.BasicAuth()
-	if !ok {
-		return false
-	}
-	userMatch := subtle.ConstantTimeCompare([]byte(user), []byte(s.controllerAuthUser)) == 1
-	passMatch := subtle.ConstantTimeCompare([]byte(pass), []byte(s.controllerAuthPass)) == 1
-	return userMatch && passMatch
-}
-
-func writeControllerAuthChallenge(w http.ResponseWriter) {
-	w.Header().Set("WWW-Authenticate", `Basic realm="contiwatch", charset="UTF-8"`)
-	w.WriteHeader(http.StatusUnauthorized)
-}
 
 func applySecurityHeaders(w http.ResponseWriter) {
 	if w == nil {

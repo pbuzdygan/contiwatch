@@ -29,10 +29,16 @@ type pinAttemptEntry struct {
 	UpdatedAt time.Time
 }
 
-func parsePinGuardFromEnv() (bool, string, time.Duration, time.Duration) {
-	pin := strings.TrimSpace(os.Getenv("CONTIWATCH_APP_PIN"))
+func parsePinGuardFromEnv(agentMode bool) (bool, string, time.Duration, time.Duration, error) {
+	if agentMode {
+		return false, "", 0, 0, nil
+	}
+	pin := strings.TrimSpace(os.Getenv("APP_PIN"))
 	if pin == "" {
-		return false, "", 0, 0
+		pin = strings.TrimSpace(os.Getenv("CONTIWATCH_APP_PIN"))
+	}
+	if pin == "" {
+		return false, "", 0, 0, errors.New("controller mode requires APP_PIN (4-8 digits)")
 	}
 	ttl := 8 * time.Hour
 	if raw := strings.TrimSpace(os.Getenv("CONTIWATCH_PIN_SESSION_TTL_SEC")); raw != "" {
@@ -46,7 +52,7 @@ func parsePinGuardFromEnv() (bool, string, time.Duration, time.Duration) {
 			minDelay = time.Duration(value) * time.Millisecond
 		}
 	}
-	return true, pin, ttl, minDelay
+	return true, pin, ttl, minDelay, nil
 }
 
 func isValidPinValue(value string) bool {
