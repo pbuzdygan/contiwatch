@@ -9230,6 +9230,7 @@ if (serverConnectionTypeSelect) {
 
 async function init() {
   sidebar.setAttribute("aria-hidden", "false");
+  initThemeToggle();
   if (pinGuardInput) {
     pinGuardInput.addEventListener("input", () => {
       const normalized = normalizePinGuardValue(pinGuardInput.value);
@@ -10106,7 +10107,6 @@ async function init() {
 	    true
 	  );
 
-  initThemeToggle();
   updateTopbarHeight();
   updateMobileNavHeight();
   try {

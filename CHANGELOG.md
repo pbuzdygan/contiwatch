@@ -21,6 +21,7 @@
 - Security: removed controller HTTP Basic Auth path in favor of required PIN gate in controller mode.
 - Docs: updated README/compose examples for required `APP_PIN` in controller mode and token-only agent mode.
 - UI/Security: added startup PIN unlock overlay, stable inline PIN error area, topbar lock action, theme restore hardening, and per-window PIN session behavior without TTL timeout.
+- UI/Security: fixed lock screen theme restore so new windows respect the saved light/dark mode before PIN unlock, without temporary dark-mode flash in light theme.
 
 ## v1.2.5
 
