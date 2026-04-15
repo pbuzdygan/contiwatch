@@ -17,9 +17,12 @@ import (
 const (
 	pinSessionHeaderName = "X-Contiwatch-Pin-Session"
 	pinVerifyMinDelay    = 250 * time.Millisecond
+	pinSessionIdleMaxAge = 24 * time.Hour
 )
 
-type pinSessionEntry struct{}
+type pinSessionEntry struct {
+	LastSeen time.Time
+}
 
 type pinAttemptEntry struct {
 	Failures  int
@@ -107,10 +110,17 @@ func (s *Server) pinSessionAuthorized(token string) bool {
 	if !s.pinGuardEnabled || token == "" {
 		return false
 	}
+	now := time.Now()
 	s.pinMu.Lock()
 	defer s.pinMu.Unlock()
-	_, ok := s.pinSessions[token]
-	return ok
+	s.pruneExpiredPinSessionsLocked(now)
+	entry, ok := s.pinSessions[token]
+	if !ok {
+		return false
+	}
+	entry.LastSeen = now
+	s.pinSessions[token] = entry
+	return true
 }
 
 func (s *Server) createPinSession() (string, error) {
@@ -118,11 +128,13 @@ func (s *Server) createPinSession() (string, error) {
 	if err != nil {
 		return "", err
 	}
+	now := time.Now()
 	s.pinMu.Lock()
 	if s.pinSessions == nil {
 		s.pinSessions = map[string]pinSessionEntry{}
 	}
-	s.pinSessions[token] = pinSessionEntry{}
+	s.pruneExpiredPinSessionsLocked(now)
+	s.pinSessions[token] = pinSessionEntry{LastSeen: now}
 	s.pinMu.Unlock()
 	return token, nil
 }
@@ -134,6 +146,17 @@ func (s *Server) revokePinSession(token string) {
 	s.pinMu.Lock()
 	delete(s.pinSessions, token)
 	s.pinMu.Unlock()
+}
+
+func (s *Server) pruneExpiredPinSessionsLocked(now time.Time) {
+	if len(s.pinSessions) == 0 {
+		return
+	}
+	for token, entry := range s.pinSessions {
+		if entry.LastSeen.IsZero() || now.Sub(entry.LastSeen) > pinSessionIdleMaxAge {
+			delete(s.pinSessions, token)
+		}
+	}
 }
 
 func clientIPFromRequest(r *http.Request) string {

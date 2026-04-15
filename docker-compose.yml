@@ -14,8 +14,8 @@ services:
       # Optional timezone for scheduler/log timestamps
       TZ: Europe/Warsaw
       # Required in controller mode: app PIN (4-8 digits)
-      # Change this before production use.
-      APP_PIN: "1234"
+      # Use a unique non-trivial value; do not keep predictable examples like 1234.
+      APP_PIN: "SET_A_UNIQUE_4_TO_8_DIGIT_PIN"
     restart: unless-stopped
 
 volumes:

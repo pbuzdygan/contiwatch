@@ -9,6 +9,7 @@
 - Security: fixed unrestricted webhook test target by enforcing Discord webhook URL validation.
 - Security: fixed weak config file permission by storing `/data/config.json` with `0600`.
 - Security: fixed missing UI/API lock layer by adding PIN session enforcement for protected controller API endpoints.
+- Security: fixed insecure setup examples by removing predictable default PIN values from shipped controller examples.
 
 ## New features
 - Security: added HTTP response hardening headers (CSP, `X-Frame-Options`, `nosniff`, `Referrer-Policy`, `Permissions-Policy`).
@@ -22,6 +23,7 @@
 - Docs: updated README/compose examples for required `APP_PIN` in controller mode and token-only agent mode.
 - UI/Security: added startup PIN unlock overlay, stable inline PIN error area, topbar lock action, theme restore hardening, and per-window PIN session behavior without TTL timeout.
 - UI/Security: fixed lock screen theme restore so new windows respect the saved light/dark mode before PIN unlock, without temporary dark-mode flash in light theme.
+- Security: added stale server-side PIN session cleanup after prolonged inactivity so abandoned PIN tokens do not remain valid indefinitely in memory.
 
 ## v1.2.5
 

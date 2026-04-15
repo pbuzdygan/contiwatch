@@ -65,7 +65,7 @@ docker run -d \
   -p 8080:8080 \
   -v /var/run/docker.sock:/var/run/docker.sock \
   -v contiwatch-data:/data \
-  -e APP_PIN="1234" \
+  -e APP_PIN="SET_A_UNIQUE_4_TO_8_DIGIT_PIN" \
   contiwatch
 ```
 
@@ -121,7 +121,7 @@ environment:
   CONTIWATCH_ADDR: ":8080"
   CONTIWATCH_CONFIG: "/data/config.json"
   TZ: Europe/Warsaw
-  APP_PIN: "1234"
+  APP_PIN: "SET_A_UNIQUE_4_TO_8_DIGIT_PIN"
 ```
 
 Example remote agent `compose_agent.yml` security block:
@@ -137,10 +137,11 @@ environment:
 
 Important:
 - `APP_PIN` is for the controller only. Do not use it on remote agents.
+- Do not use predictable values such as `1234`, `1111`, or `0000`.
 - Basic Auth has been removed from controller mode.
 - Agent mode is protected by bearer token, not by PIN Guard.
 - PIN session is per browser window/tab: refresh in the same tab keeps access, but opening a new tab/window requires PIN again.
-- PIN session no longer uses server-side TTL timeout during active work in the same tab.
+- Active work in the same tab is not interrupted by a short session TTL; stale server-side PIN tokens are only cleaned up after prolonged inactivity as a fallback safeguard.
 
 ## Config file
 `/data/config.json` fields include:

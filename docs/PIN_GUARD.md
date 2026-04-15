@@ -141,7 +141,7 @@ W Mopay:
 ### 5.5 Wzorzec API + pseudo-kod (do przeniesienia)
 
 Minimalny kontrakt API:
-- `POST /pin/verify` → `{ pin: "1234" }` → `{ ok: true }` lub HTTP 401 `{ ok: false }`
+- `POST /pin/verify` → `{ pin: "<4-8 digit PIN>" }` → `{ ok: true }` lub HTTP 401 `{ ok: false }`
 
 Opcjonalnie (jesli chcesz sesje serwerowa):
 - `POST /pin/session` → tworzy sesje i zwraca token/cookie
