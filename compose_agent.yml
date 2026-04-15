@@ -8,8 +8,8 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - contiwatch_agent_data:/data
     environment:
-      # Both "CONTIWATCH_AGENT" env are MUST HAVE for REMOTE AGENT instance
-      # Remote agent instance has limited funtions compared to standard Contiwatch instance and its used to monitor remote Docker hosts
+      # Both CONTIWATCH_AGENT env vars are required for remote agent mode.
+      # Remote agent mode has a limited API surface and is used to monitor remote Docker hosts.
       CONTIWATCH_AGENT: "true"
       CONTIWATCH_AGENT_TOKEN: "PUT_32_CHAR_TOKEN_HERE"
       # Default internal port can be changed - helpful when running in "network_mode: host" or other "direct IP" setups

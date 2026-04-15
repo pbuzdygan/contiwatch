@@ -2443,6 +2443,11 @@ input::placeholder {
   mask-image: url("/icons/ui/key-off.svg");
 }
 
+.icon-lock {
+  -webkit-mask-image: url("/icons/ui/lock.svg");
+  mask-image: url("/icons/ui/lock.svg");
+}
+
 .icon-chevrons-up {
   -webkit-mask-image: url("/icons/ui/chevrons-up.svg");
   mask-image: url("/icons/ui/chevrons-up.svg");
@@ -5337,6 +5342,7 @@ input::placeholder {
 .pin-guard-logo {
   width: min(220px, 75%);
   height: auto;
+  border-radius: var(--r-control);
 }
 
 .pin-guard-card h2 {
@@ -5381,6 +5387,11 @@ input::placeholder {
   min-height: 20px;
   font-size: 0.85rem;
   color: var(--status-error);
+  visibility: hidden;
+}
+
+.pin-guard-error:not(:empty) {
+  visibility: visible;
 }
 
 .pin-guard-actions {

@@ -15,13 +15,11 @@ import (
 )
 
 const (
-	pinSessionCookieName = "contiwatch_pin_session"
 	pinSessionHeaderName = "X-Contiwatch-Pin-Session"
+	pinVerifyMinDelay    = 250 * time.Millisecond
 )
 
-type pinSessionEntry struct {
-	ExpiresAt time.Time
-}
+type pinSessionEntry struct{}
 
 type pinAttemptEntry struct {
 	Failures  int
@@ -29,30 +27,18 @@ type pinAttemptEntry struct {
 	UpdatedAt time.Time
 }
 
-func parsePinGuardFromEnv(agentMode bool) (bool, string, time.Duration, time.Duration, error) {
+func parsePinGuardFromEnv(agentMode bool) (bool, string, time.Duration, error) {
 	if agentMode {
-		return false, "", 0, 0, nil
+		return false, "", 0, nil
 	}
 	pin := strings.TrimSpace(os.Getenv("APP_PIN"))
 	if pin == "" {
 		pin = strings.TrimSpace(os.Getenv("CONTIWATCH_APP_PIN"))
 	}
 	if pin == "" {
-		return false, "", 0, 0, errors.New("controller mode requires APP_PIN (4-8 digits)")
+		return false, "", 0, errors.New("controller mode requires APP_PIN (4-8 digits)")
 	}
-	ttl := 8 * time.Hour
-	if raw := strings.TrimSpace(os.Getenv("CONTIWATCH_PIN_SESSION_TTL_SEC")); raw != "" {
-		if value, err := strconv.Atoi(raw); err == nil && value > 0 {
-			ttl = time.Duration(value) * time.Second
-		}
-	}
-	minDelay := 250 * time.Millisecond
-	if raw := strings.TrimSpace(os.Getenv("CONTIWATCH_PIN_MIN_RESPONSE_MS")); raw != "" {
-		if value, err := strconv.Atoi(raw); err == nil && value > 0 {
-			minDelay = time.Duration(value) * time.Millisecond
-		}
-	}
-	return true, pin, ttl, minDelay, nil
+	return true, pin, pinVerifyMinDelay, nil
 }
 
 func isValidPinValue(value string) bool {
@@ -108,12 +94,6 @@ func (s *Server) pinSessionTokenFromRequest(r *http.Request) string {
 	if r == nil {
 		return ""
 	}
-	if cookie, err := r.Cookie(pinSessionCookieName); err == nil && cookie != nil {
-		token := strings.TrimSpace(cookie.Value)
-		if token != "" {
-			return token
-		}
-	}
 	if value := strings.TrimSpace(r.Header.Get(pinSessionHeaderName)); value != "" {
 		return value
 	}
@@ -123,34 +103,14 @@ func (s *Server) pinSessionTokenFromRequest(r *http.Request) string {
 	return ""
 }
 
-func (s *Server) cleanupPinSessionsLocked(now time.Time) {
-	if s.pinSessions == nil {
-		return
-	}
-	for token, entry := range s.pinSessions {
-		if entry.ExpiresAt.Before(now) {
-			delete(s.pinSessions, token)
-		}
-	}
-}
-
 func (s *Server) pinSessionAuthorized(token string) bool {
 	if !s.pinGuardEnabled || token == "" {
 		return false
 	}
-	now := time.Now()
 	s.pinMu.Lock()
 	defer s.pinMu.Unlock()
-	s.cleanupPinSessionsLocked(now)
-	entry, ok := s.pinSessions[token]
-	if !ok {
-		return false
-	}
-	if entry.ExpiresAt.Before(now) {
-		delete(s.pinSessions, token)
-		return false
-	}
-	return true
+	_, ok := s.pinSessions[token]
+	return ok
 }
 
 func (s *Server) createPinSession() (string, error) {
@@ -162,7 +122,7 @@ func (s *Server) createPinSession() (string, error) {
 	if s.pinSessions == nil {
 		s.pinSessions = map[string]pinSessionEntry{}
 	}
-	s.pinSessions[token] = pinSessionEntry{ExpiresAt: time.Now().Add(s.pinSessionTTL)}
+	s.pinSessions[token] = pinSessionEntry{}
 	s.pinMu.Unlock()
 	return token, nil
 }
@@ -174,29 +134,6 @@ func (s *Server) revokePinSession(token string) {
 	s.pinMu.Lock()
 	delete(s.pinSessions, token)
 	s.pinMu.Unlock()
-}
-
-func (s *Server) setPinSessionCookie(w http.ResponseWriter, token string) {
-	http.SetCookie(w, &http.Cookie{
-		Name:     pinSessionCookieName,
-		Value:    token,
-		Path:     "/",
-		HttpOnly: true,
-		SameSite: http.SameSiteStrictMode,
-		MaxAge:   int(s.pinSessionTTL.Seconds()),
-	})
-}
-
-func clearPinSessionCookie(w http.ResponseWriter) {
-	http.SetCookie(w, &http.Cookie{
-		Name:     pinSessionCookieName,
-		Value:    "",
-		Path:     "/",
-		HttpOnly: true,
-		SameSite: http.SameSiteStrictMode,
-		MaxAge:   -1,
-		Expires:  time.Unix(0, 0),
-	})
 }
 
 func clientIPFromRequest(r *http.Request) string {
@@ -368,9 +305,8 @@ func (s *Server) handlePinVerify(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		s.setPinSessionCookie(w, token)
 		withMinPinDelay(startedAt, s.pinMinResponseDelay, func() {
-			writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+			writeJSON(w, http.StatusOK, map[string]any{"ok": true, "session_token": token})
 		})
 		return
 	}
@@ -398,7 +334,6 @@ func (s *Server) handlePinLogout(w http.ResponseWriter, r *http.Request) {
 	}
 	token := s.pinSessionTokenFromRequest(r)
 	s.revokePinSession(token)
-	clearPinSessionCookie(w)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 

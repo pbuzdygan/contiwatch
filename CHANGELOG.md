@@ -13,14 +13,14 @@
 ## New features
 - Security: added HTTP response hardening headers (CSP, `X-Frame-Options`, `nosniff`, `Referrer-Policy`, `Permissions-Policy`).
 - API: added safe secret update semantics using sentinels for webhook (`__keep__`, `__clear__`) and token-preserve on empty value for existing remote servers.
-- Security: added PIN guard (`APP_PIN`) with secure server-side PIN verification, HttpOnly session cookie, lockout/backoff protection, and `/api/pin/*` endpoints.
+- Security: added PIN guard (`APP_PIN`) with secure server-side PIN verification, per-window session token flow, lockout/backoff protection, and `/api/pin/*` endpoints.
 
-## Imprevements
+## Improvements
 - UI/Settings: Discord webhook value is now treated as hidden server-side secret (UI shows configured state instead of full value).
 - UI/Servers: remote token handling updated for hidden tokens (`token_configured`) with safe “leave empty to keep” behavior.
 - Security: removed controller HTTP Basic Auth path in favor of required PIN gate in controller mode.
 - Docs: updated README/compose examples for required `APP_PIN` in controller mode and token-only agent mode.
-- UI/Security: added startup PIN unlock overlay and topbar lock action to re-lock session on demand.
+- UI/Security: added startup PIN unlock overlay, stable inline PIN error area, topbar lock action, theme restore hardening, and per-window PIN session behavior without TTL timeout.
 
 ## v1.2.5
 

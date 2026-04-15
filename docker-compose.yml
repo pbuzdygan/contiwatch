@@ -14,11 +14,8 @@ services:
       # Optional timezone for scheduler/log timestamps
       TZ: Europe/Warsaw
       # Required in controller mode: app PIN (4-8 digits)
+      # Change this before production use.
       APP_PIN: "1234"
-      # Optional: PIN session lifetime in seconds (default 28800 = 8h)
-      # CONTIWATCH_PIN_SESSION_TTL_SEC: "28800"
-      # Optional: minimum response time for PIN verify (default 250ms)
-      # CONTIWATCH_PIN_MIN_RESPONSE_MS: "250"
     restart: unless-stopped
 
 volumes:

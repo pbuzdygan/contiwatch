@@ -55,9 +55,19 @@ docker run -d \
 Open `http://localhost:8080`.
 
 For a production-like controller deployment, do not stop at the minimal example above. In practice you should enable at least:
-- HTTP Basic Auth for the whole controller UI/API
-- PIN Guard for the interactive UI/API session layer
+- required controller PIN gate for the whole interactive UI/API session
 - a non-default strong agent token for every remote agent
+
+Example controller run with required PIN:
+```bash
+docker run -d \
+  --name contiwatch \
+  -p 8080:8080 \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -v contiwatch-data:/data \
+  -e APP_PIN="1234" \
+  contiwatch
+```
 
 ## Agent mode (remote)
 Run on a remote host with Docker socket access and a token:
@@ -91,8 +101,6 @@ docker pull ghcr.io/<owner>/<repo>:dev_<version>
 - `TZ` (optional; e.g. `Europe/Warsaw` for local timestamps)
 - `APP_PIN` (required in controller mode; 4-8 digits)
 - `CONTIWATCH_APP_PIN` (optional backward-compatibility fallback for old deployments; use `APP_PIN` in new setup)
-- `CONTIWATCH_PIN_SESSION_TTL_SEC` (optional; PIN session TTL in seconds, default `28800`)
-- `CONTIWATCH_PIN_MIN_RESPONSE_MS` (optional; minimum verify response time to reduce brute-force signal, default `250`)
 - `CONTIWATCH_AGENT` (optional; set to `true` to run in agent mode)
 - `CONTIWATCH_AGENT_TOKEN` (required in agent mode; bearer token for API access)
 - `CONTIWATCH_REPO` (optional; GitHub repo in `owner/name` form for release links/checks)
@@ -114,8 +122,6 @@ environment:
   CONTIWATCH_CONFIG: "/data/config.json"
   TZ: Europe/Warsaw
   APP_PIN: "1234"
-  CONTIWATCH_PIN_SESSION_TTL_SEC: "28800"
-  CONTIWATCH_PIN_MIN_RESPONSE_MS: "250"
 ```
 
 Example remote agent `compose_agent.yml` security block:
@@ -133,6 +139,8 @@ Important:
 - `APP_PIN` is for the controller only. Do not use it on remote agents.
 - Basic Auth has been removed from controller mode.
 - Agent mode is protected by bearer token, not by PIN Guard.
+- PIN session is per browser window/tab: refresh in the same tab keeps access, but opening a new tab/window requires PIN again.
+- PIN session no longer uses server-side TTL timeout during active work in the same tab.
 
 ## Config file
 `/data/config.json` fields include:
@@ -227,7 +235,6 @@ docker compose up -d --build
 
 Before first start, edit [docker-compose.yml](/home/buzuser/github/contiwatch_dev/docker-compose.yml) and set:
 - `APP_PIN`
-- optionally `CONTIWATCH_PIN_SESSION_TTL_SEC`
 
 For a remote agent, edit [compose_agent.yml](/home/buzuser/github/contiwatch_dev/compose_agent.yml) and set a long random `CONTIWATCH_AGENT_TOKEN`.
 
@@ -248,7 +255,7 @@ Use your host user IDs (from `id`).
 If you see `permission denied while trying to connect to the Docker daemon socket at unix:///var/run/docker.sock`, ensure the socket is mounted and the container user can access it. Contiwatch tries to detect the socket group ID automatically; if your setup needs it explicitly, set `DOCKER_GID` to the group id of `/var/run/docker.sock` on the host (e.g. from `stat -c '%g' /var/run/docker.sock`).
 
 ## Buy Me a Coffee
-If You like results of my efforts, feel free to show that by supporting me.
+If you like the results of this project, feel free to support it.
 
 [!["Buy Me A Coffee"](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://www.buymeacoffee.com/pbuzdygan)
 <p align="left">

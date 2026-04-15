@@ -388,6 +388,7 @@ let pinGuardUnlocked = true;
 let pinGuardSubmitting = false;
 let pinUnlockPromise = null;
 let pinUnlockResolve = null;
+const pinSessionStorageKey = "contiwatch_pin_session_token";
 
 function showStackModalError(message) {
   if (!stackModalErrorEl) return;
@@ -505,7 +506,55 @@ function setPinGuardError(message) {
   if (!pinGuardErrorEl) return;
   const text = String(message || "").trim();
   pinGuardErrorEl.textContent = text;
-  pinGuardErrorEl.classList.toggle("hidden", !text);
+}
+
+function getPinSessionToken() {
+  try {
+    return String(sessionStorage.getItem(pinSessionStorageKey) || "").trim();
+  } catch {
+    return "";
+  }
+}
+
+function storePinSessionToken(token) {
+  try {
+    if (token) {
+      sessionStorage.setItem(pinSessionStorageKey, token);
+    } else {
+      sessionStorage.removeItem(pinSessionStorageKey);
+    }
+  } catch {
+    // ignore
+  }
+}
+
+function withPinSessionURL(url) {
+  const token = getPinSessionToken();
+  if (!token || typeof url !== "string" || !url.startsWith("/")) {
+    return url;
+  }
+  try {
+    const parsed = new URL(url, window.location.origin);
+    parsed.searchParams.set("pin_session", token);
+    return `${parsed.pathname}${parsed.search}${parsed.hash}`;
+  } catch {
+    return url;
+  }
+}
+
+function withPinSessionOptions(options = {}) {
+  const token = getPinSessionToken();
+  const next = { ...options };
+  const headers = new Headers(options.headers || {});
+  if (token) {
+    headers.set("X-Contiwatch-Pin-Session", token);
+  }
+  next.headers = headers;
+  return next;
+}
+
+function fetchWithPinSession(url, options = {}) {
+  return fetch(withPinSessionURL(url), withPinSessionOptions(options));
 }
 
 function setPinGuardBusyState(busy) {
@@ -554,7 +603,7 @@ function normalizePinGuardValue(value) {
 
 async function fetchPinGuardStatus() {
   try {
-    const res = await fetch("/api/pin/status", { credentials: "same-origin" });
+    const res = await fetchWithPinSession("/api/pin/status");
     if (!res.ok) {
       return { enabled: false, unlocked: true };
     }
@@ -570,6 +619,9 @@ async function fetchPinGuardStatus() {
 
 async function bootstrapPinGuard() {
   const status = await fetchPinGuardStatus();
+  if (!status.unlocked) {
+    storePinSessionToken("");
+  }
   setPinGuardState(status.enabled, status.unlocked);
 }
 
@@ -582,6 +634,7 @@ function waitForPinUnlock() {
 
 function activatePinGuardLock(message) {
   if (!pinGuardEnabled) return;
+  storePinSessionToken("");
   setPinGuardState(true, false);
   setPinGuardError(message || "Session locked. Enter PIN.");
 }
@@ -603,11 +656,11 @@ async function submitPinGuard() {
     const res = await fetch("/api/pin/verify", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      credentials: "same-origin",
       body: JSON.stringify({ pin: normalized }),
     });
     const payload = await res.json().catch(() => ({}));
-    if (res.ok && payload && payload.ok) {
+    if (res.ok && payload && payload.ok && typeof payload.session_token === "string" && payload.session_token.length > 20) {
+      storePinSessionToken(payload.session_token);
       if (pinGuardInput) pinGuardInput.value = "";
       setPinGuardState(true, true);
       initServerStream();
@@ -637,18 +690,18 @@ async function submitPinGuard() {
 async function lockPinGuardSession() {
   if (!pinGuardEnabled) return;
   try {
-    await fetch("/api/pin/logout", {
+    await fetchWithPinSession("/api/pin/logout", {
       method: "POST",
-      credentials: "same-origin",
     });
   } catch {
     // ignore
   }
+  storePinSessionToken("");
   activatePinGuardLock("Session locked. Enter PIN.");
 }
 
 async function fetchJSON(url, options = {}) {
-  const res = await fetch(url, options);
+  const res = await fetchWithPinSession(url, options);
   if (!res.ok) {
     const payload = await res.json().catch(() => ({}));
     if (res.status === 401 && payload && payload.error === "pin_required") {
@@ -3121,7 +3174,11 @@ const themeStorageKey = "contiwatch_theme";
 function applyTheme(mode) {
   if (!themeModes.includes(mode)) return;
   document.documentElement.setAttribute("data-theme", mode);
-  localStorage.setItem(themeStorageKey, mode);
+  try {
+    localStorage.setItem(themeStorageKey, mode);
+  } catch {
+    // ignore
+  }
   if (themeToggleBtn) {
     const nextMode = mode === "dark" ? "light" : "dark";
     const label = nextMode[0].toUpperCase() + nextMode.slice(1);
@@ -3282,11 +3339,24 @@ async function refreshSchedulerPreview() {
 }
 
 function initThemeToggle() {
-  const saved = localStorage.getItem(themeStorageKey);
-  applyTheme(saved && themeModes.includes(saved) ? saved : "light");
+  let saved = "";
+  try {
+    saved = localStorage.getItem(themeStorageKey) || "";
+  } catch {
+    saved = "";
+  }
+  const initial = saved && themeModes.includes(saved)
+    ? saved
+    : (document.documentElement.getAttribute("data-theme") || "light");
+  applyTheme(themeModes.includes(initial) ? initial : "light");
   if (!themeToggleBtn) return;
   themeToggleBtn.addEventListener("click", () => {
-    const current = localStorage.getItem(themeStorageKey) || "light";
+    let current = "light";
+    try {
+      current = localStorage.getItem(themeStorageKey) || "light";
+    } catch {
+      current = document.documentElement.getAttribute("data-theme") || "light";
+    }
     const next = current === "dark" ? "light" : "dark";
     applyTheme(next);
   });
@@ -4852,7 +4922,7 @@ function openContainersShell(container) {
   containersShellTerm.writeln("");
   hideContainersShellPlaceholder();
 
-  const wsUrl = `/api/containers/shell?scope=${encodeURIComponent(containersSelectedScope)}&container_id=${encodeURIComponent(container.id)}`;
+  const wsUrl = withPinSessionURL(`/api/containers/shell?scope=${encodeURIComponent(containersSelectedScope)}&container_id=${encodeURIComponent(container.id)}`);
   const ws = new WebSocket(wsUrl);
   ws.binaryType = "arraybuffer";
   containersShellSocket = ws;
@@ -4931,7 +5001,7 @@ function openContainersLogs(container, options = {}) {
 
   updateContainersLogsStreamIndicator();
   const timestamps = containersLogsTimestamps ? "1" : "0";
-  const wsUrl = `/api/containers/logs?scope=${encodeURIComponent(containersSelectedScope)}&container_id=${encodeURIComponent(container.id)}&follow=1&tail=100&timestamps=${timestamps}`;
+  const wsUrl = withPinSessionURL(`/api/containers/logs?scope=${encodeURIComponent(containersSelectedScope)}&container_id=${encodeURIComponent(container.id)}&follow=1&tail=100&timestamps=${timestamps}`);
   const ws = new WebSocket(wsUrl);
   containersLogsSocket = ws;
 
@@ -6923,12 +6993,16 @@ async function runNetworkRemove(network) {
   }
   if (!network || !network.id) return;
   try {
-    const res = await fetch("/api/networks/remove", {
+    const res = await fetchWithPinSession("/api/networks/remove", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ scope, network_id: network.id }),
     });
     const payload = await res.json().catch(() => ({}));
+    if (res.status === 401 && payload && payload.error === "pin_required") {
+      activatePinGuardLock("Session locked. Enter PIN.");
+      return;
+    }
     clearNetworksConfirmations();
     if (res.ok) {
       await refreshNetworks({ silent: true });
@@ -7332,12 +7406,16 @@ async function runVolumeRemove(volume) {
   }
   if (!volume || !volume.name) return;
   try {
-    const res = await fetch("/api/volumes/remove", {
+    const res = await fetchWithPinSession("/api/volumes/remove", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ scope, name: volume.name }),
     });
     const payload = await res.json().catch(() => ({}));
+    if (res.status === 401 && payload && payload.error === "pin_required") {
+      activatePinGuardLock("Session locked. Enter PIN.");
+      return;
+    }
     clearVolumesConfirmations();
     if (res.ok) {
       await refreshVolumes({ silent: true });
@@ -7718,7 +7796,7 @@ function upsertStatusResult(next) {
 
 function initServerStream() {
   if (serverStream || typeof window.EventSource === "undefined") return;
-  serverStream = new EventSource("/api/servers/stream");
+  serverStream = new EventSource(withPinSessionURL("/api/servers/stream"));
   serverStream.addEventListener("server_info_snapshot", (event) => {
     try {
       const list = JSON.parse(event.data);

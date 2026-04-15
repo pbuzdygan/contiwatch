@@ -55,7 +55,6 @@ type Server struct {
 	pinGuardEnabled     bool
 	pinHash             string
 	pinSalt             string
-	pinSessionTTL       time.Duration
 	pinMinResponseDelay time.Duration
 	pinMu               sync.Mutex
 	pinSessions         map[string]pinSessionEntry
@@ -103,7 +102,7 @@ func New(store *config.Store, watcher *dockerwatcher.Watcher, agentMode bool, ag
 			statePath = path.Join(path.Dir(configPath), "scan_state.json")
 		}
 	}
-	pinGuardEnabled, configuredPin, pinSessionTTL, pinMinResponseDelay, err := parsePinGuardFromEnv(agentMode)
+	pinGuardEnabled, configuredPin, pinMinResponseDelay, err := parsePinGuardFromEnv(agentMode)
 	if err != nil {
 		return nil, err
 	}
@@ -124,7 +123,6 @@ func New(store *config.Store, watcher *dockerwatcher.Watcher, agentMode bool, ag
 		pinGuardEnabled:     pinGuardEnabled,
 		pinHash:             pinHash,
 		pinSalt:             pinSalt,
-		pinSessionTTL:       pinSessionTTL,
 		pinMinResponseDelay: pinMinResponseDelay,
 		pinSessions:         map[string]pinSessionEntry{},
 		pinAttempts:         map[string]pinAttemptEntry{},
