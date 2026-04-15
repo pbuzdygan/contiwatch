@@ -42,13 +42,13 @@ type Config struct {
 }
 
 type SchedulerPlan struct {
-	Mode  string         `json:"mode"`
+	Mode  string          `json:"mode"`
 	Basic *SchedulerBasic `json:"basic,omitempty"`
 	Cron  *SchedulerCron  `json:"cron,omitempty"`
 }
 
 type SchedulerBasic struct {
-	Days []int `json:"days"`
+	Days []int  `json:"days"`
 	Time string `json:"time"`
 }
 
@@ -80,8 +80,8 @@ const (
 
 func DefaultConfig() Config {
 	return Config{
-		ScanIntervalSec:                 60 * 1440,
-		SchedulerEnabled:                false,
+		ScanIntervalSec:  60 * 1440,
+		SchedulerEnabled: false,
 		SchedulerPlan: SchedulerPlan{
 			Mode: SchedulerModeLegacy,
 		},
@@ -182,7 +182,7 @@ func (s *Store) saveLocked() error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(s.path, data, 0o644)
+	return os.WriteFile(s.path, data, 0o600)
 }
 
 func (s *Store) Get() Config {

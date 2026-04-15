@@ -2443,6 +2443,11 @@ input::placeholder {
   mask-image: url("/icons/ui/key-off.svg");
 }
 
+.icon-lock {
+  -webkit-mask-image: url("/icons/ui/lock.svg");
+  mask-image: url("/icons/ui/lock.svg");
+}
+
 .icon-chevrons-up {
   -webkit-mask-image: url("/icons/ui/chevrons-up.svg");
   mask-image: url("/icons/ui/chevrons-up.svg");
@@ -5305,4 +5310,108 @@ input::placeholder {
   margin-top: var(--s-1);
   font-size: 0.75rem;
   color: var(--color-text-muted);
+}
+
+.pin-guard-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 11000;
+  background: color-mix(in srgb, #e2e8f0, transparent 22%);
+  backdrop-filter: blur(3px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--s-4);
+}
+
+:root[data-theme="dark"] .pin-guard-overlay {
+  background: color-mix(in srgb, #0f172a, transparent 38%);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .pin-guard-overlay {
+    background: color-mix(in srgb, #0f172a, transparent 38%);
+  }
+}
+
+.pin-guard-card {
+  width: min(100%, 420px);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--r-card);
+  box-shadow: var(--shadow-card);
+  padding: var(--s-5);
+}
+
+.pin-guard-header {
+  display: flex;
+  justify-content: center;
+  margin-bottom: var(--s-3);
+}
+
+.pin-guard-logo {
+  width: min(220px, 75%);
+  height: auto;
+  border-radius: var(--r-control);
+}
+
+.pin-guard-card h2 {
+  margin: 0;
+  font-size: 1.25rem;
+  text-align: center;
+}
+
+.pin-guard-subtitle {
+  margin: var(--s-2) 0 var(--s-4);
+  text-align: center;
+  color: var(--color-text-muted);
+  font-size: 0.9rem;
+}
+
+.pin-guard-form {
+  display: grid;
+  gap: var(--s-3);
+}
+
+.pin-guard-form label {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+}
+
+.pin-guard-form input {
+  height: 44px;
+  border-radius: var(--r-control);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  padding: 0 12px;
+}
+
+.pin-guard-form input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: var(--focus-ring);
+}
+
+.pin-guard-error {
+  min-height: 20px;
+  font-size: 0.85rem;
+  color: var(--status-error);
+  visibility: hidden;
+}
+
+.pin-guard-error:not(:empty) {
+  visibility: visible;
+}
+
+.pin-guard-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--s-2);
+}
+
+@media (max-width: 600px) {
+  .pin-guard-card {
+    padding: var(--s-4);
+  }
 }

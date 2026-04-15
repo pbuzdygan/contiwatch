@@ -1,5 +1,30 @@
 # Changelog
 
+## v1.3.0
+
+## Bug fixes
+- Security: fixed unsecured-by-default controller startup by requiring PIN in controller mode (`APP_PIN`).
+- Security: fixed secrets exposure in read APIs (`GET /api/config`, `GET /api/servers`) by hiding sensitive values and exposing only `*_configured` flags.
+- Security: fixed permissive WebSocket origin policy (`container shell/logs`) by validating origin.
+- Security: fixed unrestricted webhook test target by enforcing Discord webhook URL validation.
+- Security: fixed weak config file permission by storing `/data/config.json` with `0600`.
+- Security: fixed missing UI/API lock layer by adding PIN session enforcement for protected controller API endpoints.
+- Security: fixed insecure setup examples by removing predictable default PIN values from shipped controller examples.
+
+## New features
+- Security: added HTTP response hardening headers (CSP, `X-Frame-Options`, `nosniff`, `Referrer-Policy`, `Permissions-Policy`).
+- API: added safe secret update semantics using sentinels for webhook (`__keep__`, `__clear__`) and token-preserve on empty value for existing remote servers.
+- Security: added PIN guard (`APP_PIN`) with secure server-side PIN verification, per-window session token flow, lockout/backoff protection, and `/api/pin/*` endpoints.
+
+## Improvements
+- UI/Settings: Discord webhook value is now treated as hidden server-side secret (UI shows configured state instead of full value).
+- UI/Servers: remote token handling updated for hidden tokens (`token_configured`) with safe “leave empty to keep” behavior.
+- Security: removed controller HTTP Basic Auth path in favor of required PIN gate in controller mode.
+- Docs: updated README/compose examples for required `APP_PIN` in controller mode and token-only agent mode.
+- UI/Security: added startup PIN unlock overlay, stable inline PIN error area, topbar lock action, theme restore hardening, and per-window PIN session behavior without TTL timeout.
+- UI/Security: fixed lock screen theme restore so new windows respect the saved light/dark mode before PIN unlock, without temporary dark-mode flash in light theme.
+- Security: added stale server-side PIN session cleanup after prolonged inactivity so abandoned PIN tokens do not remain valid indefinitely in memory.
+
 ## v1.2.5
 
 ## Bug fixes

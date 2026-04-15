@@ -54,6 +54,21 @@ docker run -d \
 
 Open `http://localhost:8080`.
 
+For a production-like controller deployment, do not stop at the minimal example above. In practice you should enable at least:
+- required controller PIN gate for the whole interactive UI/API session
+- a non-default strong agent token for every remote agent
+
+Example controller run with required PIN:
+```bash
+docker run -d \
+  --name contiwatch \
+  -p 8080:8080 \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -v contiwatch-data:/data \
+  -e APP_PIN="SET_A_UNIQUE_4_TO_8_DIGIT_PIN" \
+  contiwatch
+```
+
 ## Agent mode (remote)
 Run on a remote host with Docker socket access and a token:
 ```bash
@@ -84,12 +99,49 @@ docker pull ghcr.io/<owner>/<repo>:dev_<version>
 - `CONTIWATCH_ADDR` (default `:8080`)
 - `CONTIWATCH_CONFIG` (default `/data/config.json`)
 - `TZ` (optional; e.g. `Europe/Warsaw` for local timestamps)
+- `APP_PIN` (required in controller mode; 4-8 digits)
+- `CONTIWATCH_APP_PIN` (optional backward-compatibility fallback for old deployments; use `APP_PIN` in new setup)
 - `CONTIWATCH_AGENT` (optional; set to `true` to run in agent mode)
 - `CONTIWATCH_AGENT_TOKEN` (required in agent mode; bearer token for API access)
 - `CONTIWATCH_REPO` (optional; GitHub repo in `owner/name` form for release links/checks)
 - `CONTIWATCH_CHANNEL` (optional; `main` or `dev` for release checks)
 - `CONTIWATCH_RELEASE_CHECK` (optional; set to `0`/`false` to disable release checks)
 - `CONTIWATCH_GITHUB_TOKEN` (optional; token for private repos or higher GitHub API limits)
+
+## Recommended security setup
+For the controller instance, the enforced baseline is:
+- set `APP_PIN` (controller will not start without it)
+- keep the default config volume mounted on `/data`
+- use a strong unique `CONTIWATCH_AGENT_TOKEN` on every remote agent
+
+Example controller `docker-compose.yml` security block:
+
+```yaml
+environment:
+  CONTIWATCH_ADDR: ":8080"
+  CONTIWATCH_CONFIG: "/data/config.json"
+  TZ: Europe/Warsaw
+  APP_PIN: "SET_A_UNIQUE_4_TO_8_DIGIT_PIN"
+```
+
+Example remote agent `compose_agent.yml` security block:
+
+```yaml
+environment:
+  CONTIWATCH_AGENT: "true"
+  CONTIWATCH_AGENT_TOKEN: "PUT_LONG_RANDOM_TOKEN_HERE"
+  CONTIWATCH_ADDR: ":8080"
+  CONTIWATCH_CONFIG: "/data/config.json"
+  TZ: Europe/Warsaw
+```
+
+Important:
+- `APP_PIN` is for the controller only. Do not use it on remote agents.
+- Do not use predictable values such as `1234`, `1111`, or `0000`.
+- Basic Auth has been removed from controller mode.
+- Agent mode is protected by bearer token, not by PIN Guard.
+- PIN session is per browser window/tab: refresh in the same tab keeps access, but opening a new tab/window requires PIN again.
+- Active work in the same tab is not interrupted by a short session TTL; stale server-side PIN tokens are only cleaned up after prolonged inactivity as a fallback safeguard.
 
 ## Config file
 `/data/config.json` fields include:
@@ -114,10 +166,25 @@ docker pull ghcr.io/<owner>/<repo>:dev_<version>
 - `remote_servers[].public_ip` (optional public IP/host used for opening container services from the UI)
 - `local_servers[].public_ip` (optional public IP/host used for opening container services from the UI)
 
+Security notes:
+- Config file is stored with restricted permissions (`0600`).
+- Sensitive values are not returned in full by controller read APIs:
+  - `GET /api/config` returns `discord_webhook_url` hidden and `discord_webhook_configured` flag.
+  - `GET /api/servers` returns remote token hidden and `token_configured` flag.
+- Controller hardening is environment-driven:
+  - `APP_PIN` is required for controller startup and enables session gating for protected controller API endpoints and browser UI.
+  - Remote agents stay token-protected through `CONTIWATCH_AGENT_TOKEN`.
+- To keep an existing secret when updating:
+  - send `discord_webhook_url="__keep__"` for config updates,
+  - send empty `token` for existing remote server updates.
+
 ## API
 - `GET /api/version`
 - `GET /api/meta` (version/channel/repo metadata used by the UI)
 - `GET /api/release` (latest release info + update availability)
+- `GET /api/pin/status`
+- `POST /api/pin/verify`
+- `POST /api/pin/logout`
 - `POST /api/scan` run scan
 - `POST /api/scan/stop` cancel scan
 - `GET /api/scan/state` scan running status
@@ -155,6 +222,8 @@ Notes:
 - `POST /api/update/{container_id}` returns `old_image_id`, `new_image_id`, and `applied_image_id` to help debug tag/image mismatches.
 - Periodic scans are disabled by default; enable via `scheduler_enabled` in the config (UI).
 - Agent mode exposes a limited API surface (token required).
+- Controller mode requires `APP_PIN` and enforces active PIN session for protected API endpoints (except `/api/health`, `/api/version`, `/api/meta`, `/api/release`, `/api/pin/*`).
+- Discord webhook test endpoint validates official Discord webhook URLs (`https://.../api/webhooks/...`).
 
 UI timing:
 - `Last scan` refers to the last update-check scan (`/api/scan` / agent `/api/status`).
@@ -164,6 +233,11 @@ UI timing:
 ```bash
 docker compose up -d --build
 ```
+
+Before first start, edit [docker-compose.yml](/home/buzuser/github/contiwatch_dev/docker-compose.yml) and set:
+- `APP_PIN`
+
+For a remote agent, edit [compose_agent.yml](/home/buzuser/github/contiwatch_dev/compose_agent.yml) and set a long random `CONTIWATCH_AGENT_TOKEN`.
 
 Stop:
 ```bash
@@ -182,7 +256,7 @@ Use your host user IDs (from `id`).
 If you see `permission denied while trying to connect to the Docker daemon socket at unix:///var/run/docker.sock`, ensure the socket is mounted and the container user can access it. Contiwatch tries to detect the socket group ID automatically; if your setup needs it explicitly, set `DOCKER_GID` to the group id of `/var/run/docker.sock` on the host (e.g. from `stat -c '%g' /var/run/docker.sock`).
 
 ## Buy Me a Coffee
-If You like results of my efforts, feel free to show that by supporting me.
+If you like the results of this project, feel free to support it.
 
 [!["Buy Me A Coffee"](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://www.buymeacoffee.com/pbuzdygan)
 <p align="left">

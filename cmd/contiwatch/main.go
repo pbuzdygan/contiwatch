@@ -109,7 +109,10 @@ func main() {
 	}
 
 	version := resolveVersion()
-	srv := server.New(store, watcher, agentMode, agentToken, version)
+	srv, err := server.New(store, watcher, agentMode, agentToken, version)
+	if err != nil {
+		log.Fatalf("server init: %v", err)
+	}
 	cfg := store.Get()
 	if agentMode && len(cfg.LocalServers) == 0 {
 		if _, err := os.Stat("/var/run/docker.sock"); err == nil {
@@ -145,6 +148,11 @@ func main() {
 	log.Printf("startup: discord notifications=%t", discordNotificationsEnabled(cfg))
 	log.Printf("startup: release=%s", version)
 	log.Printf("startup: agent mode=%t", agentMode)
+	if agentMode {
+		log.Printf("startup: pin guard=disabled (agent mode)")
+	} else {
+		log.Printf("startup: pin guard=required")
+	}
 	if agentMode {
 		log.Printf("startup: agent api=enabled (token required)")
 	}
