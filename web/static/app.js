@@ -193,11 +193,15 @@ const volumeUsedByCloseBtn = document.getElementById("volume-usedby-close");
 const volumeUsedByBody = document.getElementById("volume-usedby-body");
 const containersShellLayout = document.getElementById("containers-shell-layout");
 const containersShellList = document.getElementById("containers-shell-list");
+const containersShellPickerBtn = document.getElementById("containers-shell-picker");
+const containersShellPickerLabel = document.getElementById("containers-shell-picker-label");
 const containersShellPlaceholder = document.getElementById("containers-shell-placeholder");
 const containersTerminalEl = document.getElementById("containers-terminal");
 const containersShellTerminalEl = document.getElementById("containers-shell-terminal");
 const containersLogsLayout = document.getElementById("containers-logs-layout");
 const containersLogsList = document.getElementById("containers-logs-list");
+const containersLogsPickerBtn = document.getElementById("containers-logs-picker");
+const containersLogsPickerLabel = document.getElementById("containers-logs-picker-label");
 const containersLogsPlaceholder = document.getElementById("containers-logs-placeholder");
 const containersLogsView = document.getElementById("containers-logs-view");
 const containersLogsOutput = document.getElementById("containers-logs-output");
@@ -207,6 +211,8 @@ const containersLogsTimestampsBtn = document.getElementById("containers-logs-tim
 const containersLogsClearBtn = document.getElementById("containers-logs-clear");
 const containersResourcesLayout = document.getElementById("containers-resources-layout");
 const containersResourcesList = document.getElementById("containers-resources-list");
+const containersResourcesPickerBtn = document.getElementById("containers-resources-picker");
+const containersResourcesPickerLabel = document.getElementById("containers-resources-picker-label");
 const containersResourcesPlaceholder = document.getElementById("containers-resources-placeholder");
 const containersResourcesCards = document.getElementById("containers-resources-cards");
 const containersResourcesTableWrap = document.getElementById("containers-resources-table-wrap");
@@ -219,6 +225,7 @@ const resourcesStatusSortBtn = document.getElementById("resources-status-sort");
 const resourcesUptimeSortBtn = document.getElementById("resources-uptime-sort");
 const resourcesIpSortBtn = document.getElementById("resources-ip-sort");
 const resourcesPortSortBtn = document.getElementById("resources-port-sort");
+const containersFocusToggleBtns = Array.from(document.querySelectorAll(".containers-focus-toggle"));
 const refreshLogsBtn = document.getElementById("refresh-logs");
 const clearLogsBtn = document.getElementById("clear-logs");
 const logsLevelBtn = document.getElementById("logs-level-btn");
@@ -352,6 +359,7 @@ let containersViewMode = "table";
 let pendingContainersMode = "";
 let containersShellSelectedId = "";
 let containersShellSocket = null;
+let containersShellConnectionAttempt = 0;
 let containersShellTerm = null;
 let containersShellFitAddon = null;
 let containersShellDataListener = null;
@@ -360,6 +368,7 @@ let containersShellResizeTimer = null;
 let containersShellResizeHandler = null;
 let containersLogsSelectedId = "";
 let containersLogsSocket = null;
+let containersLogsConnectionAttempt = 0;
 let containersLogsBuffer = "";
 let containersLogsPending = "";
 let containersLogsLineBuffer = "";
@@ -554,7 +563,26 @@ function withPinSessionOptions(options = {}) {
 }
 
 function fetchWithPinSession(url, options = {}) {
-  return fetch(withPinSessionURL(url), withPinSessionOptions(options));
+  return fetch(url, withPinSessionOptions(options));
+}
+
+async function createPinAuthenticatedWebSocket(url) {
+  let socketURL = url;
+  const token = getPinSessionToken();
+  if (token) {
+    const response = await fetchWithPinSession("/api/pin/ws-ticket", { method: "POST" });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || typeof payload.ticket !== "string" || !payload.ticket) {
+      if (response.status === 401) {
+        activatePinGuardLock("Session locked. Enter PIN.");
+      }
+      throw new Error(payload.error || "Could not authorize WebSocket connection.");
+    }
+    const parsed = new URL(url, window.location.origin);
+    parsed.searchParams.set("ws_ticket", payload.ticket);
+    socketURL = `${parsed.pathname}${parsed.search}${parsed.hash}`;
+  }
+  return new WebSocket(socketURL);
 }
 
 function setPinGuardBusyState(busy) {
@@ -3843,6 +3871,78 @@ function updateContainersSearchCount() {
   sidebarSearchCountEl.textContent = query ? `${visible}/${total}` : `${total}`;
 }
 
+function getContainerNameById(containerId) {
+  if (!containerId) return "";
+  const entry = containersCache.get(containerId);
+  const container = entry && entry.data ? entry.data : entry;
+  if (!container) return "";
+  return container.name || String(container.id || "").slice(0, 12);
+}
+
+function getMobileContainerPicker(mode) {
+  if (mode === "shell") {
+    return { button: containersShellPickerBtn, label: containersShellPickerLabel, list: containersShellList };
+  }
+  if (mode === "logs") {
+    return { button: containersLogsPickerBtn, label: containersLogsPickerLabel, list: containersLogsList };
+  }
+  if (mode === "resources") {
+    return { button: containersResourcesPickerBtn, label: containersResourcesPickerLabel, list: containersResourcesList };
+  }
+  return { button: null, label: null, list: null };
+}
+
+function updateMobileContainerPicker(mode) {
+  const picker = getMobileContainerPicker(mode);
+  if (!picker.label) return;
+  if (mode === "shell") {
+    picker.label.textContent = getContainerNameById(containersShellSelectedId) || "Select container";
+    return;
+  }
+  if (mode === "logs") {
+    picker.label.textContent = getContainerNameById(containersLogsSelectedId) || "Select container";
+    return;
+  }
+  const count = containersResourcesSelectedIds.size;
+  picker.label.textContent = count > 0 ? `${count} selected` : "Select containers";
+}
+
+function setMobileContainerPickerOpen(mode, open) {
+  const picker = getMobileContainerPicker(mode);
+  if (!picker.button || !picker.list) return;
+  const wrapper = picker.list.closest(".containers-shell-list");
+  if (!wrapper) return;
+  const shouldOpen = Boolean(open) && mobileNavQuery.matches;
+  wrapper.classList.toggle("mobile-open", shouldOpen);
+  picker.button.setAttribute("aria-expanded", shouldOpen ? "true" : "false");
+}
+
+function toggleMobileContainerPicker(mode) {
+  const picker = getMobileContainerPicker(mode);
+  if (!picker.list) return;
+  const wrapper = picker.list.closest(".containers-shell-list");
+  if (!wrapper) return;
+  setMobileContainerPickerOpen(mode, !wrapper.classList.contains("mobile-open"));
+}
+
+function setContainersWorkspaceFocus(focused) {
+  const shouldFocus = Boolean(focused) && mobileNavQuery.matches && currentView === "containers";
+  document.body.classList.toggle("containers-workspace-focus", shouldFocus);
+  containersFocusToggleBtns.forEach((button) => {
+    const icon = button.querySelector(".icon-action");
+    if (icon) {
+      icon.classList.toggle("icon-chevrons-up", !shouldFocus);
+      icon.classList.toggle("icon-chevrons-down", shouldFocus);
+    }
+    const label = shouldFocus ? "Exit focus mode" : "Focus workspace";
+    button.setAttribute("aria-label", label);
+    button.setAttribute("data-tooltip", label);
+  });
+  updateMobileNavHeight();
+  updateMobileViewportHeight();
+  scheduleContainersShellResize();
+}
+
 function setContainersViewMode(mode) {
   const next = mode === "shell"
     ? "shell"
@@ -3881,6 +3981,9 @@ function setContainersViewMode(mode) {
     }
   }
   const isSplit = next === "shell" || next === "logs" || next === "resources";
+  if (!isSplit) {
+    setContainersWorkspaceFocus(false);
+  }
   if (viewContainersEl) {
     viewContainersEl.classList.toggle("shell-mode", isSplit);
   }
@@ -3998,6 +4101,15 @@ function setContainersViewMode(mode) {
     containersResourcesSelectedIds.clear();
     updateContainersResourcesPlaceholder();
   }
+  if (isSplit) {
+    updateMobileContainerPicker(next);
+    const hasSelection = next === "shell"
+      ? Boolean(containersShellSelectedId)
+      : next === "logs"
+          ? Boolean(containersLogsSelectedId)
+          : containersResourcesSelectedIds.size > 0;
+    setMobileContainerPickerOpen(next, !hasSelection);
+  }
   if (next !== "networks") {
     if (networksRefreshAbort) {
       networksRefreshAbort.abort();
@@ -4028,6 +4140,7 @@ function renderContainersShellList(list) {
     empty.className = "containers-shell-placeholder";
     empty.textContent = "No containers found.";
     containersShellList.appendChild(empty);
+    updateMobileContainerPicker("shell");
     return;
   }
   const sorted = containersSort(list, containersSortMode);
@@ -4050,6 +4163,7 @@ function renderContainersShellList(list) {
     button.appendChild(icon);
     button.appendChild(document.createTextNode(container.name || container.id.slice(0, 12)));
     button.addEventListener("click", () => {
+      setMobileContainerPickerOpen("shell", false);
       openContainersShell(container);
     });
     containersShellList.appendChild(button);
@@ -4058,6 +4172,7 @@ function renderContainersShellList(list) {
     containersShellSelectedId = "";
     closeContainersShellSession("selection missing");
   }
+  updateMobileContainerPicker("shell");
   if (sidebarSearch && sidebarSearch.value.trim()) {
     applySidebarFilter(sidebarSearch.value);
   }
@@ -4071,6 +4186,7 @@ function renderContainersLogsList(list) {
     empty.className = "containers-shell-placeholder";
     empty.textContent = "No containers found.";
     containersLogsList.appendChild(empty);
+    updateMobileContainerPicker("logs");
     return;
   }
   const sorted = containersSort(list, containersSortMode);
@@ -4093,6 +4209,7 @@ function renderContainersLogsList(list) {
     button.appendChild(icon);
     button.appendChild(document.createTextNode(container.name || container.id.slice(0, 12)));
     button.addEventListener("click", () => {
+      setMobileContainerPickerOpen("logs", false);
       openContainersLogs(container);
     });
     containersLogsList.appendChild(button);
@@ -4101,6 +4218,7 @@ function renderContainersLogsList(list) {
     containersLogsSelectedId = "";
     closeContainersLogsSession("selection missing");
   }
+  updateMobileContainerPicker("logs");
   if (sidebarSearch && sidebarSearch.value.trim()) {
     applySidebarFilter(sidebarSearch.value);
   }
@@ -4211,6 +4329,7 @@ function renderContainersResourcesList(list) {
     containersResourcesSelectedIds.clear();
     renderContainersResourcesView();
     updateContainersResourcesPlaceholder();
+    updateMobileContainerPicker("resources");
     return;
   }
   const sorted = containersSort(list, containersSortMode);
@@ -4244,6 +4363,7 @@ function renderContainersResourcesList(list) {
   });
   renderContainersResourcesView();
   updateContainersResourcesPlaceholder();
+  updateMobileContainerPicker("resources");
   requestAnimationFrame(() => {
     if (containersResourcesList) {
       containersResourcesList.scrollTop = prevScrollTop;
@@ -4807,6 +4927,7 @@ function setContainersLogsTimestamps(enabled) {
 }
 
 function closeContainersLogsSession(reason, options = {}) {
+  containersLogsConnectionAttempt += 1;
   const preserve = Boolean(options && options.preserve);
   const silent = Boolean(options && options.silent);
   if (reason) {
@@ -4829,6 +4950,7 @@ function closeContainersLogsSession(reason, options = {}) {
 }
 
 function closeContainersShellSession(reason) {
+  containersShellConnectionAttempt += 1;
   if (reason) {
     console.debug(`[containers-shell] closing: ${reason}`);
   }
@@ -4868,7 +4990,7 @@ function scheduleContainersShellResize() {
   }, 120);
 }
 
-function openContainersShell(container) {
+async function openContainersShell(container) {
   if (!container || !container.id) return;
   containersShellSelectedId = container.id;
   renderContainersShellList(Array.from(containersCache.values()).map((entry) => entry.data));
@@ -4884,6 +5006,7 @@ function openContainersShell(container) {
     return;
   }
   closeContainersShellSession("open new shell");
+  const connectionAttempt = containersShellConnectionAttempt;
   if (containersShellTerm) {
     containersShellTerm.dispose();
     containersShellTerm = null;
@@ -4922,8 +5045,21 @@ function openContainersShell(container) {
   containersShellTerm.writeln("");
   hideContainersShellPlaceholder();
 
-  const wsUrl = withPinSessionURL(`/api/containers/shell?scope=${encodeURIComponent(containersSelectedScope)}&container_id=${encodeURIComponent(container.id)}`);
-  const ws = new WebSocket(wsUrl);
+  const wsUrl = `/api/containers/shell?scope=${encodeURIComponent(containersSelectedScope)}&container_id=${encodeURIComponent(container.id)}`;
+  let ws;
+  try {
+    ws = await createPinAuthenticatedWebSocket(wsUrl);
+  } catch (err) {
+    if (connectionAttempt === containersShellConnectionAttempt && containersShellSelectedId === container.id) {
+      closeContainersShellSession("authorization failed");
+      showContainersShellPlaceholder(err && err.message ? err.message : "Shell connection failed.");
+    }
+    return;
+  }
+  if (connectionAttempt !== containersShellConnectionAttempt || containersShellSelectedId !== container.id || containersViewMode !== "shell") {
+    ws.close();
+    return;
+  }
   ws.binaryType = "arraybuffer";
   containersShellSocket = ws;
 
@@ -4978,7 +5114,7 @@ function openContainersShell(container) {
   }
 }
 
-function openContainersLogs(container, options = {}) {
+async function openContainersLogs(container, options = {}) {
   if (!container || !container.id) return;
   containersLogsSelectedId = container.id;
   renderContainersLogsList(Array.from(containersCache.values()).map((entry) => entry.data));
@@ -4992,6 +5128,7 @@ function openContainersLogs(container, options = {}) {
   const preserve = Boolean(options && options.preserve);
   const silentClose = Boolean(options && options.silentClose);
   closeContainersLogsSession("open new logs", { preserve, silent: silentClose });
+  const connectionAttempt = containersLogsConnectionAttempt;
   if (!preserve) {
     resetContainersLogsBuffer();
   }
@@ -5001,8 +5138,20 @@ function openContainersLogs(container, options = {}) {
 
   updateContainersLogsStreamIndicator();
   const timestamps = containersLogsTimestamps ? "1" : "0";
-  const wsUrl = withPinSessionURL(`/api/containers/logs?scope=${encodeURIComponent(containersSelectedScope)}&container_id=${encodeURIComponent(container.id)}&follow=1&tail=100&timestamps=${timestamps}`);
-  const ws = new WebSocket(wsUrl);
+  const wsUrl = `/api/containers/logs?scope=${encodeURIComponent(containersSelectedScope)}&container_id=${encodeURIComponent(container.id)}&follow=1&tail=100&timestamps=${timestamps}`;
+  let ws;
+  try {
+    ws = await createPinAuthenticatedWebSocket(wsUrl);
+  } catch (err) {
+    if (connectionAttempt === containersLogsConnectionAttempt && containersLogsSelectedId === container.id) {
+      showContainersLogsPlaceholder(err && err.message ? err.message : "Logs connection failed.");
+    }
+    return;
+  }
+  if (connectionAttempt !== containersLogsConnectionAttempt || containersLogsSelectedId !== container.id || containersViewMode !== "logs") {
+    ws.close();
+    return;
+  }
   containersLogsSocket = ws;
 
   ws.addEventListener("open", () => {
@@ -8547,6 +8696,15 @@ function updateTopbarHeight() {
 const mobileNavQuery = window.matchMedia("(max-width: 720px)");
 let mobileNavHeight = 0;
 
+function updateMobileViewportHeight() {
+  if (!mobileNavQuery.matches) {
+    document.documentElement.style.removeProperty("--app-viewport-h");
+    return;
+  }
+  const viewportHeight = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+  document.documentElement.style.setProperty("--app-viewport-h", `${Math.ceil(viewportHeight)}px`);
+}
+
 const topbarCenterOriginalParent = topbarCenterEl ? topbarCenterEl.parentElement : null;
 const topbarCenterOriginalNextSibling = topbarCenterEl ? topbarCenterEl.nextElementSibling : null;
 
@@ -8585,6 +8743,12 @@ function updateMobileNavHeight() {
     document.documentElement.style.removeProperty("--mobile-nav-h");
     return;
   }
+  if (document.body.classList.contains("containers-workspace-focus")) {
+    mobileNavHeight = 0;
+    document.documentElement.style.setProperty("--mobile-nav-h", "0px");
+    updateTopbarHeight();
+    return;
+  }
   const topbarHeight = topbarEl.getBoundingClientRect().height;
   const sidebarHeight = sidebar.getBoundingClientRect().height;
   mobileNavHeight = Math.ceil(topbarHeight + sidebarHeight);
@@ -8593,9 +8757,33 @@ function updateMobileNavHeight() {
 }
 
 mobileNavQuery.addEventListener("change", () => {
+  if (!mobileNavQuery.matches) {
+    setContainersWorkspaceFocus(false);
+  }
+  updateMobileViewportHeight();
   updateMobileNavHeight();
   syncContainersTopbarSearchPlacement();
   if (currentConfig) applyExperimentalFeatures(currentConfig);
+});
+
+window.addEventListener("resize", updateMobileViewportHeight);
+if (window.visualViewport) {
+  window.visualViewport.addEventListener("resize", updateMobileViewportHeight);
+}
+
+if (containersShellPickerBtn) {
+  containersShellPickerBtn.addEventListener("click", () => toggleMobileContainerPicker("shell"));
+}
+if (containersLogsPickerBtn) {
+  containersLogsPickerBtn.addEventListener("click", () => toggleMobileContainerPicker("logs"));
+}
+if (containersResourcesPickerBtn) {
+  containersResourcesPickerBtn.addEventListener("click", () => toggleMobileContainerPicker("resources"));
+}
+containersFocusToggleBtns.forEach((button) => {
+  button.addEventListener("click", () => {
+    setContainersWorkspaceFocus(!document.body.classList.contains("containers-workspace-focus"));
+  });
 });
 
 function updateSidebarNavActive(nextView) {
@@ -8663,6 +8851,9 @@ function setView(nextView) {
     nextView = "status";
   }
   currentView = nextView;
+  if (nextView !== "containers") {
+    setContainersWorkspaceFocus(false);
+  }
   viewStatusEl.classList.toggle("hidden", nextView !== "status");
   viewSettingsEl.classList.toggle("hidden", nextView !== "settings");
   if (viewContainersEl) viewContainersEl.classList.toggle("hidden", nextView !== "containers");
@@ -8925,6 +9116,9 @@ if (schedulerDaysTrigger && schedulerDaysMenu) {
     setSchedulerDaysMenuOpen(false);
   });
   document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && document.body.classList.contains("containers-workspace-focus")) {
+      setContainersWorkspaceFocus(false);
+    }
     if (event.key !== "Escape") return;
     if (schedulerDaysMenu.classList.contains("hidden")) return;
     setSchedulerDaysMenuOpen(false);
@@ -10108,6 +10302,7 @@ async function init() {
 	  );
 
   updateTopbarHeight();
+  updateMobileViewportHeight();
   updateMobileNavHeight();
   try {
     const stored = localStorage.getItem(sidebarCollapsedStorageKey);

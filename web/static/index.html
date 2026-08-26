@@ -4,20 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Contiwatch</title>
-    <script>
-      (function () {
-        try {
-          var mode = localStorage.getItem("contiwatch_theme");
-          if (mode === "light" || mode === "dark") {
-            document.documentElement.setAttribute("data-theme", mode);
-          } else {
-            document.documentElement.setAttribute("data-theme", "light");
-          }
-        } catch (err) {
-          document.documentElement.setAttribute("data-theme", "light");
-        }
-      }());
-    </script>
+    <script src="/theme.js"></script>
     <link rel="icon" type="image/png" sizes="32x32" href="/icons/favicon-32x32.png">
     <link rel="icon" type="image/png" sizes="16x16" href="/icons/favicon-16x16.png">
     <link rel="icon" href="/icons/favicon.ico">
@@ -857,16 +844,29 @@
         </div>
         <div id="containers-shell-layout" class="containers-shell-layout hidden">
           <div class="containers-shell-list">
+            <button id="containers-shell-picker" class="containers-mobile-picker" type="button" aria-expanded="false" aria-controls="containers-shell-list">
+              <span class="icon-action icon-package" aria-hidden="true"></span>
+              <span id="containers-shell-picker-label" class="containers-mobile-picker-label">Select container</span>
+              <span class="icon-action icon-chevron-down containers-mobile-picker-chevron" aria-hidden="true"></span>
+            </button>
             <div class="containers-shell-list-header">Name</div>
             <div id="containers-shell-list" class="containers-shell-list-body"></div>
           </div>
           <div id="containers-shell-terminal" class="containers-shell-terminal">
+            <button class="secondary icon-action-btn has-tooltip containers-focus-toggle" type="button" aria-label="Focus workspace" data-tooltip="Focus workspace">
+              <span class="icon-action icon-chevrons-up" aria-hidden="true"></span>
+            </button>
             <div id="containers-shell-placeholder" class="containers-shell-placeholder">Select a container to open shell.</div>
             <div id="containers-terminal" class="containers-terminal hidden"></div>
           </div>
         </div>
         <div id="containers-logs-layout" class="containers-shell-layout containers-logs-layout hidden">
           <div class="containers-shell-list">
+            <button id="containers-logs-picker" class="containers-mobile-picker" type="button" aria-expanded="false" aria-controls="containers-logs-list">
+              <span class="icon-action icon-package" aria-hidden="true"></span>
+              <span id="containers-logs-picker-label" class="containers-mobile-picker-label">Select container</span>
+              <span class="icon-action icon-chevron-down containers-mobile-picker-chevron" aria-hidden="true"></span>
+            </button>
             <div class="containers-shell-list-header">Name</div>
             <div id="containers-logs-list" class="containers-shell-list-body"></div>
           </div>
@@ -884,6 +884,9 @@
                 <button id="containers-logs-clear" class="secondary icon-action-btn has-tooltip" type="button" aria-label="Clear view" data-tooltip="Clear view">
                   <span class="icon-action icon-clear-all" aria-hidden="true"></span>
                 </button>
+                <button class="secondary icon-action-btn has-tooltip containers-focus-toggle" type="button" aria-label="Focus workspace" data-tooltip="Focus workspace">
+                  <span class="icon-action icon-chevrons-up" aria-hidden="true"></span>
+                </button>
               </div>
               <pre id="containers-logs-output" class="containers-logs-output"></pre>
             </div>
@@ -891,6 +894,11 @@
         </div>
         <div id="containers-resources-layout" class="containers-shell-layout containers-resources-layout hidden">
           <div class="containers-shell-list">
+            <button id="containers-resources-picker" class="containers-mobile-picker" type="button" aria-expanded="false" aria-controls="containers-resources-list">
+              <span class="icon-action icon-package" aria-hidden="true"></span>
+              <span id="containers-resources-picker-label" class="containers-mobile-picker-label">Select containers</span>
+              <span class="icon-action icon-chevron-down containers-mobile-picker-chevron" aria-hidden="true"></span>
+            </button>
             <div class="containers-shell-list-header">Name</div>
             <div id="containers-resources-list" class="containers-shell-list-body"></div>
           </div>
@@ -908,6 +916,9 @@
                   <span class="servers-view-icon" aria-hidden="true"></span>
                 </button>
               </div>
+              <button class="secondary icon-action-btn has-tooltip containers-focus-toggle" type="button" aria-label="Focus workspace" data-tooltip="Focus workspace">
+                <span class="icon-action icon-chevrons-up" aria-hidden="true"></span>
+              </button>
             </div>
             <div id="containers-resources-placeholder" class="containers-shell-placeholder">Select containers to view resources.</div>
             <div id="containers-resources-cards" class="containers-resources-cards hidden"></div>

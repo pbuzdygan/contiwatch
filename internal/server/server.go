@@ -3,12 +3,15 @@ package server
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"os"
 	"path"
@@ -50,17 +53,22 @@ type Server struct {
 	logs   []logEntry
 	logSeq int64
 
-	agentMode           bool
-	agentToken          string
-	pinGuardEnabled     bool
-	pinHash             string
-	pinSalt             string
-	pinMinResponseDelay time.Duration
-	pinMu               sync.Mutex
-	pinSessions         map[string]pinSessionEntry
-	pinAttempts         map[string]pinAttemptEntry
-	version             string
-	remoteScanRunning   atomic.Int64
+	agentMode             bool
+	agentToken            string
+	pinGuardEnabled       bool
+	pinHash               string
+	pinSalt               string
+	pinMinResponseDelay   time.Duration
+	pinMu                 sync.Mutex
+	pinSessions           map[string]pinSessionEntry
+	pinAttempts           map[string]pinAttemptEntry
+	pinWebSocketTickets   map[string]pinWebSocketTicketEntry
+	pinAttemptsLastPruned time.Time
+	pinGlobalTokens       float64
+	pinGlobalLastRefill   time.Time
+	trustedProxies        []netip.Prefix
+	version               string
+	remoteScanRunning     atomic.Int64
 
 	serverInfoMu      sync.RWMutex
 	serverInfo        map[string]serverInfoSnapshot
@@ -114,6 +122,10 @@ func New(store *config.Store, watcher *dockerwatcher.Watcher, agentMode bool, ag
 			return nil, err
 		}
 	}
+	trustedProxies, err := parseTrustedProxyPrefixes(os.Getenv("CONTIWATCH_TRUSTED_PROXIES"))
+	if err != nil {
+		return nil, err
+	}
 	s := &Server{
 		store:               store,
 		watcher:             watcher,
@@ -126,6 +138,10 @@ func New(store *config.Store, watcher *dockerwatcher.Watcher, agentMode bool, ag
 		pinMinResponseDelay: pinMinResponseDelay,
 		pinSessions:         map[string]pinSessionEntry{},
 		pinAttempts:         map[string]pinAttemptEntry{},
+		pinWebSocketTickets: map[string]pinWebSocketTicketEntry{},
+		pinGlobalTokens:     pinGlobalBurst,
+		pinGlobalLastRefill: time.Now(),
+		trustedProxies:      trustedProxies,
 		version:             version,
 		scanStates:          map[string]scanState{},
 		statePath:           statePath,
@@ -266,6 +282,9 @@ func (s *Server) applyScanState(result *dockerwatcher.ScanResult, local bool, na
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	applySecurityHeaders(w)
+	if strings.HasPrefix(r.URL.Path, "/api/") {
+		w.Header().Set("Cache-Control", "no-store")
+	}
 	if s.agentMode {
 		if !strings.HasPrefix(r.URL.Path, "/api/") {
 			w.WriteHeader(http.StatusNotFound)
@@ -283,10 +302,14 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if !s.agentMode && s.pinGuardEnabled && strings.HasPrefix(r.URL.Path, "/api/") && !pinPublicAPIPath(r.URL.Path) {
-		if !s.pinSessionAuthorized(s.pinSessionTokenFromRequest(r)) {
+		if !s.pinRequestAuthorized(r) {
 			writePinRequired(w)
 			return
 		}
+	}
+	if err := applyRequestBodyLimit(w, r); err != nil {
+		writeError(w, http.StatusRequestEntityTooLarge, err)
+		return
 	}
 	s.mux.ServeHTTP(w, r)
 }
@@ -380,6 +403,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/pin/status", s.handlePinStatus)
 	s.mux.HandleFunc("/api/pin/verify", s.handlePinVerify)
 	s.mux.HandleFunc("/api/pin/logout", s.handlePinLogout)
+	s.mux.HandleFunc("/api/pin/ws-ticket", s.handlePinWebSocketTicket)
 
 	if !s.agentMode {
 		staticDir := "/app/web/static"
@@ -400,7 +424,9 @@ func (s *Server) authorize(r *http.Request) bool {
 		return false
 	}
 	token := strings.TrimSpace(strings.TrimPrefix(auth, "Bearer "))
-	return token == s.agentToken
+	expectedHash := sha256.Sum256([]byte(s.agentToken))
+	providedHash := sha256.Sum256([]byte(token))
+	return subtle.ConstantTimeCompare(providedHash[:], expectedHash[:]) == 1
 }
 
 func (s *Server) agentAllowed(path string) bool {
@@ -2214,6 +2240,11 @@ func writeJSON(w http.ResponseWriter, status int, payload interface{}) {
 }
 
 func writeError(w http.ResponseWriter, status int, err error) {
+	var maxBytesError *http.MaxBytesError
+	if errors.As(err, &maxBytesError) {
+		writeJSON(w, http.StatusRequestEntityTooLarge, map[string]string{"error": "request body too large"})
+		return
+	}
 	writeJSON(w, status, map[string]string{"error": err.Error()})
 }
 

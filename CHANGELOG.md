@@ -1,5 +1,25 @@
 # Changelog
 
+## v1.3.1
+
+## Bug fixes
+- Security: fixed PIN lockout bypass through spoofed `X-Forwarded-For`; forwarded addresses are now accepted only from explicitly configured trusted proxies.
+- Security: bounded PIN attempt tracking, added a global attempt limiter, and limited request bodies, headers, and HTTP connection lifetimes to reduce memory and slow-client exhaustion risks.
+- Security: browser Shell/Logs WebSockets now use short-lived, single-use tickets instead of exposing the long-lived PIN session token in the URL.
+- Security: fixed theme initialization being blocked by CSP by moving the startup script to a same-origin asset; tightened WebSocket origin matching and response caching policy.
+- Security: prevented Discord transport errors from leaking webhook URLs and enforced private, atomic writes for controller config and stack files.
+
+## New features
+- UI/Containers: added compact mobile container pickers for Logs, Shell, and Resources.
+- UI/Containers: added a mobile focus mode that expands Logs, Shell, or Resources to nearly the full viewport and can be exited from the workspace or with Escape.
+- Security: added `CONTIWATCH_TRUSTED_PROXIES` for explicit reverse-proxy IP/CIDR trust configuration.
+
+## Improvements
+- UI/Mobile: compressed the Containers top bar, added horizontal action scrolling, safe-area and visual-viewport handling, compact resource cards, and 44 px minimum touch targets.
+- Security: agent tokens are compared in constant time; short legacy tokens and existing HTTP agent URLs stay compatible but now emit actionable security warnings.
+- Dependencies: upgraded Go, Alpine, Docker client, WebSocket, OpenTelemetry, and frontend dependencies; added a reproducible npm lockfile and read-only Go module build.
+- Compatibility: preserved the existing controller-to-agent bearer-token API and WebSocket proxy protocol while adding controller-side hardening.
+
 ## v1.3.0
 
 ## Bug fixes

@@ -15,7 +15,7 @@ import (
 	"contiwatch/internal/config"
 	"contiwatch/internal/dockerwatcher"
 
-	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/gorilla/websocket"
 )
@@ -104,7 +104,7 @@ func (s *Server) handleLocalContainerLogs(w http.ResponseWriter, r *http.Request
 	}
 	defer watcher.Close()
 
-	opts := types.ContainerLogsOptions{
+	opts := container.LogsOptions{
 		ShowStdout: true,
 		ShowStderr: true,
 		Follow:     follow,

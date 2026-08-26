@@ -1,4 +1,4 @@
-FROM --platform=$BUILDPLATFORM golang:1.24-alpine AS builder
+FROM --platform=$BUILDPLATFORM golang:1.26.6-alpine3.24 AS builder
 ARG VERSION=dev
 WORKDIR /src
 
@@ -6,12 +6,12 @@ ARG TARGETOS
 ARG TARGETARCH
 ARG TARGETVARIANT
 
-COPY go.* ./
+COPY go.* package*.json ./
 RUN --mount=type=cache,target=/go/pkg/mod go mod download
 
 COPY . .
 RUN apk add --no-cache nodejs npm \
-    && npm install --no-audit --no-fund \
+    && npm ci --no-fund \
     && mkdir -p web/static/vendor/cm6 \
     && npm run build:cm6 \
     && rm -rf node_modules
@@ -21,9 +21,9 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     GOOS="${TARGETOS:-linux}" \
     GOARCH="${TARGETARCH:-amd64}" \
     GOARM="${TARGETVARIANT#v}" \
-    go build -mod=mod -ldflags="-X main.Version=${VERSION}" -o /out/contiwatch ./cmd/contiwatch
+    go build -mod=readonly -ldflags="-X main.Version=${VERSION}" -o /out/contiwatch ./cmd/contiwatch
 
-FROM alpine:3.20
+FROM alpine:3.24.1
 WORKDIR /app
 RUN apk add --no-cache su-exec tzdata docker-cli docker-cli-compose
 COPY --from=builder /out/contiwatch /app/contiwatch

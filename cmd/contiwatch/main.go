@@ -107,6 +107,9 @@ func main() {
 	if agentMode && agentToken == "" {
 		log.Fatalf("agent mode requires CONTIWATCH_AGENT_TOKEN")
 	}
+	if agentMode && len(agentToken) < 32 {
+		log.Printf("security warning: CONTIWATCH_AGENT_TOKEN is shorter than the recommended 32 characters; compatibility is preserved, but rotate it as soon as possible")
+	}
 
 	version := resolveVersion()
 	srv, err := server.New(store, watcher, agentMode, agentToken, version)
@@ -171,6 +174,14 @@ func main() {
 			log.Printf("startup: remote servers=%d (%s)", len(cfg.RemoteServers), strings.Join(names, ", "))
 		}
 	}
+	for _, remote := range cfg.RemoteServers {
+		if strings.HasPrefix(strings.ToLower(strings.TrimSpace(remote.URL)), "http://") {
+			log.Printf("security warning: remote server %q uses plaintext HTTP; use HTTPS when traffic crosses an untrusted network", remote.Name)
+		}
+	}
+	if strings.TrimSpace(os.Getenv("CONTIWATCH_TRUSTED_PROXIES")) != "" {
+		log.Printf("startup: trusted reverse proxies configured")
+	}
 	if cfg.DiscordWebhookURL == "" {
 		log.Printf("startup: discord webhook=not configured (startup notification skipped)")
 	} else {
@@ -198,6 +209,9 @@ func main() {
 		Addr:              addr,
 		Handler:           srv,
 		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		IdleTimeout:       2 * time.Minute,
+		MaxHeaderBytes:    32 * 1024,
 	}
 
 	go func() {

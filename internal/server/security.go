@@ -10,6 +10,10 @@ import (
 const (
 	discordWebhookKeepSentinel  = "__keep__"
 	discordWebhookClearSentinel = "__clear__"
+	defaultRequestBodyLimit     = int64(128 * 1024)
+	configRequestBodyLimit      = int64(512 * 1024)
+	stackRequestBodyLimit       = int64(4 * 1024 * 1024)
+	pinRequestBodyLimit         = int64(1024)
 )
 
 func applySecurityHeaders(w http.ResponseWriter) {
@@ -22,8 +26,38 @@ func applySecurityHeaders(w http.ResponseWriter) {
 	w.Header().Set("Permissions-Policy", "geolocation=(), camera=(), microphone=()")
 	w.Header().Set(
 		"Content-Security-Policy",
-		"default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' ws: wss:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'",
+		"default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'",
 	)
+}
+
+func requestBodyLimit(path string) int64 {
+	switch {
+	case path == "/api/pin/verify":
+		return pinRequestBodyLimit
+	case path == "/api/config", path == "/api/servers", path == "/api/locals":
+		return configRequestBodyLimit
+	case strings.HasPrefix(path, "/api/stacks"):
+		return stackRequestBodyLimit
+	default:
+		return defaultRequestBodyLimit
+	}
+}
+
+func applyRequestBodyLimit(w http.ResponseWriter, r *http.Request) error {
+	if r == nil || r.Body == nil {
+		return nil
+	}
+	switch r.Method {
+	case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
+	default:
+		return nil
+	}
+	limit := requestBodyLimit(r.URL.Path)
+	if r.ContentLength > limit {
+		return &http.MaxBytesError{Limit: limit}
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, limit)
+	return nil
 }
 
 func isWebSocketOriginAllowed(r *http.Request) bool {
@@ -38,13 +72,15 @@ func isWebSocketOriginAllowed(r *http.Request) bool {
 	if err != nil {
 		return false
 	}
-	originHost := strings.TrimSpace(originURL.Hostname())
+	if !strings.EqualFold(originURL.Scheme, "http") && !strings.EqualFold(originURL.Scheme, "https") {
+		return false
+	}
+	originHost := strings.TrimSpace(originURL.Host)
 	requestHost := strings.TrimSpace(r.Host)
 	if originHost == "" || requestHost == "" {
 		return false
 	}
-	requestHost = strings.Split(requestHost, ":")[0]
-	return strings.EqualFold(originHost, requestHost)
+	return strings.EqualFold(strings.TrimSuffix(originHost, "."), strings.TrimSuffix(requestHost, "."))
 }
 
 func validateDiscordWebhookURL(raw string) error {

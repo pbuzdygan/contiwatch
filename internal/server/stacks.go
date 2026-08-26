@@ -426,7 +426,13 @@ func listStacksOnDisk(serverName string) ([]stackSummary, error) {
 
 func loadStackDetail(serverName, stackName string) (stackDetailResponse, error) {
 	dir := stackDir(serverName, stackName)
+	if err := os.Chmod(dir, 0o700); err != nil {
+		return stackDetailResponse{}, err
+	}
 	composePath := filepath.Join(dir, "docker-compose.yml")
+	if err := os.Chmod(composePath, 0o600); err != nil {
+		return stackDetailResponse{}, err
+	}
 	content, err := os.ReadFile(composePath)
 	if err != nil {
 		return stackDetailResponse{}, err
@@ -435,7 +441,13 @@ func loadStackDetail(serverName, stackName string) (stackDetailResponse, error) 
 		Name:       stackName,
 		ComposeYml: string(content),
 	}
-	if envBytes, err := os.ReadFile(filepath.Join(dir, ".env")); err == nil {
+	envPath := filepath.Join(dir, ".env")
+	if _, err := os.Stat(envPath); err == nil {
+		if err := os.Chmod(envPath, 0o600); err != nil {
+			return stackDetailResponse{}, err
+		}
+	}
+	if envBytes, err := os.ReadFile(envPath); err == nil {
 		detail.Env = string(envBytes)
 		detail.HasEnv = true
 	}
@@ -447,16 +459,19 @@ func loadStackDetail(serverName, stackName string) (stackDetailResponse, error) 
 
 func saveStackFiles(serverName, stackName, composeYml, env string, useEnv bool) error {
 	dir := stackDir(serverName, stackName)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	if err := os.Chmod(dir, 0o700); err != nil {
 		return err
 	}
 	composePath := filepath.Join(dir, "docker-compose.yml")
-	if err := os.WriteFile(composePath, []byte(composeYml), 0o644); err != nil {
+	if err := writePrivateFileAtomically(composePath, []byte(composeYml)); err != nil {
 		return err
 	}
 	envPath := filepath.Join(dir, ".env")
 	if useEnv {
-		if err := os.WriteFile(envPath, []byte(env), 0o644); err != nil {
+		if err := writePrivateFileAtomically(envPath, []byte(env)); err != nil {
 			return err
 		}
 	} else {
@@ -465,6 +480,40 @@ func saveStackFiles(serverName, stackName, composeYml, env string, useEnv bool) 
 		}
 	}
 	return nil
+}
+
+func writePrivateFileAtomically(path string, data []byte) error {
+	dir := filepath.Dir(path)
+	file, err := os.CreateTemp(dir, ".contiwatch-stack-*.tmp")
+	if err != nil {
+		return err
+	}
+	tempPath := file.Name()
+	cleanup := func() {
+		_ = file.Close()
+		_ = os.Remove(tempPath)
+	}
+	if err := file.Chmod(0o600); err != nil {
+		cleanup()
+		return err
+	}
+	if _, err := file.Write(data); err != nil {
+		cleanup()
+		return err
+	}
+	if err := file.Sync(); err != nil {
+		cleanup()
+		return err
+	}
+	if err := file.Close(); err != nil {
+		_ = os.Remove(tempPath)
+		return err
+	}
+	if err := os.Rename(tempPath, path); err != nil {
+		_ = os.Remove(tempPath)
+		return err
+	}
+	return os.Chmod(path, 0o600)
 }
 
 func (s *Server) runRemoteStackAction(cfg config.Config, serverName string, payload stackActionRequest) error {
@@ -532,7 +581,7 @@ func runComposeFromPayload(payload stackActionRequest, dockerHost string) error 
 		return err
 	}
 	defer os.RemoveAll(tempDir)
-	if err := os.WriteFile(filepath.Join(tempDir, "docker-compose.yml"), []byte(payload.ComposeYml), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(tempDir, "docker-compose.yml"), []byte(payload.ComposeYml), 0o600); err != nil {
 		return err
 	}
 	envFile := ""
@@ -610,7 +659,7 @@ func runComposeConfigFromPayload(payload stackValidateRequest) error {
 		return err
 	}
 	defer os.RemoveAll(tempDir)
-	if err := os.WriteFile(filepath.Join(tempDir, "docker-compose.yml"), []byte(payload.ComposeYml), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(tempDir, "docker-compose.yml"), []byte(payload.ComposeYml), 0o600); err != nil {
 		return err
 	}
 	envFile := ""
