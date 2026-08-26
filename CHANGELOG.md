@@ -19,6 +19,7 @@
 - Security: agent tokens are compared in constant time; short legacy tokens and existing HTTP agent URLs stay compatible but now emit actionable security warnings.
 - Dependencies: upgraded Go, Alpine, Docker client, WebSocket, OpenTelemetry, and frontend dependencies; added a reproducible npm lockfile and read-only Go module build.
 - Build: removed committed Go/npm caches and the generated CodeMirror bundle; added Git and Docker ignore rules so reproducible builds do not retain local artifacts.
+- CI: upgraded Docker GitHub Actions to their native Node.js 24 releases and removed the temporary forced-runtime compatibility flag.
 - Compatibility: preserved the existing controller-to-agent bearer-token API and WebSocket proxy protocol while adding controller-side hardening.
 
 ## v1.3.0
