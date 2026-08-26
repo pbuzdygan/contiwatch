@@ -18,6 +18,7 @@
 - UI/Mobile: compressed the Containers top bar, added horizontal action scrolling, safe-area and visual-viewport handling, compact resource cards, and 44 px minimum touch targets.
 - Security: agent tokens are compared in constant time; short legacy tokens and existing HTTP agent URLs stay compatible but now emit actionable security warnings.
 - Dependencies: upgraded Go, Alpine, Docker client, WebSocket, OpenTelemetry, and frontend dependencies; added a reproducible npm lockfile and read-only Go module build.
+- Build: removed committed Go/npm caches and the generated CodeMirror bundle; added Git and Docker ignore rules so reproducible builds do not retain local artifacts.
 - Compatibility: preserved the existing controller-to-agent bearer-token API and WebSocket proxy protocol while adding controller-side hardening.
 
 ## v1.3.0

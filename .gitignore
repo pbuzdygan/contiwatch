@@ -1,0 +1,11 @@
+# Local dependency and build caches
+/node_modules/
+/.gocache/
+
+# Generated CodeMirror bundle (built by `npm run build:cm6` before Go compilation)
+/web/static/vendor/cm6/
+
+# Local test/build outputs
+/*.test
+/contiwatch
+/coverage/

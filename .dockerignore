@@ -1,0 +1,7 @@
+.git
+.gocache
+node_modules
+web/static/vendor/cm6
+coverage
+*.test
+contiwatch
