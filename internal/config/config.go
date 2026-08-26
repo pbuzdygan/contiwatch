@@ -134,6 +134,9 @@ func (s *Store) loadOrCreate() error {
 }
 
 func (s *Store) load() error {
+	if err := os.Chmod(s.path, 0o600); err != nil {
+		return err
+	}
 	data, err := os.ReadFile(s.path)
 	if err != nil {
 		return err
@@ -182,7 +185,46 @@ func (s *Store) saveLocked() error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(s.path, data, 0o600)
+	return writeConfigAtomically(s.path, data)
+}
+
+func writeConfigAtomically(path string, data []byte) error {
+	dir := filepath.Dir(path)
+	file, err := os.CreateTemp(dir, ".contiwatch-config-*.tmp")
+	if err != nil {
+		return err
+	}
+	tempPath := file.Name()
+	cleanup := func() {
+		_ = file.Close()
+		_ = os.Remove(tempPath)
+	}
+	if err := file.Chmod(0o600); err != nil {
+		cleanup()
+		return err
+	}
+	if _, err := file.Write(data); err != nil {
+		cleanup()
+		return err
+	}
+	if err := file.Sync(); err != nil {
+		cleanup()
+		return err
+	}
+	if err := file.Close(); err != nil {
+		_ = os.Remove(tempPath)
+		return err
+	}
+	if err := os.Rename(tempPath, path); err != nil {
+		_ = os.Remove(tempPath)
+		return err
+	}
+	dirHandle, err := os.Open(dir)
+	if err != nil {
+		return err
+	}
+	defer dirHandle.Close()
+	return dirHandle.Sync()
 }
 
 func (s *Store) Get() Config {

@@ -2822,6 +2822,20 @@ input::placeholder {
   height: 100%;
 }
 
+.containers-mobile-picker,
+.containers-focus-toggle {
+  display: none;
+}
+
+.containers-mobile-picker-label {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+
 .containers-shell-list-header {
   padding: var(--s-2) var(--s-3);
   font-size: 0.8rem;
@@ -4572,8 +4586,16 @@ input::placeholder {
       "logo title right"
       "actions actions actions";
     align-items: center;
-    padding: var(--s-3);
+    padding: max(var(--s-2), env(safe-area-inset-top)) var(--s-2) var(--s-2);
     gap: var(--s-2);
+  }
+
+  .topbar-status h2 {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 1rem;
   }
 
   .topbar-left {
@@ -4602,19 +4624,28 @@ input::placeholder {
   }
 
   .containers-topbar-actions {
-    flex-direction: column;
-    align-items: stretch;
+    flex-direction: row;
+    align-items: center;
     flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    width: 100%;
+    padding-bottom: 2px;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+    -webkit-mask-image: linear-gradient(to right, transparent 0, #000 14px, #000 calc(100% - 14px), transparent 100%);
+    mask-image: linear-gradient(to right, transparent 0, #000 14px, #000 calc(100% - 14px), transparent 100%);
   }
 
   .containers-topbar-primary {
-    width: 100%;
+    width: auto;
+    flex: 0 0 auto;
     flex-wrap: nowrap;
   }
 
   .containers-topbar-primary .containers-server-picker {
-    min-width: 0;
-    flex: 1 1 0;
+    min-width: 148px;
+    flex: 0 0 148px;
   }
 
   .containers-topbar-primary .containers-server-btn {
@@ -4623,16 +4654,15 @@ input::placeholder {
   }
 
   .containers-topbar-search-slot {
-    flex: 1 1 0;
+    flex: 0 0 152px;
+    width: 152px;
   }
 
   .containers-topbar-secondary {
-    width: 100%;
+    width: auto;
+    flex: 0 0 auto;
     flex-wrap: nowrap;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    overscroll-behavior-x: contain;
-    padding-bottom: 2px;
+    overflow: visible;
   }
 
   .containers-topbar-secondary > * {
@@ -4648,6 +4678,17 @@ input::placeholder {
 
   .topbar-right {
     position: relative;
+  }
+
+  .topbar button,
+  .topbar input,
+  .topbar .icon-action-btn {
+    min-height: 44px;
+  }
+
+  .topbar .icon-action-btn,
+  .topbar-right button {
+    min-width: 44px;
   }
 
   .settings-grid {
@@ -4671,8 +4712,9 @@ input::placeholder {
      so the inner log/output areas can scroll. */
   #view-containers.shell-mode {
     /* Match main's padding so the split view uses the true visible area on mobile. */
-    height: calc(100dvh - var(--mobile-nav-h, 0px) - var(--s-3) - var(--s-4));
+    height: calc(var(--app-viewport-h, 100dvh) - var(--mobile-nav-h, 0px) - var(--s-3) - var(--s-4) - env(safe-area-inset-bottom));
     min-height: 0;
+    padding: var(--s-2);
   }
 
   #view-containers.shell-mode .containers-shell-layout {
@@ -4684,7 +4726,140 @@ input::placeholder {
 
   .containers-shell-list {
     width: 100%;
-    max-height: min(220px, 34dvh);
+    height: auto;
+    max-height: none;
+    flex: 0 0 auto;
+    overflow: visible;
+    border: 0;
+    background: transparent;
+  }
+
+  .containers-mobile-picker {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    min-height: 44px;
+    gap: var(--s-2);
+    padding: 0 var(--s-3);
+    color: var(--color-text);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--r-card);
+    font: inherit;
+    cursor: pointer;
+  }
+
+  .containers-mobile-picker:focus-visible {
+    outline: none;
+    box-shadow: var(--focus-ring);
+  }
+
+  .containers-mobile-picker:hover,
+  .containers-mobile-picker:active {
+    color: var(--color-text);
+    background: color-mix(in srgb, var(--color-surface), var(--color-primary) 8%);
+    border-color: var(--color-border);
+  }
+
+  .containers-mobile-picker .icon-action {
+    width: 18px;
+    height: 18px;
+    flex: 0 0 auto;
+  }
+
+  .containers-mobile-picker-chevron {
+    transition: transform 160ms ease;
+  }
+
+  .containers-shell-list.mobile-open .containers-mobile-picker-chevron {
+    transform: rotate(180deg);
+  }
+
+  .containers-shell-list-header {
+    display: none;
+  }
+
+  .containers-shell-list-body {
+    display: none;
+    max-height: min(280px, 40dvh);
+    margin-top: var(--s-2);
+    border: 1px solid var(--color-border);
+    border-radius: var(--r-card);
+    background: var(--color-surface);
+    overflow-y: auto;
+  }
+
+  .containers-shell-list.mobile-open .containers-shell-list-body {
+    display: flex;
+  }
+
+  .containers-shell-item {
+    min-height: 44px;
+    padding: var(--s-2) var(--s-3);
+  }
+
+  .containers-focus-toggle {
+    display: inline-flex;
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .containers-shell-terminal {
+    position: relative;
+  }
+
+  .containers-shell-terminal > .containers-focus-toggle {
+    position: absolute;
+    top: var(--s-2);
+    right: var(--s-2);
+    z-index: 4;
+  }
+
+  .containers-logs-toolbar .containers-focus-toggle {
+    margin-left: auto;
+  }
+
+  .containers-logs-toolbar .icon-action-btn,
+  .containers-resources-toolbar .icon-action-btn,
+  #containers-resources-view-toggle,
+  .containers-resource-card-actions .icon-action-btn.btn-small,
+  .containers-resources-pin-btn {
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .containers-resources-cards {
+    padding: var(--s-2);
+    gap: var(--s-2);
+  }
+
+  .containers-resource-card {
+    box-shadow: none;
+    padding: var(--s-2);
+  }
+
+  body.containers-workspace-focus .topbar,
+  body.containers-workspace-focus .sidebar {
+    display: none;
+  }
+
+  body.containers-workspace-focus main {
+    padding: max(var(--s-2), env(safe-area-inset-top)) var(--s-2) calc(var(--s-2) + env(safe-area-inset-bottom));
+  }
+
+  body.containers-workspace-focus #view-containers.shell-mode {
+    height: calc(var(--app-viewport-h, 100dvh) - max(var(--s-2), env(safe-area-inset-top)) - var(--s-2) - env(safe-area-inset-bottom));
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  body.containers-workspace-focus .containers-shell-list {
+    display: none;
   }
 
   .logs-actions {
@@ -4709,7 +4884,7 @@ input::placeholder {
     height: auto;
     border-right: none;
     border-bottom: 1px solid var(--color-border);
-    padding: var(--s-2);
+    padding: var(--s-1) var(--s-2);
     gap: var(--s-1);
     z-index: 70;
     transition: transform 180ms ease;
@@ -4734,6 +4909,7 @@ input::placeholder {
     justify-content: center;
     padding: 0;
     position: relative;
+    min-height: 44px;
   }
 
   .sidebar-icon {
@@ -4861,11 +5037,11 @@ input::placeholder {
   }
 
   main {
-    height: 100dvh;
+    height: var(--app-viewport-h, 100dvh);
     overflow-y: auto;
     overflow-x: hidden;
     padding-top: calc(var(--mobile-nav-h, 0px) + var(--s-3));
-    padding-bottom: var(--s-4);
+    padding-bottom: calc(var(--s-4) + env(safe-area-inset-bottom));
     overscroll-behavior: contain;
     overflow-anchor: none;
   }

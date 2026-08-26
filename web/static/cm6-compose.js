@@ -381,9 +381,6 @@ export function init({ container, textarea, getEnv, getUseEnv, onChange, mode = 
     if (language.foldKeymap) {
       baseExtensions.push(keymap.of(language.foldKeymap));
     }
-    if (typeof language.indentGuides === "function") {
-      baseExtensions.push(language.indentGuides());
-    }
     baseExtensions.push(autocompletion({ override: [composeCompletionSource], activateOnTyping: true }));
   }
   if (lint) {

@@ -49,6 +49,7 @@ docker run -d \
   -p 8080:8080 \
   -v /var/run/docker.sock:/var/run/docker.sock \
   -v contiwatch-data:/data \
+  -e APP_PIN="SET_A_UNIQUE_4_TO_8_DIGIT_PIN" \
   contiwatch
 ```
 
@@ -103,6 +104,7 @@ docker pull ghcr.io/<owner>/<repo>:dev_<version>
 - `CONTIWATCH_APP_PIN` (optional backward-compatibility fallback for old deployments; use `APP_PIN` in new setup)
 - `CONTIWATCH_AGENT` (optional; set to `true` to run in agent mode)
 - `CONTIWATCH_AGENT_TOKEN` (required in agent mode; bearer token for API access)
+- `CONTIWATCH_TRUSTED_PROXIES` (optional; comma-separated proxy IPs or CIDRs allowed to supply `X-Forwarded-For`; unset by default)
 - `CONTIWATCH_REPO` (optional; GitHub repo in `owner/name` form for release links/checks)
 - `CONTIWATCH_CHANNEL` (optional; `main` or `dev` for release checks)
 - `CONTIWATCH_RELEASE_CHECK` (optional; set to `0`/`false` to disable release checks)
@@ -113,6 +115,7 @@ For the controller instance, the enforced baseline is:
 - set `APP_PIN` (controller will not start without it)
 - keep the default config volume mounted on `/data`
 - use a strong unique `CONTIWATCH_AGENT_TOKEN` on every remote agent
+- expose the controller and remote agents through HTTPS, or restrict plain HTTP endpoints to a trusted private network
 
 Example controller `docker-compose.yml` security block:
 
@@ -140,6 +143,8 @@ Important:
 - Do not use predictable values such as `1234`, `1111`, or `0000`.
 - Basic Auth has been removed from controller mode.
 - Agent mode is protected by bearer token, not by PIN Guard.
+- Use at least 32 random characters for `CONTIWATCH_AGENT_TOKEN`. Existing shorter tokens remain accepted for upgrade compatibility, but emit a startup warning and should be rotated.
+- Leave `CONTIWATCH_TRUSTED_PROXIES` unset unless the controller is directly behind a trusted reverse proxy. Configure only that proxy's IP/CIDR; forwarded client IP headers from any other peer are ignored.
 - PIN session is per browser window/tab: refresh in the same tab keeps access, but opening a new tab/window requires PIN again.
 - Active work in the same tab is not interrupted by a short session TTL; stale server-side PIN tokens are only cleaned up after prolonged inactivity as a fallback safeguard.
 
@@ -167,13 +172,15 @@ Important:
 - `local_servers[].public_ip` (optional public IP/host used for opening container services from the UI)
 
 Security notes:
-- Config file is stored with restricted permissions (`0600`).
+- Config, Compose and stack environment files are written atomically with restricted permissions (`0600`); stack directories use `0700`.
 - Sensitive values are not returned in full by controller read APIs:
   - `GET /api/config` returns `discord_webhook_url` hidden and `discord_webhook_configured` flag.
   - `GET /api/servers` returns remote token hidden and `token_configured` flag.
 - Controller hardening is environment-driven:
   - `APP_PIN` is required for controller startup and enables session gating for protected controller API endpoints and browser UI.
   - Remote agents stay token-protected through `CONTIWATCH_AGENT_TOKEN`.
+  - PIN attempts use bounded per-client lockouts plus a global limiter. Proxy headers affect client identity only when the direct peer matches `CONTIWATCH_TRUSTED_PROXIES`.
+  - Request bodies, headers and HTTP connection lifetimes are bounded to limit resource exhaustion.
 - To keep an existing secret when updating:
   - send `discord_webhook_url="__keep__"` for config updates,
   - send empty `token` for existing remote server updates.
@@ -185,6 +192,7 @@ Security notes:
 - `GET /api/pin/status`
 - `POST /api/pin/verify`
 - `POST /api/pin/logout`
+- `POST /api/pin/ws-ticket` create a short-lived, single-use ticket for an authenticated browser WebSocket
 - `POST /api/scan` run scan
 - `POST /api/scan/stop` cancel scan
 - `GET /api/scan/state` scan running status
@@ -222,7 +230,8 @@ Notes:
 - `POST /api/update/{container_id}` returns `old_image_id`, `new_image_id`, and `applied_image_id` to help debug tag/image mismatches.
 - Periodic scans are disabled by default; enable via `scheduler_enabled` in the config (UI).
 - Agent mode exposes a limited API surface (token required).
-- Controller mode requires `APP_PIN` and enforces active PIN session for protected API endpoints (except `/api/health`, `/api/version`, `/api/meta`, `/api/release`, `/api/pin/*`).
+- Controller mode requires `APP_PIN` and enforces an active PIN session for protected API endpoints. The public exceptions are `/api/health`, `/api/version`, `/api/meta`, `/api/release`, `/api/pin/status`, `/api/pin/verify`, and `/api/pin/logout`; `/api/pin/ws-ticket` is protected.
+- Browser Shell and Logs WebSockets use 30-second, single-use tickets so the long-lived PIN session token is not placed in a URL. Remote agent bearer authentication and controller-to-agent WebSocket proxying remain unchanged.
 - Discord webhook test endpoint validates official Discord webhook URLs (`https://.../api/webhooks/...`).
 
 UI timing:

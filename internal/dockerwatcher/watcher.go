@@ -19,6 +19,7 @@ import (
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
+	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/api/types/volume"
 	"github.com/docker/docker/client"
@@ -214,7 +215,7 @@ func (w *Watcher) ScanNoUpdate(ctx context.Context, cfg config.Config) (ScanResu
 }
 
 func (w *Watcher) scan(ctx context.Context, cfg config.Config, scanOnly bool) (ScanResult, error) {
-	containers, err := w.client.ContainerList(ctx, types.ContainerListOptions{All: true})
+	containers, err := w.client.ContainerList(ctx, container.ListOptions{All: true})
 	if err != nil {
 		return ScanResult{}, err
 	}
@@ -242,7 +243,7 @@ func (w *Watcher) scan(ctx context.Context, cfg config.Config, scanOnly bool) (S
 }
 
 func (w *Watcher) Containers(ctx context.Context) ([]ContainerInfo, error) {
-	items, err := w.client.ContainerList(ctx, types.ContainerListOptions{All: true})
+	items, err := w.client.ContainerList(ctx, container.ListOptions{All: true})
 	if err != nil {
 		return nil, err
 	}
@@ -365,7 +366,7 @@ func (w *Watcher) containerResource(ctx context.Context, id string) (ContainerRe
 	}
 	ipAddresses := extractContainerIPs(inspect.NetworkSettings)
 	ports := extractContainerPorts(inspect.NetworkSettings)
-	stats := types.StatsJSON{}
+	stats := container.StatsResponse{}
 	if running {
 		raw, err := w.client.ContainerStats(ctx, id, false)
 		if err != nil {
@@ -396,7 +397,7 @@ func (w *Watcher) containerResource(ctx context.Context, id string) (ContainerRe
 	}, nil
 }
 
-func (w *Watcher) containerInfo(ctx context.Context, item types.Container) (ContainerInfo, error) {
+func (w *Watcher) containerInfo(ctx context.Context, item container.Summary) (ContainerInfo, error) {
 	name := strings.TrimPrefix(firstOrEmpty(item.Names), "/")
 	inspect, err := w.client.ContainerInspect(ctx, item.ID)
 	if err != nil {
@@ -430,7 +431,7 @@ func (w *Watcher) containerInfo(ctx context.Context, item types.Container) (Cont
 	}, nil
 }
 
-func extractContainerIPs(settings *types.NetworkSettings) []ContainerIP {
+func extractContainerIPs(settings *container.NetworkSettings) []ContainerIP {
 	if settings == nil || settings.Networks == nil {
 		return nil
 	}
@@ -447,7 +448,7 @@ func extractContainerIPs(settings *types.NetworkSettings) []ContainerIP {
 	return ips
 }
 
-func extractContainerPorts(settings *types.NetworkSettings) []ContainerPortBinding {
+func extractContainerPorts(settings *container.NetworkSettings) []ContainerPortBinding {
 	if settings == nil || settings.Ports == nil {
 		return nil
 	}
@@ -494,7 +495,7 @@ func extractContainerPorts(settings *types.NetworkSettings) []ContainerPortBindi
 	return ports
 }
 
-func computeContainerCPUPercent(stats types.StatsJSON) float64 {
+func computeContainerCPUPercent(stats container.StatsResponse) float64 {
 	cpuDelta := float64(stats.CPUStats.CPUUsage.TotalUsage - stats.PreCPUStats.CPUUsage.TotalUsage)
 	systemDelta := float64(stats.CPUStats.SystemUsage - stats.PreCPUStats.SystemUsage)
 	if cpuDelta <= 0 || systemDelta <= 0 {
@@ -524,7 +525,7 @@ func computeContainerMemPercent(usage, limit uint64) float64 {
 	return percent
 }
 
-func normalizeContainerState(state *types.ContainerState) string {
+func normalizeContainerState(state *container.State) string {
 	if state == nil {
 		return "unknown"
 	}
@@ -546,7 +547,7 @@ func normalizeContainerState(state *types.ContainerState) string {
 	return "unknown"
 }
 
-func uptimeFromState(state *types.ContainerState) int64 {
+func uptimeFromState(state *container.State) int64 {
 	if state == nil {
 		return 0
 	}
@@ -583,7 +584,7 @@ func stackFromLabels(labels map[string]string) string {
 	return "-"
 }
 
-func (w *Watcher) scanContainer(ctx context.Context, item types.Container, cfg config.Config, scanOnly bool) ContainerStatus {
+func (w *Watcher) scanContainer(ctx context.Context, item container.Summary, cfg config.Config, scanOnly bool) ContainerStatus {
 	status := ContainerStatus{
 		ID:          item.ID,
 		Name:        strings.TrimPrefix(firstOrEmpty(item.Names), "/"),
@@ -697,7 +698,7 @@ func (w *Watcher) scanContainer(ctx context.Context, item types.Container, cfg c
 }
 
 func (w *Watcher) pullImage(ctx context.Context, imageRef string) error {
-	reader, err := w.client.ImagePull(ctx, imageRef, types.ImagePullOptions{})
+	reader, err := w.client.ImagePull(ctx, imageRef, image.PullOptions{})
 	if err != nil {
 		return err
 	}
@@ -719,11 +720,11 @@ func (w *Watcher) PullImage(ctx context.Context, repository, tag string) error {
 }
 
 func (w *Watcher) ListImages(ctx context.Context) ([]ImageInfo, error) {
-	images, err := w.client.ImageList(ctx, types.ImageListOptions{All: true})
+	images, err := w.client.ImageList(ctx, image.ListOptions{All: true})
 	if err != nil {
 		return nil, err
 	}
-	containers, err := w.client.ContainerList(ctx, types.ContainerListOptions{All: true})
+	containers, err := w.client.ContainerList(ctx, container.ListOptions{All: true})
 	if err != nil {
 		return nil, err
 	}
@@ -772,7 +773,7 @@ func (w *Watcher) RemoveImage(ctx context.Context, imageID string) error {
 	if imageID == "" {
 		return errors.New("image id is required")
 	}
-	_, err := w.client.ImageRemove(ctx, imageID, types.ImageRemoveOptions{Force: false, PruneChildren: false})
+	_, err := w.client.ImageRemove(ctx, imageID, image.RemoveOptions{Force: false, PruneChildren: false})
 	return err
 }
 
@@ -802,7 +803,7 @@ func (w *Watcher) ListVolumes(ctx context.Context) ([]VolumeInfo, error) {
 	if err != nil {
 		return nil, err
 	}
-	containers, err := w.client.ContainerList(ctx, types.ContainerListOptions{All: true})
+	containers, err := w.client.ContainerList(ctx, container.ListOptions{All: true})
 	if err != nil {
 		return nil, err
 	}
@@ -876,7 +877,7 @@ func (w *Watcher) VolumeUsage(ctx context.Context, volumeName string) ([]VolumeU
 	if volumeName == "" {
 		return nil, errors.New("volume name is required")
 	}
-	containers, err := w.client.ContainerList(ctx, types.ContainerListOptions{All: true})
+	containers, err := w.client.ContainerList(ctx, container.ListOptions{All: true})
 	if err != nil {
 		return nil, err
 	}
@@ -934,11 +935,11 @@ func (w *Watcher) PruneVolumes(ctx context.Context) ([]string, uint64, error) {
 }
 
 func (w *Watcher) ListNetworks(ctx context.Context) ([]NetworkInfo, error) {
-	networks, err := w.client.NetworkList(ctx, types.NetworkListOptions{})
+	networks, err := w.client.NetworkList(ctx, network.ListOptions{})
 	if err != nil {
 		return nil, err
 	}
-	containers, err := w.client.ContainerList(ctx, types.ContainerListOptions{All: true})
+	containers, err := w.client.ContainerList(ctx, container.ListOptions{All: true})
 	if err != nil {
 		return nil, err
 	}
@@ -988,7 +989,7 @@ func (w *Watcher) NetworkDetails(ctx context.Context, networkID string) (Network
 	if networkID == "" {
 		return NetworkDetails{}, errors.New("network id is required")
 	}
-	inspect, err := w.client.NetworkInspect(ctx, networkID, types.NetworkInspectOptions{})
+	inspect, err := w.client.NetworkInspect(ctx, networkID, network.InspectOptions{})
 	if err != nil {
 		return NetworkDetails{}, err
 	}
@@ -1032,7 +1033,7 @@ func (w *Watcher) NetworkUsage(ctx context.Context, networkID string) ([]Network
 	if networkID == "" {
 		return nil, errors.New("network id is required")
 	}
-	inspect, err := w.client.NetworkInspect(ctx, networkID, types.NetworkInspectOptions{})
+	inspect, err := w.client.NetworkInspect(ctx, networkID, network.InspectOptions{})
 	if err != nil {
 		return nil, err
 	}
@@ -1040,7 +1041,7 @@ func (w *Watcher) NetworkUsage(ctx context.Context, networkID string) ([]Network
 	if name == "" {
 		return []NetworkUsedBy{}, nil
 	}
-	containers, err := w.client.ContainerList(ctx, types.ContainerListOptions{All: true})
+	containers, err := w.client.ContainerList(ctx, container.ListOptions{All: true})
 	if err != nil {
 		return nil, err
 	}
@@ -1207,7 +1208,7 @@ func digestFromRef(ref string) string {
 	return ""
 }
 
-func (w *Watcher) recreateContainer(ctx context.Context, inspect types.ContainerJSON, imageRef string, startAfter bool) (string, error) {
+func (w *Watcher) recreateContainer(ctx context.Context, inspect container.InspectResponse, imageRef string, startAfter bool) (string, error) {
 	name := strings.TrimPrefix(inspect.Name, "/")
 	if name == "" {
 		name = inspect.ID[:12]
@@ -1242,7 +1243,7 @@ func (w *Watcher) recreateContainer(ctx context.Context, inspect types.Container
 			return "", fmt.Errorf("stop: %w", err)
 		}
 	}
-	if err := w.client.ContainerRemove(ctx, inspect.ID, types.ContainerRemoveOptions{Force: true}); err != nil {
+	if err := w.client.ContainerRemove(ctx, inspect.ID, container.RemoveOptions{Force: true}); err != nil {
 		return "", fmt.Errorf("remove: %w", err)
 	}
 
@@ -1252,7 +1253,7 @@ func (w *Watcher) recreateContainer(ctx context.Context, inspect types.Container
 	}
 
 	if startAfter {
-		if err := w.client.ContainerStart(ctx, created.ID, types.ContainerStartOptions{}); err != nil {
+		if err := w.client.ContainerStart(ctx, created.ID, container.StartOptions{}); err != nil {
 			return "", fmt.Errorf("start: %w", err)
 		}
 	}
@@ -1276,11 +1277,11 @@ func (w *Watcher) UpdateContainerForceStart(ctx context.Context, containerID str
 }
 
 func (w *Watcher) StartContainer(ctx context.Context, containerID string) error {
-	return w.client.ContainerStart(ctx, strings.TrimSpace(containerID), types.ContainerStartOptions{})
+	return w.client.ContainerStart(ctx, strings.TrimSpace(containerID), container.StartOptions{})
 }
 
 func (w *Watcher) RemoveContainer(ctx context.Context, containerID string) error {
-	return w.client.ContainerRemove(ctx, strings.TrimSpace(containerID), types.ContainerRemoveOptions{
+	return w.client.ContainerRemove(ctx, strings.TrimSpace(containerID), container.RemoveOptions{
 		Force:         false,
 		RemoveVolumes: false,
 	})
@@ -1316,7 +1317,7 @@ func (w *Watcher) ExecShell(ctx context.Context, containerID string, cmd []strin
 	if len(cmd) == 0 {
 		cmd = []string{"/bin/sh"}
 	}
-	execResp, err := w.client.ContainerExecCreate(ctx, containerID, types.ExecConfig{
+	execResp, err := w.client.ContainerExecCreate(ctx, containerID, container.ExecOptions{
 		Tty:          true,
 		AttachStdin:  true,
 		AttachStdout: true,
@@ -1326,7 +1327,7 @@ func (w *Watcher) ExecShell(ctx context.Context, containerID string, cmd []strin
 	if err != nil {
 		return "", types.HijackedResponse{}, err
 	}
-	attach, err := w.client.ContainerExecAttach(ctx, execResp.ID, types.ExecStartCheck{Tty: true})
+	attach, err := w.client.ContainerExecAttach(ctx, execResp.ID, container.ExecAttachOptions{Tty: true})
 	if err != nil {
 		return "", types.HijackedResponse{}, err
 	}
@@ -1338,21 +1339,21 @@ func (w *Watcher) ResizeExec(ctx context.Context, execID string, cols, rows uint
 	if execID == "" {
 		return errors.New("exec id is required")
 	}
-	return w.client.ContainerExecResize(ctx, execID, types.ResizeOptions{
+	return w.client.ContainerExecResize(ctx, execID, container.ResizeOptions{
 		Height: rows,
 		Width:  cols,
 	})
 }
 
-func (w *Watcher) InspectExec(ctx context.Context, execID string) (types.ContainerExecInspect, error) {
+func (w *Watcher) InspectExec(ctx context.Context, execID string) (container.ExecInspect, error) {
 	execID = strings.TrimSpace(execID)
 	if execID == "" {
-		return types.ContainerExecInspect{}, errors.New("exec id is required")
+		return container.ExecInspect{}, errors.New("exec id is required")
 	}
 	return w.client.ContainerExecInspect(ctx, execID)
 }
 
-func (w *Watcher) ContainerLogs(ctx context.Context, containerID string, opts types.ContainerLogsOptions) (io.ReadCloser, bool, error) {
+func (w *Watcher) ContainerLogs(ctx context.Context, containerID string, opts container.LogsOptions) (io.ReadCloser, bool, error) {
 	containerID = strings.TrimSpace(containerID)
 	if containerID == "" {
 		return nil, false, errors.New("container id is required")
@@ -1610,7 +1611,7 @@ func (w *Watcher) triggerSelfUpdate(ctx context.Context, containerID string, log
 	if err != nil {
 		return err
 	}
-	if err := w.client.ContainerStart(ctx, created.ID, types.ContainerStartOptions{}); err != nil {
+	if err := w.client.ContainerStart(ctx, created.ID, container.StartOptions{}); err != nil {
 		return err
 	}
 	if logFn != nil {
@@ -1653,7 +1654,7 @@ func (w *logLineWriter) Flush() {
 func (w *Watcher) streamContainerLogs(containerID string, logFn func(level, message string)) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	reader, err := w.client.ContainerLogs(ctx, containerID, types.ContainerLogsOptions{
+	reader, err := w.client.ContainerLogs(ctx, containerID, container.LogsOptions{
 		ShowStdout: true,
 		ShowStderr: true,
 		Follow:     true,

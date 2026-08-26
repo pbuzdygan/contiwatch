@@ -6,8 +6,11 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"math"
 	"net"
 	"net/http"
+	"net/netip"
 	"os"
 	"strconv"
 	"strings"
@@ -15,9 +18,15 @@ import (
 )
 
 const (
-	pinSessionHeaderName = "X-Contiwatch-Pin-Session"
-	pinVerifyMinDelay    = 250 * time.Millisecond
-	pinSessionIdleMaxAge = 24 * time.Hour
+	pinSessionHeaderName  = "X-Contiwatch-Pin-Session"
+	pinVerifyMinDelay     = 250 * time.Millisecond
+	pinSessionIdleMaxAge  = 24 * time.Hour
+	pinWebSocketTicketAge = 30 * time.Second
+	pinAttemptRetention   = 24 * time.Hour
+	pinAttemptPruneEvery  = 10 * time.Minute
+	pinAttemptMaxEntries  = 4096
+	pinGlobalBurst        = 20.0
+	pinGlobalRefillRate   = 1.0
 )
 
 type pinSessionEntry struct {
@@ -28,6 +37,36 @@ type pinAttemptEntry struct {
 	Failures  int
 	LockedTo  time.Time
 	UpdatedAt time.Time
+}
+
+type pinWebSocketTicketEntry struct {
+	ExpiresAt    time.Time
+	SessionToken string
+}
+
+func parseTrustedProxyPrefixes(raw string) ([]netip.Prefix, error) {
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return nil, nil
+	}
+	prefixes := make([]netip.Prefix, 0)
+	for _, item := range strings.Split(value, ",") {
+		candidate := strings.TrimSpace(item)
+		if candidate == "" {
+			continue
+		}
+		if prefix, err := netip.ParsePrefix(candidate); err == nil {
+			prefixes = append(prefixes, prefix.Masked())
+			continue
+		}
+		address, err := netip.ParseAddr(candidate)
+		if err != nil {
+			return nil, fmt.Errorf("invalid trusted proxy %q", candidate)
+		}
+		address = address.Unmap()
+		prefixes = append(prefixes, netip.PrefixFrom(address, address.BitLen()))
+	}
+	return prefixes, nil
 }
 
 func parsePinGuardFromEnv(agentMode bool) (bool, string, time.Duration, error) {
@@ -106,6 +145,24 @@ func (s *Server) pinSessionTokenFromRequest(r *http.Request) string {
 	return ""
 }
 
+func pinWebSocketAPIPath(path string) bool {
+	return path == "/api/containers/shell" || path == "/api/containers/logs"
+}
+
+func (s *Server) pinRequestAuthorized(r *http.Request) bool {
+	if r == nil {
+		return false
+	}
+	if s.pinSessionAuthorized(s.pinSessionTokenFromRequest(r)) {
+		return true
+	}
+	if !pinWebSocketAPIPath(r.URL.Path) {
+		return false
+	}
+	ticket := strings.TrimSpace(r.URL.Query().Get("ws_ticket"))
+	return s.consumePinWebSocketTicket(ticket)
+}
+
 func (s *Server) pinSessionAuthorized(token string) bool {
 	if !s.pinGuardEnabled || token == "" {
 		return false
@@ -145,6 +202,11 @@ func (s *Server) revokePinSession(token string) {
 	}
 	s.pinMu.Lock()
 	delete(s.pinSessions, token)
+	for ticket, entry := range s.pinWebSocketTickets {
+		if entry.SessionToken == token {
+			delete(s.pinWebSocketTickets, ticket)
+		}
+	}
 	s.pinMu.Unlock()
 }
 
@@ -157,28 +219,166 @@ func (s *Server) pruneExpiredPinSessionsLocked(now time.Time) {
 			delete(s.pinSessions, token)
 		}
 	}
-}
-
-func clientIPFromRequest(r *http.Request) string {
-	if r == nil {
-		return "unknown"
-	}
-	xff := strings.TrimSpace(r.Header.Get("X-Forwarded-For"))
-	if xff != "" {
-		part := strings.TrimSpace(strings.Split(xff, ",")[0])
-		if part != "" {
-			return part
+	for ticket, entry := range s.pinWebSocketTickets {
+		if entry.ExpiresAt.IsZero() || !entry.ExpiresAt.After(now) {
+			delete(s.pinWebSocketTickets, ticket)
 		}
 	}
-	host, _, err := net.SplitHostPort(strings.TrimSpace(r.RemoteAddr))
-	if err == nil && host != "" {
-		return host
+}
+
+func (s *Server) createPinWebSocketTicket(sessionToken string) (string, error) {
+	if sessionToken == "" {
+		return "", errors.New("pin session is required")
 	}
-	addr := strings.TrimSpace(r.RemoteAddr)
-	if addr == "" {
+	ticket, err := generateToken(24)
+	if err != nil {
+		return "", err
+	}
+	now := time.Now()
+	s.pinMu.Lock()
+	defer s.pinMu.Unlock()
+	if s.pinWebSocketTickets == nil {
+		s.pinWebSocketTickets = map[string]pinWebSocketTicketEntry{}
+	}
+	s.pruneExpiredPinSessionsLocked(now)
+	s.pinWebSocketTickets[ticket] = pinWebSocketTicketEntry{
+		ExpiresAt:    now.Add(pinWebSocketTicketAge),
+		SessionToken: sessionToken,
+	}
+	return ticket, nil
+}
+
+func (s *Server) consumePinWebSocketTicket(ticket string) bool {
+	if ticket == "" {
+		return false
+	}
+	now := time.Now()
+	s.pinMu.Lock()
+	defer s.pinMu.Unlock()
+	s.pruneExpiredPinSessionsLocked(now)
+	entry, ok := s.pinWebSocketTickets[ticket]
+	if !ok || !entry.ExpiresAt.After(now) {
+		delete(s.pinWebSocketTickets, ticket)
+		return false
+	}
+	delete(s.pinWebSocketTickets, ticket)
+	_, sessionExists := s.pinSessions[entry.SessionToken]
+	return sessionExists
+}
+
+func requestRemoteIP(r *http.Request) netip.Addr {
+	if r == nil {
+		return netip.Addr{}
+	}
+	host, _, err := net.SplitHostPort(strings.TrimSpace(r.RemoteAddr))
+	if err != nil {
+		host = strings.TrimSpace(r.RemoteAddr)
+	}
+	address, err := netip.ParseAddr(strings.TrimSpace(host))
+	if err != nil {
+		return netip.Addr{}
+	}
+	return address.Unmap()
+}
+
+func isTrustedProxy(address netip.Addr, trusted []netip.Prefix) bool {
+	if !address.IsValid() {
+		return false
+	}
+	address = address.Unmap()
+	for _, prefix := range trusted {
+		if prefix.Contains(address) {
+			return true
+		}
+	}
+	return false
+}
+
+func clientIPFromRequest(r *http.Request, trusted []netip.Prefix) string {
+	peer := requestRemoteIP(r)
+	if !peer.IsValid() {
 		return "unknown"
 	}
-	return addr
+	if len(trusted) == 0 || !isTrustedProxy(peer, trusted) {
+		return peer.String()
+	}
+	xff := strings.TrimSpace(r.Header.Get("X-Forwarded-For"))
+	if xff == "" {
+		return peer.String()
+	}
+	parts := strings.Split(xff, ",")
+	forwarded := make([]netip.Addr, 0, len(parts))
+	for _, part := range parts {
+		address, err := netip.ParseAddr(strings.TrimSpace(part))
+		if err != nil {
+			return peer.String()
+		}
+		forwarded = append(forwarded, address.Unmap())
+	}
+	candidate := peer
+	for i := len(forwarded) - 1; i >= 0; i-- {
+		if !isTrustedProxy(candidate, trusted) {
+			break
+		}
+		candidate = forwarded[i]
+	}
+	return candidate.String()
+}
+
+func (s *Server) prunePinAttemptsLocked(now time.Time) {
+	if len(s.pinAttempts) == 0 {
+		s.pinAttemptsLastPruned = now
+		return
+	}
+	if len(s.pinAttempts) < pinAttemptMaxEntries &&
+		!s.pinAttemptsLastPruned.IsZero() &&
+		now.Sub(s.pinAttemptsLastPruned) < pinAttemptPruneEvery {
+		return
+	}
+	for ip, entry := range s.pinAttempts {
+		if entry.UpdatedAt.IsZero() || now.Sub(entry.UpdatedAt) > pinAttemptRetention {
+			delete(s.pinAttempts, ip)
+		}
+	}
+	s.pinAttemptsLastPruned = now
+}
+
+func (s *Server) ensurePinAttemptCapacityLocked() {
+	if len(s.pinAttempts) < pinAttemptMaxEntries {
+		return
+	}
+	oldestIP := ""
+	oldestAt := time.Time{}
+	for ip, entry := range s.pinAttempts {
+		if oldestIP == "" || entry.UpdatedAt.Before(oldestAt) {
+			oldestIP = ip
+			oldestAt = entry.UpdatedAt
+		}
+	}
+	if oldestIP != "" {
+		delete(s.pinAttempts, oldestIP)
+	}
+}
+
+func (s *Server) consumeGlobalPinAttemptLocked(now time.Time) (bool, int) {
+	if s.pinGlobalLastRefill.IsZero() {
+		s.pinGlobalTokens = pinGlobalBurst
+		s.pinGlobalLastRefill = now
+	}
+	elapsed := now.Sub(s.pinGlobalLastRefill).Seconds()
+	if elapsed > 0 {
+		s.pinGlobalTokens = math.Min(pinGlobalBurst, s.pinGlobalTokens+(elapsed*pinGlobalRefillRate))
+		s.pinGlobalLastRefill = now
+	}
+	if s.pinGlobalTokens < 1 {
+		waitSeconds := int(math.Ceil((1 - s.pinGlobalTokens) / pinGlobalRefillRate))
+		if waitSeconds < 1 {
+			waitSeconds = 1
+		}
+		return false, waitSeconds
+	}
+	s.pinGlobalTokens--
+	return true, 0
 }
 
 func (s *Server) pinBeforeVerify(ip string) (bool, int) {
@@ -188,6 +388,7 @@ func (s *Server) pinBeforeVerify(ip string) (bool, int) {
 	if s.pinAttempts == nil {
 		s.pinAttempts = map[string]pinAttemptEntry{}
 	}
+	s.prunePinAttemptsLocked(now)
 	entry := s.pinAttempts[ip]
 	if !entry.LockedTo.IsZero() && entry.LockedTo.After(now) {
 		seconds := int(entry.LockedTo.Sub(now).Seconds())
@@ -196,7 +397,7 @@ func (s *Server) pinBeforeVerify(ip string) (bool, int) {
 		}
 		return false, seconds
 	}
-	return true, 0
+	return s.consumeGlobalPinAttemptLocked(now)
 }
 
 func (s *Server) pinOnVerifySuccess(ip string) {
@@ -211,6 +412,10 @@ func (s *Server) pinOnVerifyFailure(ip string) (bool, int) {
 	defer s.pinMu.Unlock()
 	if s.pinAttempts == nil {
 		s.pinAttempts = map[string]pinAttemptEntry{}
+	}
+	s.prunePinAttemptsLocked(now)
+	if _, exists := s.pinAttempts[ip]; !exists {
+		s.ensurePinAttemptCapacityLocked()
 	}
 	entry := s.pinAttempts[ip]
 	entry.Failures++
@@ -296,7 +501,7 @@ func (s *Server) handlePinVerify(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	startedAt := time.Now()
-	ip := clientIPFromRequest(r)
+	ip := clientIPFromRequest(r, s.trustedProxies)
 	allowed, retryAfterSeconds := s.pinBeforeVerify(ip)
 	if !allowed {
 		w.Header().Set("Retry-After", strconv.Itoa(retryAfterSeconds))
@@ -358,6 +563,27 @@ func (s *Server) handlePinLogout(w http.ResponseWriter, r *http.Request) {
 	token := s.pinSessionTokenFromRequest(r)
 	s.revokePinSession(token)
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
+func (s *Server) handlePinWebSocketTicket(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	sessionToken := s.pinSessionTokenFromRequest(r)
+	if !s.pinSessionAuthorized(sessionToken) {
+		writePinRequired(w)
+		return
+	}
+	ticket, err := s.createPinWebSocketTicket(sessionToken)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ticket":     ticket,
+		"expires_in": int(pinWebSocketTicketAge.Seconds()),
+	})
 }
 
 func validateStartupPin(pin string) error {

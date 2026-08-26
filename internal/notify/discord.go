@@ -91,12 +91,12 @@ func (d *DiscordClient) post(payload discordPayload) error {
 	}
 	req, err := http.NewRequest(http.MethodPost, d.WebhookURL, bytes.NewReader(data))
 	if err != nil {
-		return err
+		return errors.New("discord notification request could not be created")
 	}
 	req.Header.Set("Content-Type", "application/json")
 	resp, err := d.Client.Do(req)
 	if err != nil {
-		return err
+		return errors.New("discord notification request failed")
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
