@@ -193,6 +193,12 @@ The editor does not add or remove service-level `env_file` entries. Add `env_fil
 
 Stack validation evaluates the interpolated Compose model. Variables defined in a stack's `.env` take precedence over same-named variables inherited from the Contiwatch process, preventing controller configuration from changing a managed stack accidentally.
 
+## Server health check
+
+The Servers view provides an on-demand Health check for local Docker daemons and remote Contiwatch agents. It reports Docker Engine/API versions, OS and architecture, CPU and memory capacity, container state and health counts, and Docker disk usage for images, containers, volumes, and build cache. Storage results include the amount that Docker considers potentially reclaimable.
+
+The check intentionally does not report live host CPU/RAM percentages or host filesystem free space. Those values require host-level metrics beyond Docker socket access. Health data is collected only when requested because Docker disk usage calculation can be relatively expensive.
+
 ## API
 - `GET /api/version`
 - `GET /api/meta` (version/channel/repo metadata used by the UI)
@@ -213,6 +219,7 @@ Stack validation evaluates the interpolated Compose model. Variables defined in 
 - `GET /api/servers/info` versions + reachability
 - `GET /api/servers/stream` live server info + scan updates (SSE)
 - `POST /api/servers/refresh` trigger on-demand reachability checks (updates stream + returns snapshot)
+- `GET /api/servers/health?scope=local:{name}|remote:{name}` collect an on-demand Docker health and storage summary
 - `POST /api/status/refresh` pull last scan snapshots from online agents (updates stream)
 - `GET /api/containers?scope=local:{name}|remote:{name}` list containers for a selected server
 - `POST /api/containers/action` run container action (`start`, `stop`, `restart`, `pause`, `unpause`, `kill`)

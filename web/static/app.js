@@ -243,6 +243,10 @@ const detailsModal = document.getElementById("details-modal");
 const detailsTitle = document.getElementById("details-title");
 const detailsBody = document.getElementById("details-body");
 const detailsCloseBtn = document.getElementById("details-close");
+const serverHealthModal = document.getElementById("server-health-modal");
+const serverHealthTitle = document.getElementById("server-health-title");
+const serverHealthBody = document.getElementById("server-health-body");
+const serverHealthCloseBtn = document.getElementById("server-health-close");
 const policyModal = document.getElementById("policy-modal");
 const policyCloseBtn = document.getElementById("policy-close");
 const stackModal = document.getElementById("stack-modal");
@@ -267,6 +271,7 @@ const stackComposeWrapBtn = document.getElementById("stack-compose-wrap");
 const stackEnvWrapBtn = document.getElementById("stack-env-wrap");
 const stackEnvDeleteBtn = document.getElementById("stack-env-delete");
 const stackModalErrorEl = document.getElementById("stack-modal-error");
+const stackModalOperationEl = document.getElementById("stack-modal-operation");
 
 let currentScanController = null;
 let currentView = "status";
@@ -402,6 +407,8 @@ let stackEnvDeletePending = false;
 let stackEnvDeleteConfirming = false;
 let stackModalLoading = false;
 let stackModalLoadFailed = false;
+let stackModalActionInProgress = "";
+let serverHealthAbort = null;
 let pinGuardEnabled = false;
 let pinGuardUnlocked = true;
 let pinGuardSubmitting = false;
@@ -1169,10 +1176,34 @@ function setStackEditorView(view) {
 
 function setStackModalLoading(loading) {
   stackModalLoading = Boolean(loading);
+  updateStackModalBusyState();
+  if (stackModal) stackModal.classList.toggle("is-loading", stackModalLoading);
+}
+
+function updateStackModalBusyState() {
+  const isBusy = stackModalLoading || Boolean(stackModalActionInProgress);
   [stackModalSave, stackModalSaveIcon, stackModalComposeUp, stackModalComposeDown, stackModalRedeploy]
     .filter(Boolean)
-    .forEach((button) => { button.disabled = stackModalLoading || stackModalLoadFailed; });
-  if (stackModal) stackModal.classList.toggle("is-loading", stackModalLoading);
+    .forEach((button) => { button.disabled = isBusy || stackModalLoadFailed; });
+  [
+    [stackModalComposeUp, "up"],
+    [stackModalComposeDown, "down"],
+    [stackModalRedeploy, "redeploy"],
+  ].forEach(([button, action]) => {
+    if (!button) return;
+    const active = stackModalActionInProgress === action;
+    button.classList.toggle("is-pulsing", active);
+    button.setAttribute("aria-busy", active ? "true" : "false");
+  });
+}
+
+function setStackModalOperation(action, message, variant = "") {
+  stackModalActionInProgress = action || "";
+  updateStackModalBusyState();
+  if (!stackModalOperationEl) return;
+  const text = String(message || "").trim();
+  stackModalOperationEl.textContent = text;
+  stackModalOperationEl.className = `stack-modal-operation${variant ? ` is-${variant}` : ""}${text ? "" : " hidden"}`;
 }
 
 function updateStackEnvDeleteButton() {
@@ -1222,6 +1253,7 @@ async function openStackModal(name = "") {
   stackEnvDeletePending = false;
   stackEnvDeleteConfirming = false;
   stackModalLoadFailed = false;
+  if (!stackModalActionInProgress) setStackModalOperation("", "");
   updateStackEnvDeleteButton();
   clearStackModalError();
   setStackEditorView(window.matchMedia("(max-width: 960px)").matches ? "compose" : stackEditorView);
@@ -1330,6 +1362,7 @@ async function saveStackFromModal({ closeOnSuccess, notifyOnSuccess = true } = {
 }
 
 async function runStackActionFromModal(action) {
+  if (stackModalActionInProgress) return;
   const scope = containersSelectedScope;
   if (!scope) {
     showToast("Select server first.");
@@ -1340,9 +1373,29 @@ async function runStackActionFromModal(action) {
     showToast("Stack name must match A-Z, a-z, 0-9, _ or -.");
     return;
   }
+  const progressLabels = {
+    up: "Deploying stack…",
+    down: "Stopping and removing stack services…",
+    redeploy: "Pulling images and redeploying stack…",
+  };
+  const successLabels = {
+    up: "Stack deployed successfully.",
+    down: "Stack services stopped and removed.",
+    redeploy: "Stack redeployed successfully.",
+  };
+  setStackModalOperation(action, "Saving stack configuration…", "progress");
   const ok = await saveStackFromModal({ closeOnSuccess: false, notifyOnSuccess: false });
-  if (!ok) return;
-  await runStackAction(name, action);
+  if (!ok) {
+    setStackModalOperation("", "Stack action was not started because saving or validation failed.", "error");
+    return;
+  }
+  setStackModalOperation(action, progressLabels[action] || "Running stack action…", "progress");
+  const completed = await runStackAction(name, action);
+  if (completed) {
+    setStackModalOperation("", successLabels[action] || "Stack action completed.", "success");
+  } else {
+    setStackModalOperation("", "Stack action failed. Check the error notification for details.", "error");
+  }
 }
 
 async function copyToClipboard(value, label, options = {}) {
@@ -2193,6 +2246,172 @@ function renderStatus(results) {
   applySidebarFilter();
 }
 
+function closeServerHealthModal() {
+  if (serverHealthAbort) {
+    serverHealthAbort.abort();
+    serverHealthAbort = null;
+  }
+  if (!serverHealthModal) return;
+  serverHealthModal.classList.add("hidden");
+  serverHealthModal.setAttribute("aria-hidden", "true");
+}
+
+function buildServerHealthMetric(label, value) {
+  const metric = document.createElement("div");
+  metric.className = "server-health-metric";
+  const labelEl = document.createElement("span");
+  labelEl.className = "server-health-metric-label";
+  labelEl.textContent = label;
+  const valueEl = document.createElement("strong");
+  valueEl.textContent = value;
+  metric.append(labelEl, valueEl);
+  return metric;
+}
+
+function renderServerHealth(payload) {
+  if (!serverHealthBody) return;
+  const health = payload && payload.health ? payload.health : {};
+  serverHealthBody.innerHTML = "";
+  const storageKeys = ["images", "containers", "volumes", "build_cache"];
+  const totalStorage = storageKeys.reduce((sum, key) => sum + Number(health[key] && health[key].size_bytes || 0), 0);
+  const reclaimable = storageKeys.reduce((sum, key) => sum + Number(health[key] && health[key].reclaimable_bytes || 0), 0);
+  const warnings = Array.isArray(health.warnings) ? health.warnings : [];
+  const unhealthy = Number(health.containers_unhealthy || 0);
+  const shouldWarnStorage = reclaimable >= 1024 * 1024 * 1024 && reclaimable >= totalStorage * 0.25;
+  const hasWarning = unhealthy > 0 || warnings.length > 0 || shouldWarnStorage;
+
+  const summary = document.createElement("div");
+  summary.className = `server-health-summary ${hasWarning ? "is-warning" : "is-ok"}`;
+  const summaryTitle = document.createElement("strong");
+  summaryTitle.textContent = unhealthy > 0
+    ? `${unhealthy} unhealthy container${unhealthy === 1 ? "" : "s"}`
+    : warnings.length > 0
+        ? "Health check completed with warnings"
+        : shouldWarnStorage
+            ? "Docker storage cleanup available"
+            : "No obvious issues";
+  const checked = document.createElement("span");
+  const checkedDate = new Date(payload && payload.checked_at ? payload.checked_at : Date.now());
+  checked.textContent = `Checked ${checkedDate.toLocaleString()}`;
+  summary.append(summaryTitle, checked);
+  serverHealthBody.appendChild(summary);
+
+  const overview = document.createElement("section");
+  overview.className = "server-health-section";
+  const overviewTitle = document.createElement("h4");
+  overviewTitle.textContent = "Docker Engine";
+  const overviewGrid = document.createElement("div");
+  overviewGrid.className = "server-health-metrics";
+  overviewGrid.append(
+    buildServerHealthMetric("Engine", health.engine_version || "unknown"),
+    buildServerHealthMetric("API", health.api_version || "unknown"),
+    buildServerHealthMetric("Host", [health.operating_system, health.architecture].filter(Boolean).join(" · ") || "unknown"),
+    buildServerHealthMetric("Capacity", `${Number(health.cpus || 0)} CPU · ${formatBytes(health.memory_bytes)}`),
+    buildServerHealthMetric("Kernel", health.kernel_version || "unknown"),
+    buildServerHealthMetric("Storage driver", health.storage_driver || "unknown"),
+    buildServerHealthMetric("Logging driver", health.logging_driver || "unknown"),
+    buildServerHealthMetric("Docker root", health.docker_root_dir || "unknown")
+  );
+  overview.append(overviewTitle, overviewGrid);
+
+  const containers = document.createElement("section");
+  containers.className = "server-health-section";
+  const containersTitle = document.createElement("h4");
+  containersTitle.textContent = "Containers";
+  const containersGrid = document.createElement("div");
+  containersGrid.className = "server-health-counts";
+  containersGrid.append(
+    buildServerHealthMetric("Running", String(Number(health.containers_running || 0))),
+    buildServerHealthMetric("Stopped", String(Number(health.containers_stopped || 0))),
+    buildServerHealthMetric("Paused", String(Number(health.containers_paused || 0))),
+    buildServerHealthMetric("Unhealthy", String(unhealthy))
+  );
+  containers.append(containersTitle, containersGrid);
+
+  const storage = document.createElement("section");
+  storage.className = "server-health-section";
+  const storageTitle = document.createElement("div");
+  storageTitle.className = "server-health-storage-title";
+  const storageHeading = document.createElement("h4");
+  storageHeading.textContent = "Docker storage";
+  const storageTotal = document.createElement("strong");
+  storageTotal.textContent = `${formatBytes(reclaimable)} reclaimable`;
+  storageTitle.append(storageHeading, storageTotal);
+  const storageRows = document.createElement("div");
+  storageRows.className = "server-health-storage";
+  [
+    ["Images", health.images],
+    ["Containers", health.containers],
+    ["Volumes", health.volumes],
+    ["Build cache", health.build_cache],
+  ].forEach(([label, value]) => {
+    const item = value || {};
+    const row = document.createElement("div");
+    row.className = "server-health-storage-row";
+    const name = document.createElement("span");
+    name.textContent = label;
+    const count = document.createElement("span");
+    count.textContent = `${Number(item.count || 0)} total · ${Number(item.active || 0)} active`;
+    const size = document.createElement("strong");
+    size.textContent = formatBytes(item.size_bytes);
+    const reclaim = document.createElement("span");
+    reclaim.className = "server-health-reclaimable";
+    reclaim.textContent = `${formatBytes(item.reclaimable_bytes)} reclaimable`;
+    row.append(name, count, size, reclaim);
+    storageRows.appendChild(row);
+  });
+  storage.append(storageTitle, storageRows);
+  if (shouldWarnStorage) {
+    const notice = document.createElement("div");
+    notice.className = "server-health-notice";
+    notice.textContent = `${formatBytes(reclaimable)} of Docker storage can potentially be reclaimed.`;
+    storage.appendChild(notice);
+  }
+
+  serverHealthBody.append(overview, containers, storage);
+  if (warnings.length > 0) {
+    const warningList = document.createElement("ul");
+    warningList.className = "server-health-warnings";
+    warnings.forEach((warning) => {
+      const item = document.createElement("li");
+      item.textContent = String(warning);
+      warningList.appendChild(item);
+    });
+    serverHealthBody.appendChild(warningList);
+  }
+}
+
+async function openServerHealthModal(item) {
+  if (!serverHealthModal || !serverHealthBody || !item || !item.server) return;
+  if (serverHealthAbort) serverHealthAbort.abort();
+  const controller = new AbortController();
+  serverHealthAbort = controller;
+  const scope = `${item.type}:${item.server.name}`;
+  if (serverHealthTitle) serverHealthTitle.textContent = `Health check: ${item.server.name}`;
+  serverHealthBody.innerHTML = "";
+  const loading = document.createElement("div");
+  loading.className = "server-health-loading";
+  loading.textContent = "Collecting Docker Engine and storage information…";
+  serverHealthBody.appendChild(loading);
+  serverHealthModal.classList.remove("hidden");
+  serverHealthModal.setAttribute("aria-hidden", "false");
+  try {
+    const payload = await fetchJSON(`/api/servers/health?scope=${encodeURIComponent(scope)}`, {
+      signal: controller.signal,
+    });
+    renderServerHealth(payload);
+  } catch (err) {
+    if (err && err.name === "AbortError") return;
+    serverHealthBody.innerHTML = "";
+    const error = document.createElement("div");
+    error.className = "server-health-summary is-error";
+    error.textContent = err.message || "Unable to collect server health information.";
+    serverHealthBody.appendChild(error);
+  } finally {
+    if (serverHealthAbort === controller) serverHealthAbort = null;
+  }
+}
+
 function buildServerActions(item) {
   const actions = document.createElement("div");
   actions.className = "servers-row-actions";
@@ -2206,9 +2425,17 @@ function buildServerActions(item) {
     return icon;
   }
 
+  const healthBtn = document.createElement("button");
+  healthBtn.type = "button";
+  healthBtn.className = "secondary btn-small icon-action-btn has-tooltip servers-action-btn";
+  healthBtn.setAttribute("aria-label", "Health check");
+  healthBtn.setAttribute("data-tooltip", "Health check");
+  healthBtn.appendChild(makeActionIcon("icon-activity"));
+  healthBtn.addEventListener("click", () => openServerHealthModal(item));
+
   const editBtn = document.createElement("button");
   editBtn.type = "button";
-  editBtn.className = "secondary icon-action-btn has-tooltip";
+  editBtn.className = "secondary btn-small icon-action-btn has-tooltip servers-action-btn";
   editBtn.setAttribute("aria-label", "Edit server");
   editBtn.setAttribute("data-tooltip", "Edit server");
   editBtn.appendChild(makeActionIcon("icon-edit"));
@@ -2223,8 +2450,8 @@ function buildServerActions(item) {
   const maintenanceBtn = document.createElement("button");
   maintenanceBtn.type = "button";
   maintenanceBtn.className = isMaintenance
-    ? "btn-warning icon-action-btn has-tooltip"
-    : "secondary icon-action-btn has-tooltip";
+    ? "btn-warning btn-small icon-action-btn has-tooltip servers-action-btn"
+    : "secondary btn-small icon-action-btn has-tooltip servers-action-btn";
   maintenanceBtn.setAttribute("aria-label", isMaintenance ? "End Maintenance" : "Maintenance");
   maintenanceBtn.setAttribute("data-tooltip", isMaintenance ? "End Maintenance" : "Maintenance");
   maintenanceBtn.appendChild(makeActionIcon(isMaintenance ? "icon-barrier-block-off" : "icon-barrier-block"));
@@ -2234,14 +2461,14 @@ function buildServerActions(item) {
 
   const removeBtn = document.createElement("button");
   removeBtn.type = "button";
-  removeBtn.className = "secondary icon-action-btn has-tooltip servers-remove-btn";
+  removeBtn.className = "secondary btn-small icon-action-btn has-tooltip servers-action-btn servers-remove-btn";
   removeBtn.setAttribute("aria-label", "Remove server");
   removeBtn.setAttribute("data-tooltip", "Remove server");
   removeBtn.appendChild(makeActionIcon("icon-trash"));
 
   const confirmBtn = document.createElement("button");
   confirmBtn.type = "button";
-  confirmBtn.className = "btn-danger icon-action-btn has-tooltip hidden servers-confirm-btn";
+  confirmBtn.className = "btn-danger btn-small icon-action-btn has-tooltip hidden servers-action-btn servers-confirm-btn";
   confirmBtn.setAttribute("aria-label", "Confirm remove");
   confirmBtn.setAttribute("data-tooltip", "Confirm remove");
   confirmBtn.appendChild(makeActionIcon("icon-trash-x"));
@@ -2275,7 +2502,7 @@ function buildServerActions(item) {
     }
   });
 
-  actions.append(editBtn, maintenanceBtn, removeBtn, confirmBtn);
+  actions.append(healthBtn, editBtn, maintenanceBtn, removeBtn, confirmBtn);
   if (serversRemoveConfirming.has(confirmKey)) {
     setConfirming(true);
   }
@@ -5589,20 +5816,46 @@ async function refreshContainersTableResources(scope, list, options = {}) {
   const requestId = (containersTableResourcesRequestId += 1);
   try {
     const containerIds = list.map((c) => c && c.id).filter(Boolean);
-    const payload = await fetchJSON("/api/containers/resources", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ scope, container_ids: containerIds }),
-    });
+    const batches = [];
+    for (let index = 0; index < containerIds.length; index += 12) {
+      batches.push(containerIds.slice(index, index + 12));
+    }
+    const payloads = [];
+    let nextBatch = 0;
+    const worker = async () => {
+      while (nextBatch < batches.length) {
+        const batch = batches[nextBatch];
+        nextBatch += 1;
+        try {
+          const payload = await fetchJSON("/api/containers/resources", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ scope, container_ids: batch }),
+          });
+          payloads.push(payload);
+        } catch (err) {
+          payloads.push({ error: err.message || "Unable to load container resources.", resources: [] });
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(2, batches.length) }, () => worker()));
     if (requestId !== containersTableResourcesRequestId) return;
-    if (!payload || payload.error) {
+    const resources = payloads.flatMap((payload) => Array.isArray(payload && payload.resources) ? payload.resources : []);
+    const errorPayload = payloads.find((payload) => payload && payload.error);
+    if (resources.length === 0 && errorPayload) {
       if (!options.silent) {
-        showToast(payload && payload.error ? payload.error : "Unable to load container resources.");
+        showToast(errorPayload.error || "Unable to load container resources.");
       }
       return;
     }
-    const resources = Array.isArray(payload.resources) ? payload.resources : [];
-    containersTableResourcesData = new Map(resources.map((item) => [item.id, item]));
+    const activeIds = new Set(containerIds);
+    const merged = new Map(
+      Array.from(containersTableResourcesData.entries()).filter(([id]) => activeIds.has(id))
+    );
+    resources.forEach((item) => {
+      if (item && item.id) merged.set(item.id, item);
+    });
+    containersTableResourcesData = merged;
     if (currentView === "containers" && containersViewMode === "table" && containersSelectedScope === scope) {
       const currentList = Array.from(containersCache.values()).map((entry) => entry.data);
       renderContainers(currentList, scope);
@@ -7602,11 +7855,11 @@ async function runImageRemove() {
 }
 
 async function runStackAction(name, action) {
-  if (!name || !action) return;
+  if (!name || !action) return false;
   const scope = containersSelectedScope;
   if (!scope) {
     showToast("Select server first.");
-    return;
+    return false;
   }
   const optimisticByAction = {
     up: "deploying",
@@ -7648,9 +7901,11 @@ async function runStackAction(name, action) {
     const toastType = ["down", "stop", "kill", "rm"].includes(normalized) ? "warning" : "success";
     const label = labelByAction[normalized] || normalized;
     notify({ type: toastType, message: `Stack ${name}: ${label}` });
+    return true;
   } catch (err) {
     stackStatusOverrides.delete(name);
     notify({ type: "error", message: err.message || "Stack action failed." });
+    return false;
   }
 }
 
@@ -9988,6 +10243,16 @@ async function init() {
       }
     });
   }
+  if (serverHealthCloseBtn) {
+    serverHealthCloseBtn.addEventListener("click", closeServerHealthModal);
+  }
+  if (serverHealthModal) {
+    serverHealthModal.addEventListener("click", (event) => {
+      if (event.target && event.target.dataset && event.target.dataset.close) {
+        closeServerHealthModal();
+      }
+    });
+  }
   if (networkDetailsCloseBtn) {
     networkDetailsCloseBtn.addEventListener("click", closeNetworkDetailsModal);
   }
@@ -10080,6 +10345,9 @@ async function init() {
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && detailsModal && !detailsModal.classList.contains("hidden")) {
       closeDetailsModal();
+    }
+    if (event.key === "Escape" && serverHealthModal && !serverHealthModal.classList.contains("hidden")) {
+      closeServerHealthModal();
     }
     if (event.key === "Escape" && networkDetailsModal && !networkDetailsModal.classList.contains("hidden")) {
       closeNetworkDetailsModal();

@@ -1028,6 +1028,17 @@
       </div>
     </div>
 
+    <div id="server-health-modal" class="modal hidden" aria-hidden="true" role="dialog" aria-modal="true">
+      <div class="modal-backdrop" data-close="true"></div>
+      <div class="modal-card modal-card-lg server-health-modal-card" role="document">
+        <div class="modal-header">
+          <h3 id="server-health-title">Server health</h3>
+          <button id="server-health-close" class="secondary btn-small" type="button">Close</button>
+        </div>
+        <div id="server-health-body" class="modal-body server-health-body" aria-live="polite"></div>
+      </div>
+    </div>
+
     <div id="volume-details-modal" class="modal hidden" aria-hidden="true" role="dialog" aria-modal="true">
       <div class="modal-backdrop" data-close="true"></div>
       <div class="modal-card" role="document">
@@ -1332,8 +1343,9 @@
 		            >
 		              <span class="icon-action icon-arrow-back-up-double" aria-hidden="true"></span>
 		            </button>
-		          </div>
-		          <div class="stack-editor-grid">
+	          </div>
+	          <div id="stack-modal-operation" class="stack-modal-operation hidden" role="status" aria-live="polite"></div>
+	          <div class="stack-editor-grid">
 	            <div class="stack-editor-main">
 	              <div class="stack-editor-heading">
 	                <label for="stack-compose-input">docker-compose.yml</label>

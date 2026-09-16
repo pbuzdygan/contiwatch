@@ -358,6 +358,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/servers/", s.handleServerByName)
 	s.mux.HandleFunc("/api/servers/info", s.handleServersInfo)
 	s.mux.HandleFunc("/api/servers/refresh", s.handleServersRefresh)
+	s.mux.HandleFunc("/api/servers/health", s.handleServerHealth)
 	s.mux.HandleFunc("/api/servers/stream", s.handleServersStream)
 	s.mux.HandleFunc("/api/locals", s.handleLocals)
 	s.mux.HandleFunc("/api/locals/", s.handleLocalByName)
@@ -462,6 +463,8 @@ func (s *Server) agentAllowed(path string) bool {
 	case path == "/api/containers/action":
 		return true
 	case path == "/api/containers/resources":
+		return true
+	case path == "/api/servers/health":
 		return true
 	case path == "/api/containers/shell":
 		return true

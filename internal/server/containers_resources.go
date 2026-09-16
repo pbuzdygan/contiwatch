@@ -62,8 +62,8 @@ func (s *Server) handleContainersResources(w http.ResponseWriter, r *http.Reques
 			writeJSON(w, http.StatusOK, containersResourcesResponse{Scope: scopeKey, Resources: []dockerwatcher.ContainerResource{}})
 			return
 		}
-		cached, needsRefresh := s.getContainersResourcesCache(scopeKey, containerIDs, cacheMaxAge, cacheRefreshAfter)
-		if len(cached) > 0 {
+		cached, missingIDs, needsRefresh := s.getContainersResourcesCache(scopeKey, containerIDs, cacheMaxAge, cacheRefreshAfter)
+		if len(missingIDs) == 0 {
 			writeJSON(w, http.StatusOK, containersResourcesResponse{Scope: scopeKey, Resources: cached})
 			if needsRefresh && s.shouldRefreshContainersResources(scopeKey, 2*time.Second) {
 				go func() {
@@ -76,13 +76,13 @@ func (s *Server) handleContainersResources(w http.ResponseWriter, r *http.Reques
 			}
 			return
 		}
-		result, err := s.listLocalContainersResources(cfg, name, containerIDs)
+		result, err := s.listLocalContainersResources(cfg, name, missingIDs)
 		if err != nil {
-			writeJSON(w, http.StatusOK, containersResourcesResponse{Scope: scopeKey, Error: err.Error(), Resources: []dockerwatcher.ContainerResource{}})
+			writeJSON(w, http.StatusOK, containersResourcesResponse{Scope: scopeKey, Error: err.Error(), Resources: cached})
 			return
 		}
 		s.setContainersResourcesCache(scopeKey, result)
-		writeJSON(w, http.StatusOK, containersResourcesResponse{Scope: scopeKey, Resources: result})
+		writeJSON(w, http.StatusOK, containersResourcesResponse{Scope: scopeKey, Resources: append(cached, result...)})
 		return
 	}
 	scope := strings.TrimSpace(payload.Scope)
@@ -94,21 +94,23 @@ func (s *Server) handleContainersResources(w http.ResponseWriter, r *http.Reques
 		writeJSON(w, http.StatusOK, containersResourcesResponse{Scope: scope, Resources: []dockerwatcher.ContainerResource{}})
 		return
 	}
-	cached, needsRefresh := s.getContainersResourcesCache(scope, containerIDs, cacheMaxAge, cacheRefreshAfter)
-	if len(cached) > 0 {
+	serverType, name, err := parseScope(scope)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	fetchResources := func(ids []string) ([]dockerwatcher.ContainerResource, error) {
+		if serverType == "local" {
+			return s.listLocalContainersResources(cfg, name, ids)
+		}
+		return s.listRemoteContainersResources(cfg, name, ids)
+	}
+	cached, missingIDs, needsRefresh := s.getContainersResourcesCache(scope, containerIDs, cacheMaxAge, cacheRefreshAfter)
+	if len(missingIDs) == 0 {
 		writeJSON(w, http.StatusOK, containersResourcesResponse{Scope: scope, Resources: cached})
 		if needsRefresh && s.shouldRefreshContainersResources(scope, 2*time.Second) {
 			go func() {
-				serverType, name, err := parseScope(scope)
-				if err != nil {
-					return
-				}
-				result, err := func() ([]dockerwatcher.ContainerResource, error) {
-					if serverType == "local" {
-						return s.listLocalContainersResources(cfg, name, containerIDs)
-					}
-					return s.listRemoteContainersResources(cfg, name, containerIDs)
-				}()
+				result, err := fetchResources(containerIDs)
 				if err != nil {
 					return
 				}
@@ -117,28 +119,13 @@ func (s *Server) handleContainersResources(w http.ResponseWriter, r *http.Reques
 		}
 		return
 	}
-	serverType, name, err := parseScope(scope)
+	result, err := fetchResources(missingIDs)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err)
-		return
-	}
-	if serverType == "local" {
-		result, err := s.listLocalContainersResources(cfg, name, containerIDs)
-		if err != nil {
-			writeJSON(w, http.StatusOK, containersResourcesResponse{Scope: scope, Error: err.Error(), Resources: []dockerwatcher.ContainerResource{}})
-			return
-		}
-		s.setContainersResourcesCache(scope, result)
-		writeJSON(w, http.StatusOK, containersResourcesResponse{Scope: scope, Resources: result})
-		return
-	}
-	result, err := s.listRemoteContainersResources(cfg, name, containerIDs)
-	if err != nil {
-		writeJSON(w, http.StatusOK, containersResourcesResponse{Scope: scope, Error: err.Error(), Resources: []dockerwatcher.ContainerResource{}})
+		writeJSON(w, http.StatusOK, containersResourcesResponse{Scope: scope, Error: err.Error(), Resources: cached})
 		return
 	}
 	s.setContainersResourcesCache(scope, result)
-	writeJSON(w, http.StatusOK, containersResourcesResponse{Scope: scope, Resources: result})
+	writeJSON(w, http.StatusOK, containersResourcesResponse{Scope: scope, Resources: append(cached, result...)})
 }
 
 func normalizeContainerIDs(ids []string) []string {

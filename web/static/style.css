@@ -2046,6 +2046,29 @@ input::placeholder {
   white-space: pre-wrap;
 }
 
+.stack-modal-operation {
+  padding: var(--s-2) var(--s-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--r-input);
+  background: color-mix(in srgb, var(--color-surface), var(--color-border) 8%);
+  font-size: 0.85rem;
+}
+
+.stack-modal-operation.is-progress {
+  color: var(--status-info);
+  border-color: color-mix(in srgb, var(--status-info), transparent 55%);
+}
+
+.stack-modal-operation.is-success {
+  color: var(--status-success);
+  border-color: color-mix(in srgb, var(--status-success), transparent 55%);
+}
+
+.stack-modal-operation.is-error {
+  color: var(--status-error);
+  border-color: color-mix(in srgb, var(--status-error), transparent 55%);
+}
+
 .images-pull-status {
   margin: var(--s-3) 0;
   border: 1px solid var(--color-border);
@@ -2655,7 +2678,7 @@ input::placeholder {
 
 .servers-table th,
 .servers-table td {
-  padding: var(--s-2) var(--s-3);
+  padding: 6px var(--s-3);
   border-bottom: 1px solid var(--color-border);
   text-align: left;
   vertical-align: top;
@@ -4333,8 +4356,8 @@ input::placeholder {
 
 .servers-card-actions {
   display: flex;
-  flex-wrap: wrap;
-  gap: var(--s-2);
+  flex-wrap: nowrap;
+  gap: var(--s-1);
 }
 
 .servers-name {
@@ -4442,8 +4465,153 @@ input::placeholder {
 .servers-row-actions {
   display: inline-flex;
   align-items: center;
+  gap: var(--s-1);
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+
+.servers-action-btn.icon-action-btn.btn-small {
+  width: 28px;
+  height: 28px;
+  min-height: 28px;
+}
+
+.servers-action-btn.icon-action-btn.btn-small .icon-action {
+  width: 16px;
+  height: 16px;
+}
+
+.server-health-modal-card {
+  max-height: 92vh;
+}
+
+.server-health-body {
+  overflow: auto;
+}
+
+.server-health-loading {
+  min-height: 180px;
+  display: grid;
+  place-items: center;
+  color: var(--color-text-muted);
+}
+
+.server-health-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-3);
+  padding: var(--s-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--r-card);
+}
+
+.server-health-summary span {
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+}
+
+.server-health-summary.is-ok {
+  border-color: color-mix(in srgb, var(--status-success), transparent 55%);
+  background: color-mix(in srgb, var(--status-success), transparent 92%);
+}
+
+.server-health-summary.is-warning {
+  border-color: color-mix(in srgb, var(--status-warning), transparent 55%);
+  background: color-mix(in srgb, var(--status-warning), transparent 92%);
+}
+
+.server-health-summary.is-error {
+  border-color: color-mix(in srgb, var(--status-error), transparent 55%);
+  background: color-mix(in srgb, var(--status-error), transparent 92%);
+}
+
+.server-health-section {
+  display: flex;
+  flex-direction: column;
   gap: var(--s-2);
-  flex-wrap: wrap;
+  padding: var(--s-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--r-card);
+  background: color-mix(in srgb, var(--color-surface), var(--color-border) 4%);
+}
+
+.server-health-section h4 {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.server-health-metrics,
+.server-health-counts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--s-2);
+}
+
+.server-health-counts {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.server-health-metric {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: var(--s-2);
+  border-radius: var(--r-input);
+  background: var(--color-surface);
+}
+
+.server-health-metric-label {
+  color: var(--color-text-muted);
+  font-size: 0.75rem;
+}
+
+.server-health-metric strong {
+  overflow-wrap: anywhere;
+}
+
+.server-health-storage-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-2);
+}
+
+.server-health-storage {
+  display: grid;
+  gap: 1px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--r-input);
+  overflow: hidden;
+}
+
+.server-health-storage-row {
+  display: grid;
+  grid-template-columns: minmax(110px, 1fr) minmax(130px, 1fr) minmax(90px, auto) minmax(130px, auto);
+  align-items: center;
+  gap: var(--s-2);
+  padding: var(--s-2) var(--s-3);
+  background: var(--color-surface);
+  font-size: 0.82rem;
+}
+
+.server-health-storage-row > :nth-child(2),
+.server-health-reclaimable {
+  color: var(--color-text-muted);
+}
+
+.server-health-notice,
+.server-health-warnings {
+  margin: 0;
+  padding: var(--s-2) var(--s-3);
+  color: var(--status-warning);
+  background: color-mix(in srgb, var(--status-warning), transparent 92%);
+  border-radius: var(--r-input);
+}
+
+.server-health-warnings {
+  padding-left: calc(var(--s-3) + 1rem);
 }
 
 .server-wizard-grid {
@@ -4641,6 +4809,26 @@ input::placeholder {
 
   .servers-cards {
     grid-template-columns: 1fr;
+  }
+
+  .server-health-metrics,
+  .server-health-counts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .server-health-summary,
+  .server-health-storage-title {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .server-health-storage-row {
+    grid-template-columns: minmax(90px, 1fr) minmax(80px, auto);
+  }
+
+  .server-health-storage-row > :nth-child(2),
+  .server-health-storage-row > :nth-child(4) {
+    text-align: right;
   }
 
   .topbar-left,
