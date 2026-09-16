@@ -4973,16 +4973,7 @@ input::placeholder {
   .topbar-status .logs-toolbar {
     flex-wrap: nowrap;
     gap: var(--s-1);
-    overflow-x: auto;
-    overflow-y: hidden;
-    overscroll-behavior-x: contain;
-    scrollbar-width: none;
-    -webkit-overflow-scrolling: touch;
-  }
-
-  .servers-topbar-actions::-webkit-scrollbar,
-  .topbar-status .logs-toolbar::-webkit-scrollbar {
-    display: none;
+    overflow: visible;
   }
 
   .servers-topbar-actions > *,

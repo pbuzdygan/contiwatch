@@ -3,6 +3,7 @@
 ## v1.3.2
 
 ## Bug fixes
+- Mobile UI: fixed Servers and Events filter dropdowns being clipped by their single-row toolbars.
 - Containers: fixed CPU/RAM columns staying empty or showing only previously selected resource cards when the resource cache contained a partial snapshot.
 - Containers: resource metrics are now fetched in bounded batches and merged without discarding the last valid values after a transient error.
 - Container stacks: fixed authenticated inline validation being reported as `Line 1: Validation failed: pin_required`.
