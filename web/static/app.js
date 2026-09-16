@@ -79,6 +79,7 @@ const remoteModalSave = document.getElementById("remote-modal-save");
 const remoteModalCancel = document.getElementById("remote-modal-cancel");
 const remoteModalErrorEl = document.getElementById("remote-modal-error");
 const sidebar = document.getElementById("sidebar");
+const sidebarNav = document.getElementById("primary-navigation");
 const sidebarSearch = document.getElementById("sidebar-search");
 const sidebarSearchCountEl = document.getElementById("sidebar-search-count");
 const sidebarSearchWrap = sidebarSearch ? sidebarSearch.closest(".topbar-search") : null;
@@ -2815,6 +2816,27 @@ function normalizeQuery(value) {
   return String(value || "").trim().toLowerCase();
 }
 
+function updateGlobalSearchContext() {
+  if (!sidebarSearch) return;
+  let placeholder = "Servers / containers";
+  if (currentView === "servers") {
+    placeholder = "Search servers";
+  } else if (currentView === "containers") {
+    const labels = {
+      stacks: "Search stacks",
+      images: "Search images",
+      networks: "Search networks",
+      volumes: "Search volumes",
+      logs: "Search containers",
+      resources: "Search containers",
+      shell: "Search containers",
+    };
+    placeholder = labels[containersViewMode] || "Search containers";
+  }
+  sidebarSearch.placeholder = placeholder;
+  sidebarSearch.setAttribute("aria-label", placeholder);
+}
+
 function updateSidebarSearchPulse(valueOverride) {
   if (!sidebarSearch || !sidebarSearchWrap) return;
   const query = normalizeQuery(valueOverride ?? sidebarSearch.value);
@@ -2939,7 +2961,11 @@ function applyExperimentalFeatures(cfg) {
       const enabled = Boolean(flags[view]);
       btn.classList.toggle("hidden", !enabled);
     });
-    const showContainerShortcuts = flags.containers && flags.containers_sidebar && !mobileNavQuery.matches;
+    const showContainerShortcuts = flags.containers && (
+      mobileNavQuery.matches
+        ? currentView === "containers"
+        : flags.containers_sidebar
+    );
     sidebar.querySelectorAll(".containers-sidebar-link").forEach((btn) => {
       const requiredFlag = btn.getAttribute("data-feature");
       const enabled = showContainerShortcuts && Boolean(flags[requiredFlag]);
@@ -2997,6 +3023,7 @@ function applyExperimentalFeatures(cfg) {
   }
   updateContainersExperimentalToggles();
   updateSidebarNavActive(currentView);
+  scheduleMobileNavAffordanceUpdate();
 }
 
 function isExperimentalEnabled(view) {
@@ -3095,8 +3122,8 @@ function updateContainersExperimentalToggles() {
     }
   });
 
-  // Mobile UX: container feature shortcuts in the sidebar are redundant when the
-  // sidebar becomes the compact top nav, so hide the toggle in settings.
+  // Mobile shortcuts are contextual and always use the compact top navigation,
+  // so the desktop-only sidebar preference is not applicable on small screens.
   if (expContainersSidebarInput) {
     const row = expContainersSidebarInput.closest(".toggle-row");
     if (row) row.classList.toggle("hidden", mobileNavQuery.matches);
@@ -4039,6 +4066,7 @@ function setContainersViewMode(mode) {
                 ? "networks"
                 : "table";
   containersViewMode = next;
+  updateGlobalSearchContext();
   if (topbarContainersEl) {
     const title = topbarContainersEl.querySelector("h2");
     if (title) {
@@ -8802,6 +8830,7 @@ function updateTopbarHeight() {
 
 const mobileNavQuery = window.matchMedia("(max-width: 720px)");
 let mobileNavHeight = 0;
+let mobileNavAffordanceFrame = 0;
 
 function updateMobileViewportHeight() {
   if (!mobileNavQuery.matches) {
@@ -8817,18 +8846,7 @@ const topbarCenterOriginalNextSibling = topbarCenterEl ? topbarCenterEl.nextElem
 
 function syncContainersTopbarSearchPlacement() {
   if (!topbarCenterEl || !containersTopbarSearchSlot || !topbarCenterOriginalParent) return;
-  const shouldInline = mobileNavQuery.matches && currentView === "containers";
-
-  containersTopbarSearchSlot.setAttribute("aria-hidden", shouldInline ? "false" : "true");
-
-  if (shouldInline) {
-    if (!containersTopbarSearchSlot.contains(topbarCenterEl)) {
-      containersTopbarSearchSlot.appendChild(topbarCenterEl);
-    }
-    updateTopbarHeight();
-    updateMobileNavHeight();
-    return;
-  }
+  containersTopbarSearchSlot.setAttribute("aria-hidden", "true");
 
   if (topbarCenterEl.parentElement !== topbarCenterOriginalParent) {
     if (
@@ -8839,9 +8857,44 @@ function syncContainersTopbarSearchPlacement() {
     } else {
       topbarCenterOriginalParent.appendChild(topbarCenterEl);
     }
-    updateTopbarHeight();
-    updateMobileNavHeight();
   }
+  updateTopbarHeight();
+  updateMobileNavHeight();
+}
+
+function updateMobileNavScrollAffordance() {
+  mobileNavAffordanceFrame = 0;
+  if (!sidebar || !sidebarNav || !mobileNavQuery.matches) {
+    if (sidebar) sidebar.classList.remove("can-scroll-left", "can-scroll-right");
+    return;
+  }
+  const maxScroll = Math.max(0, sidebarNav.scrollWidth - sidebarNav.clientWidth);
+  sidebar.classList.toggle("can-scroll-left", sidebarNav.scrollLeft > 4);
+  sidebar.classList.toggle("can-scroll-right", sidebarNav.scrollLeft < maxScroll - 4);
+}
+
+function scheduleMobileNavAffordanceUpdate() {
+  if (mobileNavAffordanceFrame) cancelAnimationFrame(mobileNavAffordanceFrame);
+  mobileNavAffordanceFrame = requestAnimationFrame(updateMobileNavScrollAffordance);
+}
+
+function revealActiveMobileNavItem() {
+  if (!sidebarNav || !mobileNavQuery.matches) return;
+  const active = sidebarNav.querySelector(".sidebar-link.active:not(.hidden)");
+  if (!active) {
+    scheduleMobileNavAffordanceUpdate();
+    return;
+  }
+  const itemLeft = active.offsetLeft;
+  const itemRight = itemLeft + active.offsetWidth;
+  const visibleLeft = sidebarNav.scrollLeft;
+  const visibleRight = visibleLeft + sidebarNav.clientWidth;
+  if (itemLeft < visibleLeft + 8) {
+    sidebarNav.scrollTo({ left: Math.max(0, itemLeft - 8), behavior: "smooth" });
+  } else if (itemRight > visibleRight - 8) {
+    sidebarNav.scrollTo({ left: itemRight - sidebarNav.clientWidth + 8, behavior: "smooth" });
+  }
+  scheduleMobileNavAffordanceUpdate();
 }
 
 function updateMobileNavHeight() {
@@ -8861,6 +8914,7 @@ function updateMobileNavHeight() {
   mobileNavHeight = Math.ceil(topbarHeight + sidebarHeight);
   document.documentElement.style.setProperty("--mobile-nav-h", `${mobileNavHeight}px`);
   updateTopbarHeight();
+  scheduleMobileNavAffordanceUpdate();
 }
 
 mobileNavQuery.addEventListener("change", () => {
@@ -8874,6 +8928,7 @@ mobileNavQuery.addEventListener("change", () => {
 });
 
 window.addEventListener("resize", updateMobileViewportHeight);
+window.addEventListener("resize", scheduleMobileNavAffordanceUpdate);
 if (window.visualViewport) {
   window.visualViewport.addEventListener("resize", updateMobileViewportHeight);
 }
@@ -8913,7 +8968,13 @@ function updateSidebarNavActive(nextView) {
       active = true;
     }
     btn.classList.toggle("active", active);
+    if (active) {
+      btn.setAttribute("aria-current", "page");
+    } else {
+      btn.removeAttribute("aria-current");
+    }
   });
+  requestAnimationFrame(revealActiveMobileNavItem);
 }
 
 function isSidebarCollapsed() {
@@ -8958,6 +9019,8 @@ function setView(nextView) {
     nextView = "status";
   }
   currentView = nextView;
+  document.body.dataset.view = nextView;
+  updateGlobalSearchContext();
   if (nextView !== "containers") {
     setContainersWorkspaceFocus(false);
   }
@@ -8981,6 +9044,7 @@ function setView(nextView) {
   if (topbarLogsEl) {
     topbarLogsEl.classList.toggle("hidden", nextView !== "logs");
   }
+  if (currentConfig) applyExperimentalFeatures(currentConfig);
   if (sidebarSearch && prevView !== nextView) {
     sidebarSearch.value = "";
     applySidebarFilter("");
@@ -9543,6 +9607,10 @@ if (serverConnectionTypeSelect) {
 
 async function init() {
   sidebar.setAttribute("aria-hidden", "false");
+  if (sidebarNav) {
+    sidebarNav.addEventListener("scroll", scheduleMobileNavAffordanceUpdate, { passive: true });
+    scheduleMobileNavAffordanceUpdate();
+  }
   initThemeToggle();
   if (pinGuardInput) {
     pinGuardInput.addEventListener("input", () => {
@@ -10450,6 +10518,8 @@ async function init() {
   const storedServersView = localStorage.getItem(serversViewStorageKey);
   if (storedServersView === "cards" || storedServersView === "table") {
     serversViewMode = storedServersView;
+  } else if (mobileNavQuery.matches) {
+    serversViewMode = "cards";
   }
   const storedResourcesView = localStorage.getItem(containersResourcesViewStorageKey);
   if (storedResourcesView === "cards" || storedResourcesView === "table") {

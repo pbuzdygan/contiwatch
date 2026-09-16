@@ -14,6 +14,9 @@
 - Servers: added an on-demand Health check with Docker Engine details, container health counts, host capacity, and Docker storage/reclaimable summaries for local and remote servers.
 
 ## Improvements
+- Mobile UI: moved search into the header grid to prevent overlap, kept Servers and Events controls on one row, and prevented iOS focus zoom on form fields.
+- Mobile navigation: moved contextual Containers shortcuts into the primary swipeable navigation with visible edge indicators and automatic active-item reveal.
+- Mobile Servers: new installations now default to the card layout while preserving an existing saved preference.
 - UI/Servers: reduced table row height and action icon size in table and card layouts.
 - UI/Stacks: Compose up/down/redeploy now show in-modal progress, completion or failure and prevent duplicate actions while running.
 - UI/Stacks: decoupled `.env` editing from service-level `env_file`, removed automatic Compose rewrites, and added explicit `.env` deletion.
