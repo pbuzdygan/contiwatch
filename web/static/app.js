@@ -260,8 +260,12 @@ const stackComposeEditorEl = document.getElementById("stack-compose-editor");
 const stackComposeInput = document.getElementById("stack-compose-input");
 const stackEnvEditorEl = document.getElementById("stack-env-editor");
 const stackEnvInput = document.getElementById("stack-env-input");
-const stackEnvToggle = document.getElementById("stack-env-toggle");
-const stackEnvToggleBtn = document.getElementById("stack-env-toggle-btn");
+const stackViewSplitBtn = document.getElementById("stack-view-split");
+const stackViewComposeBtn = document.getElementById("stack-view-compose");
+const stackViewEnvBtn = document.getElementById("stack-view-env");
+const stackComposeWrapBtn = document.getElementById("stack-compose-wrap");
+const stackEnvWrapBtn = document.getElementById("stack-env-wrap");
+const stackEnvDeleteBtn = document.getElementById("stack-env-delete");
 const stackModalErrorEl = document.getElementById("stack-modal-error");
 
 let currentScanController = null;
@@ -392,6 +396,12 @@ let stacksCache = new Map();
 let editingStackName = "";
 let composeEditor = null;
 let envEditor = null;
+let stackEditorView = "split";
+let stackEnvExists = false;
+let stackEnvDeletePending = false;
+let stackEnvDeleteConfirming = false;
+let stackModalLoading = false;
+let stackModalLoadFailed = false;
 let pinGuardEnabled = false;
 let pinGuardUnlocked = true;
 let pinGuardSubmitting = false;
@@ -1094,7 +1104,13 @@ function initComposeEditor() {
     container: stackComposeEditorEl,
     textarea: stackComposeInput,
     getEnv: () => (stackEnvInput ? stackEnvInput.value : ""),
-    getUseEnv: () => Boolean(stackEnvToggle && stackEnvToggle.checked),
+    getUseEnv: () => shouldSaveStackEnv(),
+    validateCompose: (payload, signal) => fetchJSON("/api/stacks/validate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      signal,
+    }),
     onChange: () => clearStackModalError(),
     mode: "yaml",
     lint: true,
@@ -1114,6 +1130,9 @@ function initEnvEditor() {
     textarea: stackEnvInput,
     onChange: () => {
       clearStackModalError();
+      if (stackEnvDeletePending) stackEnvDeletePending = false;
+      stackEnvDeleteConfirming = false;
+      updateStackEnvDeleteButton();
       if (composeEditor && typeof composeEditor.forceLint === "function") {
         composeEditor.forceLint();
       }
@@ -1123,240 +1142,60 @@ function initEnvEditor() {
   });
 }
 
-const envFileItemRegex = /^-\s*["']?\.env["']?\s*$/;
-
-function countIndent(line) {
-  const match = String(line || "").match(/^\s*/);
-  return match ? match[0].length : 0;
+function shouldSaveStackEnv() {
+  if (stackEnvDeletePending) return false;
+  return stackEnvExists || getEnvValue().trim() !== "";
 }
 
-function isCommentOrBlank(line) {
-  const trimmed = String(line || "").trim();
-  return trimmed === "" || trimmed.startsWith("#");
+function setStackEditorView(view) {
+  const next = ["split", "compose", "env"].includes(view) ? view : "split";
+  stackEditorView = next;
+  if (stackModal) stackModal.dataset.editorView = next;
+  [
+    [stackViewSplitBtn, "split"],
+    [stackViewComposeBtn, "compose"],
+    [stackViewEnvBtn, "env"],
+  ].forEach(([button, value]) => {
+    if (!button) return;
+    const active = value === next;
+    button.classList.toggle("is-active", active);
+    button.setAttribute("aria-pressed", active ? "true" : "false");
+  });
+  window.setTimeout(() => {
+    if (composeEditor && typeof composeEditor.requestMeasure === "function") composeEditor.requestMeasure();
+    if (envEditor && typeof envEditor.requestMeasure === "function") envEditor.requestMeasure();
+  }, 0);
 }
 
-function isServiceHeader(line, indent, servicesIndent) {
-  const trimmed = String(line || "").trim();
-  if (!trimmed || trimmed.startsWith("#")) return false;
-  if (!trimmed.endsWith(":")) return false;
-  if (trimmed.startsWith("-")) return false;
-  return indent > servicesIndent;
+function setStackModalLoading(loading) {
+  stackModalLoading = Boolean(loading);
+  [stackModalSave, stackModalSaveIcon, stackModalComposeUp, stackModalComposeDown, stackModalRedeploy]
+    .filter(Boolean)
+    .forEach((button) => { button.disabled = stackModalLoading || stackModalLoadFailed; });
+  if (stackModal) stackModal.classList.toggle("is-loading", stackModalLoading);
 }
 
-function findServicesBlock(lines) {
-  for (let i = 0; i < lines.length; i += 1) {
-    const line = String(lines[i] || "");
-    if (line.trim() === "services:") {
-      return { index: i, indent: countIndent(line) };
-    }
+function updateStackEnvDeleteButton() {
+  if (!stackEnvDeleteBtn) return;
+  stackEnvDeleteBtn.disabled = !stackEnvExists && getEnvValue().trim() === "";
+  if (stackEnvDeletePending) {
+    stackEnvDeleteBtn.textContent = "Undo deletion";
+    stackEnvDeleteBtn.classList.add("is-active");
+    stackEnvDeleteBtn.classList.remove("is-confirming");
+    return;
   }
-  return { index: -1, indent: 0 };
+  stackEnvDeleteBtn.textContent = stackEnvDeleteConfirming ? "Confirm delete" : "Delete .env";
+  stackEnvDeleteBtn.classList.toggle("is-confirming", stackEnvDeleteConfirming);
+  stackEnvDeleteBtn.classList.remove("is-active");
 }
 
-function ensureEnvFileForServices(text) {
-  const lines = String(text || "").split(/\r?\n/);
-  const servicesInfo = findServicesBlock(lines);
-  if (servicesInfo.index < 0) {
-    const trimmed = String(text || "").trim();
-    if (!trimmed) {
-      return "services:\n  app:\n    env_file:\n      - .env";
-    }
-    return `${trimmed}\n\nservices:\n  app:\n    env_file:\n      - .env`;
-  }
-  let i = servicesInfo.index + 1;
-  let foundService = false;
-  while (i < lines.length) {
-    const line = lines[i];
-    const indent = countIndent(line);
-    if (indent <= servicesInfo.indent && !isCommentOrBlank(line)) {
-      break;
-    }
-    if (isServiceHeader(line, indent, servicesInfo.indent)) {
-      foundService = true;
-      const serviceIndent = indent;
-      let blockEnd = i + 1;
-      while (blockEnd < lines.length) {
-        const nextLine = lines[blockEnd];
-        const nextIndent = countIndent(nextLine);
-        if (nextIndent <= serviceIndent && !isCommentOrBlank(nextLine)) {
-          break;
-        }
-        blockEnd += 1;
-      }
-      let envFileLine = -1;
-      let envFileIndent = serviceIndent + 2;
-      for (let j = i + 1; j < blockEnd; j += 1) {
-        const current = lines[j];
-        const currentIndent = countIndent(current);
-        if (currentIndent === envFileIndent && String(current || "").trim().startsWith("env_file:")) {
-          envFileLine = j;
-          break;
-        }
-      }
-      if (envFileLine >= 0) {
-        let hasEnv = false;
-        let insertAt = envFileLine + 1;
-        for (let j = envFileLine + 1; j < blockEnd; j += 1) {
-          const current = lines[j];
-          const currentIndent = countIndent(current);
-          if (currentIndent <= envFileIndent && !isCommentOrBlank(current)) {
-            break;
-          }
-          if (currentIndent > envFileIndent && String(current || "").trim().startsWith("-")) {
-            insertAt = j + 1;
-            if (envFileItemRegex.test(String(current || "").trim())) {
-              hasEnv = true;
-            }
-          }
-        }
-        if (!hasEnv) {
-          lines.splice(insertAt, 0, `${" ".repeat(envFileIndent + 2)}- .env`);
-          blockEnd += 1;
-        }
-      } else {
-        let insertAt = i + 1;
-        while (insertAt < blockEnd && isCommentOrBlank(lines[insertAt])) {
-          insertAt += 1;
-        }
-        lines.splice(
-          insertAt,
-          0,
-          `${" ".repeat(envFileIndent)}env_file:`,
-          `${" ".repeat(envFileIndent + 2)}- .env`
-        );
-        blockEnd += 2;
-      }
-      i = blockEnd;
-      continue;
-    }
-    i += 1;
-  }
-  if (!foundService) {
-    const insertAt = servicesInfo.index + 1;
-    lines.splice(
-      insertAt,
-      0,
-      `${" ".repeat(servicesInfo.indent + 2)}app:`,
-      `${" ".repeat(servicesInfo.indent + 4)}env_file:`,
-      `${" ".repeat(servicesInfo.indent + 6)}- .env`
-    );
-  }
-  return lines.join("\n");
-}
-
-function removeEnvFileFromServices(text) {
-  const lines = String(text || "").split(/\r?\n/);
-  const servicesInfo = findServicesBlock(lines);
-  if (servicesInfo.index < 0) return text;
-  const processed = [];
-  processed.push(...lines.slice(0, servicesInfo.index + 1));
-  let i = servicesInfo.index + 1;
-  while (i < lines.length) {
-    const currentLine = lines[i];
-    const currentIndent = countIndent(currentLine);
-    if (currentIndent <= servicesInfo.indent && !isCommentOrBlank(currentLine)) {
-      processed.push(...lines.slice(i));
-      return processed.join("\n");
-    }
-    if (!isServiceHeader(currentLine, currentIndent, servicesInfo.indent)) {
-      processed.push(currentLine);
-      i += 1;
-      continue;
-    }
-    const serviceIndent = currentIndent;
-    let blockEnd = i + 1;
-    while (blockEnd < lines.length) {
-      const nextLine = lines[blockEnd];
-      const nextIndent = countIndent(nextLine);
-      if (nextIndent <= serviceIndent && !isCommentOrBlank(nextLine)) {
-        break;
-      }
-      blockEnd += 1;
-    }
-    const block = lines.slice(i, blockEnd);
-    const newBlock = [block[0]];
-    const envFileIndent = serviceIndent + 2;
-    let k = 1;
-    while (k < block.length) {
-      const line = block[k];
-      const indent = countIndent(line);
-      const trimmed = String(line || "").trim();
-      if (indent === envFileIndent && trimmed.startsWith("env_file:")) {
-        let subEnd = k + 1;
-        while (subEnd < block.length) {
-          const subLine = block[subEnd];
-          const subIndent = countIndent(subLine);
-          if (subIndent <= envFileIndent && !isCommentOrBlank(subLine)) {
-            break;
-          }
-          subEnd += 1;
-        }
-        const sub = block.slice(k + 1, subEnd);
-        const kept = [];
-        let hasItem = false;
-        sub.forEach((subLine) => {
-          const subIndent = countIndent(subLine);
-          const subTrimmed = String(subLine || "").trim();
-          if (subIndent > envFileIndent && subTrimmed.startsWith("-")) {
-            if (envFileItemRegex.test(subTrimmed)) {
-              return;
-            }
-            hasItem = true;
-            kept.push(subLine);
-            return;
-          }
-          kept.push(subLine);
-        });
-        if (hasItem) {
-          newBlock.push(line, ...kept);
-        } else {
-          newBlock.push(...kept);
-        }
-        k = subEnd;
-        continue;
-      }
-      newBlock.push(line);
-      k += 1;
-    }
-    processed.push(...newBlock);
-    i = blockEnd;
-  }
-  return processed.join("\n");
-}
-
-function updateStackEnvState() {
-  if (!stackEnvToggle || !stackEnvInput) return;
-  const enabled = Boolean(stackEnvToggle.checked);
-  stackEnvInput.disabled = !enabled;
-  if (envEditor && typeof envEditor.setReadOnly === "function") {
-    envEditor.setReadOnly(!enabled);
-  }
-  if (stackEnvToggleBtn) {
-    stackEnvToggleBtn.dataset.enabled = enabled ? "true" : "false";
-    stackEnvToggleBtn.classList.toggle("is-active", enabled);
-    const icon = stackEnvToggleBtn.querySelector(".icon-action");
-    if (icon) {
-      icon.className = `icon-action ${enabled ? "icon-key-off" : "icon-key"}`;
-    }
-    const label = enabled ? "Disable .env secrets" : "Use .env secrets";
-    stackEnvToggleBtn.setAttribute("aria-label", label);
-    stackEnvToggleBtn.setAttribute("data-tooltip", label);
-    stackEnvToggleBtn.setAttribute("aria-pressed", enabled ? "true" : "false");
-  }
-  const current = getComposeValue();
-  const next = enabled
-    ? ensureEnvFileForServices(current)
-    : removeEnvFileFromServices(current);
-  setComposeValue(next);
-  if (!enabled) {
-    setEnvValue("");
-  }
-  if (composeEditor && typeof composeEditor.forceLint === "function") {
-    composeEditor.forceLint();
-  }
-  if (envEditor && typeof envEditor.forceLint === "function") {
-    envEditor.forceLint();
-  }
+function toggleEditorWrap(editor, button) {
+  if (!editor || typeof editor.setLineWrapping !== "function" || !button) return;
+  const next = button.getAttribute("aria-pressed") !== "true";
+  editor.setLineWrapping(next);
+  button.setAttribute("aria-pressed", next ? "true" : "false");
+  button.classList.toggle("is-active", next);
+  button.textContent = next ? "No wrap" : "Wrap lines";
 }
 
 async function openStackModal(name = "") {
@@ -1379,25 +1218,33 @@ async function openStackModal(name = "") {
   }
   setComposeValue("");
   setEnvValue("");
+  stackEnvExists = false;
+  stackEnvDeletePending = false;
+  stackEnvDeleteConfirming = false;
+  stackModalLoadFailed = false;
+  updateStackEnvDeleteButton();
   clearStackModalError();
-  if (stackEnvToggle) {
-    stackEnvToggle.checked = false;
-  }
-  updateStackEnvState();
+  setStackEditorView(window.matchMedia("(max-width: 960px)").matches ? "compose" : stackEditorView);
   stackModal.classList.remove("hidden");
   stackModal.setAttribute("aria-hidden", "false");
   if (editingStackName) {
+    setStackModalLoading(true);
     try {
       const payload = await fetchJSON(`/api/stacks/get?scope=${encodeURIComponent(scope)}&name=${encodeURIComponent(editingStackName)}`);
       if (payload) {
         setComposeValue(payload.compose_yaml || "");
         setEnvValue(payload.env || "");
-        if (stackEnvToggle) stackEnvToggle.checked = Boolean(payload.has_env);
-        updateStackEnvState();
+        stackEnvExists = Boolean(payload.has_env);
+        updateStackEnvDeleteButton();
+        if (composeEditor && typeof composeEditor.forceLint === "function") composeEditor.forceLint();
         clearStackModalError();
       }
     } catch (err) {
-      showToast(err.message || "Unable to load stack.");
+      stackModalLoadFailed = true;
+      showStackModalError(err.message || "Unable to load stack. Close the editor and try again.");
+      return;
+    } finally {
+      setStackModalLoading(false);
     }
   } else if (stackNameInput) {
     stackNameInput.focus();
@@ -1419,6 +1266,7 @@ function closeStackModal() {
 }
 
 async function saveStackFromModal({ closeOnSuccess, notifyOnSuccess = true } = {}) {
+  if (stackModalLoading || stackModalLoadFailed) return false;
   const scope = containersSelectedScope;
   if (!scope) {
     showToast("Select server first.");
@@ -1445,7 +1293,7 @@ async function saveStackFromModal({ closeOnSuccess, notifyOnSuccess = true } = {
     showStackModalError("docker-compose.yml is required.");
     return false;
   }
-  const useEnv = Boolean(stackEnvToggle && stackEnvToggle.checked);
+  const useEnv = shouldSaveStackEnv();
   const env = useEnv ? getEnvValue() : "";
   try {
     const validation = await fetchJSON("/api/stacks/validate", {
@@ -1463,6 +1311,10 @@ async function saveStackFromModal({ closeOnSuccess, notifyOnSuccess = true } = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ scope, name, compose_yaml: composeYml, env, use_env: useEnv }),
     });
+    stackEnvExists = useEnv;
+    stackEnvDeletePending = false;
+    stackEnvDeleteConfirming = false;
+    updateStackEnvDeleteButton();
     if (closeOnSuccess !== false) {
       closeStackModal();
     }
@@ -9355,15 +9207,24 @@ if (stackModalClose) {
   });
 }
 
-if (stackEnvToggle) {
-  stackEnvToggle.addEventListener("change", () => {
-    updateStackEnvState();
-  });
-}
-if (stackEnvToggleBtn && stackEnvToggle) {
-  stackEnvToggleBtn.addEventListener("click", () => {
-    stackEnvToggle.checked = !stackEnvToggle.checked;
-    updateStackEnvState();
+if (stackViewSplitBtn) stackViewSplitBtn.addEventListener("click", () => setStackEditorView("split"));
+if (stackViewComposeBtn) stackViewComposeBtn.addEventListener("click", () => setStackEditorView("compose"));
+if (stackViewEnvBtn) stackViewEnvBtn.addEventListener("click", () => setStackEditorView("env"));
+if (stackComposeWrapBtn) stackComposeWrapBtn.addEventListener("click", () => toggleEditorWrap(composeEditor, stackComposeWrapBtn));
+if (stackEnvWrapBtn) stackEnvWrapBtn.addEventListener("click", () => toggleEditorWrap(envEditor, stackEnvWrapBtn));
+if (stackEnvDeleteBtn) {
+  stackEnvDeleteBtn.addEventListener("click", () => {
+    if (stackEnvDeletePending) {
+      stackEnvDeletePending = false;
+      stackEnvDeleteConfirming = false;
+    } else if (stackEnvDeleteConfirming) {
+      stackEnvDeletePending = true;
+      stackEnvDeleteConfirming = false;
+    } else {
+      stackEnvDeleteConfirming = true;
+    }
+    updateStackEnvDeleteButton();
+    if (composeEditor && typeof composeEditor.forceLint === "function") composeEditor.forceLint();
   });
 }
 if (stackComposeInput) {
@@ -9374,6 +9235,9 @@ if (stackComposeInput) {
 if (stackEnvInput) {
   stackEnvInput.addEventListener("input", () => {
     clearStackModalError();
+    if (stackEnvDeletePending) stackEnvDeletePending = false;
+    stackEnvDeleteConfirming = false;
+    updateStackEnvDeleteButton();
   });
 }
 

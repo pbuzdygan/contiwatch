@@ -239,11 +239,12 @@ function composeCompletionSource(context) {
   return null;
 }
 
-export function init({ container, textarea, getEnv, getUseEnv, onChange, mode = "yaml", lint = false }) {
+export function init({ container, textarea, getEnv, getUseEnv, validateCompose, onChange, mode = "yaml", lint = false }) {
   if (!container || !textarea) return null;
   const startDoc = textarea.value || "";
   let pending = null;
   const editable = new Compartment();
+  const wrapping = new Compartment();
   let aborter = null;
   const debounceMs = lint ? 700 : 0;
   let stableDiagnostics = null;
@@ -259,13 +260,18 @@ export function init({ container, textarea, getEnv, getUseEnv, onChange, mode = 
       env: getEnv ? getEnv() : "",
       use_env: getUseEnv ? Boolean(getUseEnv()) : false,
     };
-    const res = await fetch("/api/stacks/validate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-      signal: aborter.signal,
-    });
-    const data = await res.json();
+    let data;
+    if (typeof validateCompose === "function") {
+      data = await validateCompose(payload, aborter.signal);
+    } else {
+      const res = await fetch("/api/stacks/validate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+        signal: aborter.signal,
+      });
+      data = await res.json();
+    }
     if (data && data.valid) return [];
     const msg = (data && data.error) ? data.error : "Compose validation failed.";
     if (mode === "yaml" && isEnvOnlyError(msg)) {
@@ -341,7 +347,12 @@ export function init({ container, textarea, getEnv, getUseEnv, onChange, mode = 
             }
             resolve(stabilizeDiagnostics(result));
           } catch (err) {
-            resolve(stabilizeDiagnostics(errorToDiagnostic(view.state, err.message || "Compose validation failed.")));
+            if (err && (err.name === "AbortError" || err.code === "pin_required" || err.status === 401)) {
+              resolve(stabilizeDiagnostics([]));
+              return;
+            }
+            // Transport and authorization errors are application state, not YAML diagnostics.
+            resolve(stabilizeDiagnostics([]));
           }
         }, debounceMs);
       });
@@ -354,7 +365,7 @@ export function init({ container, textarea, getEnv, getUseEnv, onChange, mode = 
     highlightActiveLine(),
     language.indentUnit.of("  "),
     EditorState.tabSize.of(2),
-    EditorView.lineWrapping,
+    wrapping.of([]),
     keymap.of([
       { key: "Enter", run: newlineAndYamlIndent },
       indentWithTab,
@@ -421,6 +432,14 @@ export function init({ container, textarea, getEnv, getUseEnv, onChange, mode = 
       view.dispatch({
         effects: editable.reconfigure(EditorView.editable.of(!disabled)),
       });
+    },
+    setLineWrapping(enabled) {
+      view.dispatch({
+        effects: wrapping.reconfigure(enabled ? EditorView.lineWrapping : []),
+      });
+    },
+    requestMeasure() {
+      view.requestMeasure();
     },
     focus() {
       view.focus();

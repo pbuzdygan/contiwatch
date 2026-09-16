@@ -1290,11 +1290,10 @@
 	            <label id="stack-name-row">
 	              <input type="text" id="stack-name-input" placeholder="my_stack_name">
 	            </label>
-	            <div class="stack-env-action">
-	              <input type="checkbox" id="stack-env-toggle" class="hidden">
-	              <button id="stack-env-toggle-btn" class="secondary icon-action-btn has-tooltip stack-env-btn" type="button" aria-label="Use .env secrets" aria-pressed="false" data-enabled="false" data-tooltip="Use .env secrets">
-	                <span class="icon-action icon-key" aria-hidden="true"></span>
-	              </button>
+	            <div class="stack-view-switcher" role="group" aria-label="Editor layout">
+	              <button id="stack-view-split" class="secondary btn-small is-active" type="button" aria-pressed="true">Split</button>
+	              <button id="stack-view-compose" class="secondary btn-small" type="button" aria-pressed="false">Compose</button>
+	              <button id="stack-view-env" class="secondary btn-small" type="button" aria-pressed="false">.env</button>
 	            </div>
 	            <span class="topbar-separator" aria-hidden="true"></span>
 	            <button
@@ -1335,16 +1334,28 @@
 		            </button>
 		          </div>
 		          <div class="stack-editor-grid">
-		            <div class="stack-editor-main">
-	              <label for="stack-compose-input">docker-compose.yml</label>
+	            <div class="stack-editor-main">
+	              <div class="stack-editor-heading">
+	                <label for="stack-compose-input">docker-compose.yml</label>
+	                <button id="stack-compose-wrap" class="secondary btn-small" type="button" aria-pressed="false">Wrap lines</button>
+	              </div>
 	              <div id="stack-compose-editor" class="stack-editor"></div>
-	              <textarea id="stack-compose-input" class="stack-textarea hidden" rows="16" spellcheck="false" placeholder="services:"></textarea>
+	              <textarea id="stack-compose-input" class="stack-textarea hidden" rows="16" wrap="off" spellcheck="false" placeholder="services:"></textarea>
 	            </div>
             <div class="stack-editor-env">
               <div class="stack-env-label">
-                <label for="stack-env-input">.env</label>
+                <div class="stack-editor-heading">
+                  <div class="stack-editor-title-group">
+                    <label for="stack-env-input">.env</label>
+                    <span title="Loaded automatically for Compose interpolation; env_file is only needed to pass variables into a container.">Used for ${VAR}; env_file is optional</span>
+                  </div>
+                  <div class="stack-editor-heading-actions">
+                    <button id="stack-env-wrap" class="secondary btn-small" type="button" aria-pressed="false">Wrap lines</button>
+                    <button id="stack-env-delete" class="secondary btn-small btn-danger-soft" type="button">Delete .env</button>
+                  </div>
+                </div>
                 <div id="stack-env-editor" class="stack-editor"></div>
-                <textarea id="stack-env-input" class="stack-textarea hidden" rows="16" spellcheck="false" placeholder="KEY=value"></textarea>
+                <textarea id="stack-env-input" class="stack-textarea hidden" rows="16" wrap="off" spellcheck="false" placeholder="KEY=value"></textarea>
               </div>
             </div>
           </div>

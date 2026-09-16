@@ -185,6 +185,14 @@ Security notes:
   - send `discord_webhook_url="__keep__"` for config updates,
   - send empty `token` for existing remote server updates.
 
+## Stack editor and `.env`
+
+The stack editor stores `docker-compose.yml` and an optional `.env` independently. The `.env` file is passed to Docker Compose for `${VARIABLE}` interpolation and is also placed next to the Compose file for local and remote operations.
+
+The editor does not add or remove service-level `env_file` entries. Add `env_file: .env` to a service only when all values from that file should also be injected into the container environment. It is not required for Compose interpolation. Removing `.env` is an explicit, confirmed editor action.
+
+Stack validation evaluates the interpolated Compose model. Variables defined in a stack's `.env` take precedence over same-named variables inherited from the Contiwatch process, preventing controller configuration from changing a managed stack accidentally.
+
 ## API
 - `GET /api/version`
 - `GET /api/meta` (version/channel/repo metadata used by the UI)

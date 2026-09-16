@@ -1991,8 +1991,9 @@ input::placeholder {
 }
 
 #stack-modal .modal-card {
-  height: 90vh;
-  max-height: 90vh;
+  width: min(1500px, 96vw);
+  height: 94vh;
+  max-height: 94vh;
   overflow: hidden;
 }
 
@@ -2017,6 +2018,11 @@ input::placeholder {
 
 #stack-modal .stack-editor {
   min-height: 0;
+}
+
+#stack-modal.is-loading .stack-editor-grid {
+  opacity: 0.62;
+  pointer-events: none;
 }
 
 .stack-editor-main .stack-editor,
@@ -3854,7 +3860,7 @@ input::placeholder {
 }
 
 .stack-editor .cm-scroller {
-  overflow-x: hidden;
+  overflow-x: auto;
 }
 
 .stack-editor .cm-editor,
@@ -3965,21 +3971,67 @@ input::placeholder {
   box-shadow: none;
 }
 
-.stack-env-action {
-  display: flex;
-  align-items: center;
-}
-
-.stack-env-btn {
-  margin-left: 0;
-}
-
-
 .stack-editor-grid {
   display: grid;
-  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1.8fr) minmax(320px, 1fr);
   gap: var(--s-3);
   align-items: stretch;
+}
+
+#stack-modal[data-editor-view="compose"] .stack-editor-grid,
+#stack-modal[data-editor-view="env"] .stack-editor-grid {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+#stack-modal[data-editor-view="compose"] .stack-editor-env,
+#stack-modal[data-editor-view="env"] .stack-editor-main {
+  display: none;
+}
+
+.stack-view-switcher {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--s-1);
+}
+
+.stack-view-switcher .is-active,
+.stack-editor-heading button.is-active {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary), transparent 90%);
+}
+
+.stack-editor-heading {
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-2);
+}
+
+.stack-editor-title-group,
+.stack-editor-heading-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  min-width: 0;
+}
+
+.stack-editor-title-group span {
+  color: var(--color-text-muted);
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
+.btn-danger-soft {
+  color: var(--status-error);
+}
+
+.btn-danger-soft.is-confirming,
+.btn-danger-soft.is-active {
+  color: var(--color-surface);
+  border-color: var(--status-error);
+  background: var(--status-error);
 }
 
 .stack-editor-main,
@@ -4002,6 +4054,23 @@ input::placeholder {
 @media (max-width: 960px) {
   .stack-editor-grid {
     grid-template-columns: 1fr;
+  }
+  #stack-modal .modal-card {
+    width: 96vw;
+    height: 94dvh;
+    max-height: 94dvh;
+    padding: var(--s-3);
+  }
+  .stack-modal-grid {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: var(--s-1);
+  }
+  .stack-editor-title-group span {
+    display: none;
+  }
+  .stack-editor-heading-actions {
+    gap: var(--s-1);
   }
   .stack-textarea {
     min-height: clamp(200px, 46vh, 360px);
