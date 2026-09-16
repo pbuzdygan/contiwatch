@@ -21,8 +21,10 @@ import (
 )
 
 const (
-	stacksBaseDir         = "/data/stacks"
-	stackActionTimeoutSec = 180
+	stacksBaseDir                  = "/data/stacks"
+	stackActionTimeout             = 3 * time.Minute
+	stackImageActionTimeout        = 10 * time.Minute
+	remoteStackActionGraceDuration = 30 * time.Second
 )
 
 var stackNamePattern = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
@@ -547,7 +549,7 @@ func (s *Server) runRemoteStackAction(cfg config.Config, serverName string, payl
 	if remote.Token != "" {
 		req.Header.Set("Authorization", "Bearer "+remote.Token)
 	}
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := &http.Client{Timeout: remoteStackActionTimeout(payload.Action)}
 	resp, err := client.Do(req)
 	if err != nil {
 		return err
@@ -619,10 +621,7 @@ func runComposeSingleAction(dir, projectName, action string, env map[string]stri
 	if err != nil {
 		return err
 	}
-	timeout := stackActionTimeoutSec * time.Second
-	if action == "pull" || action == "redeploy" {
-		timeout = 10 * time.Minute
-	}
+	timeout := composeActionTimeout(action)
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "docker", args...)
@@ -636,6 +635,22 @@ func runComposeSingleAction(dir, projectName, action string, env map[string]stri
 		return fmt.Errorf("compose failed: %s", strings.TrimSpace(string(output)))
 	}
 	return nil
+}
+
+func composeActionTimeout(action string) time.Duration {
+	switch action {
+	case "up", "pull":
+		return stackImageActionTimeout
+	default:
+		return stackActionTimeout
+	}
+}
+
+func remoteStackActionTimeout(action string) time.Duration {
+	if action == "redeploy" {
+		return composeActionTimeout("pull") + composeActionTimeout("up") + remoteStackActionGraceDuration
+	}
+	return composeActionTimeout(action) + remoteStackActionGraceDuration
 }
 
 func composeProjectName(name string) string {

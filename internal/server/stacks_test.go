@@ -5,7 +5,48 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
+
+func TestComposeActionTimeoutAllowsInitialImagePull(t *testing.T) {
+	tests := []struct {
+		name   string
+		action string
+		want   time.Duration
+	}{
+		{name: "up", action: "up", want: 10 * time.Minute},
+		{name: "pull", action: "pull", want: 10 * time.Minute},
+		{name: "restart", action: "restart", want: 3 * time.Minute},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := composeActionTimeout(test.action); got != test.want {
+				t.Fatalf("expected %s timeout, got %s", test.want, got)
+			}
+		})
+	}
+}
+
+func TestRemoteStackActionTimeoutOutlivesAgentAction(t *testing.T) {
+	tests := []struct {
+		name   string
+		action string
+		want   time.Duration
+	}{
+		{name: "up", action: "up", want: 10*time.Minute + 30*time.Second},
+		{name: "restart", action: "restart", want: 3*time.Minute + 30*time.Second},
+		{name: "redeploy", action: "redeploy", want: 20*time.Minute + 30*time.Second},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := remoteStackActionTimeout(test.action); got != test.want {
+				t.Fatalf("expected %s timeout, got %s", test.want, got)
+			}
+		})
+	}
+}
 
 func TestWritePrivateFileAtomicallyKeepsRestrictedPermissions(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "docker-compose.yml")
