@@ -9,7 +9,7 @@
 - Updates: agent self-updates are now processed last and confirmed from the refreshed agent snapshot after restart.
 - Updates: protected the agent self-update endpoint from targeting a container other than the running agent.
 - Updates: fixed repeated self-updates after Docker assigned a new container ID but the recreated agent retained its previous generated hostname.
-- Updates: added a compatibility route for centrally upgrading pre-`0.5.34` agents that do not expose the `self` marker.
+- Updates: added a compatibility route for centrally upgrading pre-`0.5.34` agents that do not expose the `self` marker, including containers whose untagged image is reported only by image ID.
 - Updates UI: fixed premature “finished” feedback while remote scans were still running.
 - Updates UI: `Latest` no longer includes updated or failed containers, and a separate `Failed` counter makes operation errors visible.
 - Discord: scan notifications now distinguish detected updates, successfully updated containers, and containers that remain outdated.

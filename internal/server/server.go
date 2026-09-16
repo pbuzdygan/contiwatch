@@ -2043,7 +2043,9 @@ func isRemoteAgentUpdateTarget(container dockerwatcher.ContainerStatus) bool {
 		return true
 	}
 	name := strings.ToLower(strings.TrimSpace(container.Name))
-	return isContiwatchImage(container.Image) && strings.Contains(name, "agent")
+	isAgentName := strings.Contains(name, "agent")
+	isContiwatchName := strings.Contains(name, "contiwatch")
+	return isAgentName && (isContiwatchName || isContiwatchImage(container.Image))
 }
 
 func markScanResultUpdateError(result *dockerwatcher.ScanResult, containerID string, updateErr error) {

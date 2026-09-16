@@ -1640,7 +1640,8 @@ function buildContainerCard(container, result, canUpdateStopped, variant) {
         : `remote:${result.server_name || "remote"}`;
       const serverParam = encodeURIComponent(scope);
       let updateURL = `/api/update/${encodeURIComponent(container.id)}?server=${serverParam}`;
-      const isLegacyRemoteAgent = !result.local && isContiwatchImage(container.image) && /agent/i.test(String(container.name || ""));
+      const legacyAgentName = String(container.name || "");
+      const isLegacyRemoteAgent = !result.local && /agent/i.test(legacyAgentName) && (/contiwatch/i.test(legacyAgentName) || isContiwatchImage(container.image));
       if (!result.local && (isSelfContainer || isLegacyRemoteAgent)) {
         updateURL += "&self_update=1";
       }

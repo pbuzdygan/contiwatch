@@ -37,7 +37,8 @@ func TestRemoteAgentUpdateTargetSupportsLegacyAgentWithoutMisclassifyingOtherCon
 		expected  bool
 	}{
 		{name: "explicit self marker", container: dockerwatcher.ContainerStatus{Self: true}, expected: true},
-		{name: "legacy agent", container: dockerwatcher.ContainerStatus{Name: "contiwatch-agent-dev", Image: "ghcr.io/pbuzdygan/contiwatch:dev_latest"}, expected: true},
+		{name: "legacy agent with tagged image", container: dockerwatcher.ContainerStatus{Name: "contiwatch-agent-dev", Image: "ghcr.io/pbuzdygan/contiwatch:dev_latest"}, expected: true},
+		{name: "legacy agent with image ID", container: dockerwatcher.ContainerStatus{Name: "contiwatch-agent-dev", Image: "eccc16ed2d1a"}, expected: true},
 		{name: "other contiwatch service", container: dockerwatcher.ContainerStatus{Name: "contiwatch-dashboard", Image: "ghcr.io/pbuzdygan/contiwatch:dev_latest"}, expected: false},
 		{name: "unrelated agent", container: dockerwatcher.ContainerStatus{Name: "metrics-agent", Image: "example/metrics:latest"}, expected: false},
 	}
@@ -81,7 +82,7 @@ func TestAutoUpdateRemoteUpdatesAgentLastAndConfirmsRestart(t *testing.T) {
 	result := dockerwatcher.ScanResult{
 		ServerName: "remote",
 		Containers: []dockerwatcher.ContainerStatus{
-			{ID: "agent-id", Name: "contiwatch-agent-dev", Image: "contiwatch:latest", Policy: config.PolicyUpdate, UpdateAvailable: true},
+			{ID: "agent-id", Name: "contiwatch-agent-dev", Image: "eccc16ed2d1a", Policy: config.PolicyUpdate, UpdateAvailable: true},
 			{ID: "app-id", Name: "app", Image: "app:latest", Policy: config.PolicyUpdate, UpdateAvailable: true},
 		},
 	}
