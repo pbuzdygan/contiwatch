@@ -587,12 +587,10 @@ func runComposeFromPayload(payload stackActionRequest, dockerHost string) error 
 	envFile := ""
 	if payload.UseEnv {
 		sanitized, _ := sanitizeEnvContent(payload.Env)
-		var err error
-		envFile, err = writeTempEnvFile(sanitized)
-		if err != nil {
+		envFile = filepath.Join(tempDir, ".env")
+		if err := os.WriteFile(envFile, []byte(sanitized), 0o600); err != nil {
 			return err
 		}
-		defer os.Remove(envFile)
 	}
 	env := map[string]string{}
 	if dockerHost != "" {
@@ -629,7 +627,7 @@ func runComposeSingleAction(dir, projectName, action string, env map[string]stri
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "docker", args...)
 	cmd.Dir = dir
-	cmd.Env = mergeEnv(env)
+	cmd.Env = mergeComposeEnv(env, envFile)
 	output, err := cmd.CombinedOutput()
 	if ctx.Err() == context.DeadlineExceeded {
 		return errors.New("compose action timed out")
@@ -665,12 +663,10 @@ func runComposeConfigFromPayload(payload stackValidateRequest) error {
 	envFile := ""
 	if payload.UseEnv {
 		sanitized, _ := sanitizeEnvContent(payload.Env)
-		var err error
-		envFile, err = writeTempEnvFile(sanitized)
-		if err != nil {
+		envFile = filepath.Join(tempDir, ".env")
+		if err := os.WriteFile(envFile, []byte(sanitized), 0o600); err != nil {
 			return err
 		}
-		defer os.Remove(envFile)
 	}
 	return runComposeConfig(tempDir, envFile)
 }
@@ -680,11 +676,12 @@ func runComposeConfig(dir, envFile string) error {
 	if strings.TrimSpace(envFile) != "" {
 		args = append(args, "--env-file", envFile)
 	}
-	args = append(args, "config", "--no-interpolate")
+	args = append(args, "config", "--quiet")
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, "docker", args...)
 	cmd.Dir = dir
+	cmd.Env = mergeComposeEnv(nil, envFile)
 	output, err := cmd.CombinedOutput()
 	if ctx.Err() == context.DeadlineExceeded {
 		return errors.New("compose config timed out")
@@ -723,10 +720,35 @@ func buildComposeArgs(projectName, action, envFile string) ([]string, error) {
 	}
 }
 
-func mergeEnv(overrides map[string]string) []string {
-	env := os.Environ()
-	if len(overrides) == 0 {
-		return env
+func mergeComposeEnv(overrides map[string]string, envFile string) []string {
+	blocked := map[string]struct{}{}
+	if strings.TrimSpace(envFile) != "" {
+		if content, err := os.ReadFile(envFile); err == nil {
+			cleaned, _ := sanitizeEnvContent(string(content))
+			for _, line := range strings.Split(cleaned, "\n") {
+				trimmed := strings.TrimSpace(line)
+				if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+					continue
+				}
+				if parts := strings.SplitN(trimmed, "=", 2); len(parts) == 2 {
+					blocked[strings.TrimSpace(parts[0])] = struct{}{}
+				}
+			}
+		}
+	}
+	for key := range overrides {
+		blocked[key] = struct{}{}
+	}
+
+	env := make([]string, 0, len(os.Environ())+len(overrides))
+	for _, item := range os.Environ() {
+		key, _, found := strings.Cut(item, "=")
+		if found {
+			if _, shouldUseEnvFile := blocked[key]; shouldUseEnvFile {
+				continue
+			}
+		}
+		env = append(env, item)
 	}
 	for key, value := range overrides {
 		env = append(env, fmt.Sprintf("%s=%s", key, value))

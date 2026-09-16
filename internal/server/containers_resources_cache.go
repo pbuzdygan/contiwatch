@@ -11,26 +11,28 @@ type containersResourcesCacheEntry struct {
 	FetchedAt time.Time
 }
 
-func (s *Server) getContainersResourcesCache(scope string, ids []string, maxAge time.Duration, refreshAfter time.Duration) (resources []dockerwatcher.ContainerResource, needsRefresh bool) {
+func (s *Server) getContainersResourcesCache(scope string, ids []string, maxAge time.Duration, refreshAfter time.Duration) (resources []dockerwatcher.ContainerResource, missingIDs []string, needsRefresh bool) {
 	if scope == "" || len(ids) == 0 {
-		return nil, true
+		return nil, append([]string(nil), ids...), true
 	}
 	now := time.Now()
 	s.containersResourcesCacheMu.RLock()
 	defer s.containersResourcesCacheMu.RUnlock()
 	byScope := s.containersResourcesCache[scope]
 	if len(byScope) == 0 {
-		return nil, true
+		return nil, append([]string(nil), ids...), true
 	}
 	out := make([]dockerwatcher.ContainerResource, 0, len(ids))
 	for _, id := range ids {
 		entry, ok := byScope[id]
 		if !ok {
+			missingIDs = append(missingIDs, id)
 			needsRefresh = true
 			continue
 		}
 		age := now.Sub(entry.FetchedAt)
 		if maxAge > 0 && age > maxAge {
+			missingIDs = append(missingIDs, id)
 			needsRefresh = true
 			continue
 		}
@@ -39,10 +41,7 @@ func (s *Server) getContainersResourcesCache(scope string, ids []string, maxAge 
 		}
 		out = append(out, entry.Resource)
 	}
-	if len(out) == 0 {
-		return nil, true
-	}
-	return out, needsRefresh
+	return out, missingIDs, needsRefresh
 }
 
 func (s *Server) setContainersResourcesCache(scope string, resources []dockerwatcher.ContainerResource) {

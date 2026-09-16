@@ -1,5 +1,28 @@
 # Changelog
 
+## v1.3.2
+
+## Bug fixes
+- Mobile UI: fixed Servers and Events filter dropdowns being clipped by their single-row toolbars.
+- Containers: fixed CPU/RAM columns staying empty or showing only previously selected resource cards when the resource cache contained a partial snapshot.
+- Containers: resource metrics are now fetched in bounded batches and merged without discarding the last valid values after a transient error.
+- Container stacks: fixed authenticated inline validation being reported as `Line 1: Validation failed: pin_required`.
+- Container stacks: fixed remote operations with `env_file: .env` by placing the environment file next to the temporary Compose file.
+- Container stacks: stack `.env` values can no longer be shadowed by same-named variables inherited from the Contiwatch process.
+- Container stacks: validation now checks the interpolated Compose model instead of disabling interpolation.
+
+## New features
+- Servers: added an on-demand Health check with Docker Engine details, container health counts, host capacity, and Docker storage/reclaimable summaries for local and remote servers.
+
+## Improvements
+- Mobile UI: moved search into the header grid to prevent overlap, kept Servers and Events controls on one row, and prevented iOS focus zoom on form fields.
+- Mobile navigation: moved contextual Containers shortcuts into the primary swipeable navigation with visible edge indicators and automatic active-item reveal.
+- Mobile Servers: new installations now default to the card layout while preserving an existing saved preference.
+- UI/Servers: reduced table row height and action icon size in table and card layouts.
+- UI/Stacks: Compose up/down/redeploy now show in-modal progress, completion or failure and prevent duplicate actions while running.
+- UI/Stacks: decoupled `.env` editing from service-level `env_file`, removed automatic Compose rewrites, and added explicit `.env` deletion.
+- UI/Stacks: expanded the editor workspace with Split/Compose/.env layouts, independent scrolling, optional line wrapping, and a mobile single-editor view.
+
 ## v1.3.1
 
 ## Bug fixes

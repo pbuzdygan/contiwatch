@@ -307,7 +307,7 @@
           </button>
         </div>
       </div>
-      <nav class="sidebar-nav">
+      <nav id="primary-navigation" class="sidebar-nav" aria-label="Primary navigation">
         <button type="button" class="sidebar-link" data-view="status">
           <svg xmlns="http://www.w3.org/2000/svg" class="sidebar-icon icon icon-tabler icons-tabler-outline icon-tabler-home-spark" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M5 12h-2l9 -9l9 9h-2" /><path d="M5 12v7a2 2 0 0 0 2 2h5" /><path d="M9 21v-6a2 2 0 0 1 2 -2h2a2 2 0 0 1 2 2" /><path d="M19 22.5a4.75 4.75 0 0 1 3.5 -3.5a4.75 4.75 0 0 1 -3.5 -3.5a4.75 4.75 0 0 1 -3.5 3.5a4.75 4.75 0 0 1 3.5 3.5" /></svg>
           <span class="sidebar-label">Updates</span>
@@ -1028,6 +1028,17 @@
       </div>
     </div>
 
+    <div id="server-health-modal" class="modal hidden" aria-hidden="true" role="dialog" aria-modal="true">
+      <div class="modal-backdrop" data-close="true"></div>
+      <div class="modal-card modal-card-lg server-health-modal-card" role="document">
+        <div class="modal-header">
+          <h3 id="server-health-title">Server health</h3>
+          <button id="server-health-close" class="secondary btn-small" type="button">Close</button>
+        </div>
+        <div id="server-health-body" class="modal-body server-health-body" aria-live="polite"></div>
+      </div>
+    </div>
+
     <div id="volume-details-modal" class="modal hidden" aria-hidden="true" role="dialog" aria-modal="true">
       <div class="modal-backdrop" data-close="true"></div>
       <div class="modal-card" role="document">
@@ -1290,11 +1301,10 @@
 	            <label id="stack-name-row">
 	              <input type="text" id="stack-name-input" placeholder="my_stack_name">
 	            </label>
-	            <div class="stack-env-action">
-	              <input type="checkbox" id="stack-env-toggle" class="hidden">
-	              <button id="stack-env-toggle-btn" class="secondary icon-action-btn has-tooltip stack-env-btn" type="button" aria-label="Use .env secrets" aria-pressed="false" data-enabled="false" data-tooltip="Use .env secrets">
-	                <span class="icon-action icon-key" aria-hidden="true"></span>
-	              </button>
+	            <div class="stack-view-switcher" role="group" aria-label="Editor layout">
+	              <button id="stack-view-split" class="secondary btn-small is-active" type="button" aria-pressed="true">Split</button>
+	              <button id="stack-view-compose" class="secondary btn-small" type="button" aria-pressed="false">Compose</button>
+	              <button id="stack-view-env" class="secondary btn-small" type="button" aria-pressed="false">.env</button>
 	            </div>
 	            <span class="topbar-separator" aria-hidden="true"></span>
 	            <button
@@ -1333,18 +1343,31 @@
 		            >
 		              <span class="icon-action icon-arrow-back-up-double" aria-hidden="true"></span>
 		            </button>
-		          </div>
-		          <div class="stack-editor-grid">
-		            <div class="stack-editor-main">
-	              <label for="stack-compose-input">docker-compose.yml</label>
+	          </div>
+	          <div id="stack-modal-operation" class="stack-modal-operation hidden" role="status" aria-live="polite"></div>
+	          <div class="stack-editor-grid">
+	            <div class="stack-editor-main">
+	              <div class="stack-editor-heading">
+	                <label for="stack-compose-input">docker-compose.yml</label>
+	                <button id="stack-compose-wrap" class="secondary btn-small" type="button" aria-pressed="false">Wrap lines</button>
+	              </div>
 	              <div id="stack-compose-editor" class="stack-editor"></div>
-	              <textarea id="stack-compose-input" class="stack-textarea hidden" rows="16" spellcheck="false" placeholder="services:"></textarea>
+	              <textarea id="stack-compose-input" class="stack-textarea hidden" rows="16" wrap="off" spellcheck="false" placeholder="services:"></textarea>
 	            </div>
             <div class="stack-editor-env">
               <div class="stack-env-label">
-                <label for="stack-env-input">.env</label>
+                <div class="stack-editor-heading">
+                  <div class="stack-editor-title-group">
+                    <label for="stack-env-input">.env</label>
+                    <span title="Loaded automatically for Compose interpolation; env_file is only needed to pass variables into a container.">Used for ${VAR}; env_file is optional</span>
+                  </div>
+                  <div class="stack-editor-heading-actions">
+                    <button id="stack-env-wrap" class="secondary btn-small" type="button" aria-pressed="false">Wrap lines</button>
+                    <button id="stack-env-delete" class="secondary btn-small btn-danger-soft" type="button">Delete .env</button>
+                  </div>
+                </div>
                 <div id="stack-env-editor" class="stack-editor"></div>
-                <textarea id="stack-env-input" class="stack-textarea hidden" rows="16" spellcheck="false" placeholder="KEY=value"></textarea>
+                <textarea id="stack-env-input" class="stack-textarea hidden" rows="16" wrap="off" spellcheck="false" placeholder="KEY=value"></textarea>
               </div>
             </div>
           </div>

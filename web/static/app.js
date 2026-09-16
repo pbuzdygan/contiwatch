@@ -79,6 +79,7 @@ const remoteModalSave = document.getElementById("remote-modal-save");
 const remoteModalCancel = document.getElementById("remote-modal-cancel");
 const remoteModalErrorEl = document.getElementById("remote-modal-error");
 const sidebar = document.getElementById("sidebar");
+const sidebarNav = document.getElementById("primary-navigation");
 const sidebarSearch = document.getElementById("sidebar-search");
 const sidebarSearchCountEl = document.getElementById("sidebar-search-count");
 const sidebarSearchWrap = sidebarSearch ? sidebarSearch.closest(".topbar-search") : null;
@@ -243,6 +244,10 @@ const detailsModal = document.getElementById("details-modal");
 const detailsTitle = document.getElementById("details-title");
 const detailsBody = document.getElementById("details-body");
 const detailsCloseBtn = document.getElementById("details-close");
+const serverHealthModal = document.getElementById("server-health-modal");
+const serverHealthTitle = document.getElementById("server-health-title");
+const serverHealthBody = document.getElementById("server-health-body");
+const serverHealthCloseBtn = document.getElementById("server-health-close");
 const policyModal = document.getElementById("policy-modal");
 const policyCloseBtn = document.getElementById("policy-close");
 const stackModal = document.getElementById("stack-modal");
@@ -260,9 +265,14 @@ const stackComposeEditorEl = document.getElementById("stack-compose-editor");
 const stackComposeInput = document.getElementById("stack-compose-input");
 const stackEnvEditorEl = document.getElementById("stack-env-editor");
 const stackEnvInput = document.getElementById("stack-env-input");
-const stackEnvToggle = document.getElementById("stack-env-toggle");
-const stackEnvToggleBtn = document.getElementById("stack-env-toggle-btn");
+const stackViewSplitBtn = document.getElementById("stack-view-split");
+const stackViewComposeBtn = document.getElementById("stack-view-compose");
+const stackViewEnvBtn = document.getElementById("stack-view-env");
+const stackComposeWrapBtn = document.getElementById("stack-compose-wrap");
+const stackEnvWrapBtn = document.getElementById("stack-env-wrap");
+const stackEnvDeleteBtn = document.getElementById("stack-env-delete");
 const stackModalErrorEl = document.getElementById("stack-modal-error");
+const stackModalOperationEl = document.getElementById("stack-modal-operation");
 
 let currentScanController = null;
 let currentView = "status";
@@ -392,6 +402,14 @@ let stacksCache = new Map();
 let editingStackName = "";
 let composeEditor = null;
 let envEditor = null;
+let stackEditorView = "split";
+let stackEnvExists = false;
+let stackEnvDeletePending = false;
+let stackEnvDeleteConfirming = false;
+let stackModalLoading = false;
+let stackModalLoadFailed = false;
+let stackModalActionInProgress = "";
+let serverHealthAbort = null;
 let pinGuardEnabled = false;
 let pinGuardUnlocked = true;
 let pinGuardSubmitting = false;
@@ -1094,7 +1112,13 @@ function initComposeEditor() {
     container: stackComposeEditorEl,
     textarea: stackComposeInput,
     getEnv: () => (stackEnvInput ? stackEnvInput.value : ""),
-    getUseEnv: () => Boolean(stackEnvToggle && stackEnvToggle.checked),
+    getUseEnv: () => shouldSaveStackEnv(),
+    validateCompose: (payload, signal) => fetchJSON("/api/stacks/validate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      signal,
+    }),
     onChange: () => clearStackModalError(),
     mode: "yaml",
     lint: true,
@@ -1114,6 +1138,9 @@ function initEnvEditor() {
     textarea: stackEnvInput,
     onChange: () => {
       clearStackModalError();
+      if (stackEnvDeletePending) stackEnvDeletePending = false;
+      stackEnvDeleteConfirming = false;
+      updateStackEnvDeleteButton();
       if (composeEditor && typeof composeEditor.forceLint === "function") {
         composeEditor.forceLint();
       }
@@ -1123,240 +1150,84 @@ function initEnvEditor() {
   });
 }
 
-const envFileItemRegex = /^-\s*["']?\.env["']?\s*$/;
-
-function countIndent(line) {
-  const match = String(line || "").match(/^\s*/);
-  return match ? match[0].length : 0;
+function shouldSaveStackEnv() {
+  if (stackEnvDeletePending) return false;
+  return stackEnvExists || getEnvValue().trim() !== "";
 }
 
-function isCommentOrBlank(line) {
-  const trimmed = String(line || "").trim();
-  return trimmed === "" || trimmed.startsWith("#");
+function setStackEditorView(view) {
+  const next = ["split", "compose", "env"].includes(view) ? view : "split";
+  stackEditorView = next;
+  if (stackModal) stackModal.dataset.editorView = next;
+  [
+    [stackViewSplitBtn, "split"],
+    [stackViewComposeBtn, "compose"],
+    [stackViewEnvBtn, "env"],
+  ].forEach(([button, value]) => {
+    if (!button) return;
+    const active = value === next;
+    button.classList.toggle("is-active", active);
+    button.setAttribute("aria-pressed", active ? "true" : "false");
+  });
+  window.setTimeout(() => {
+    if (composeEditor && typeof composeEditor.requestMeasure === "function") composeEditor.requestMeasure();
+    if (envEditor && typeof envEditor.requestMeasure === "function") envEditor.requestMeasure();
+  }, 0);
 }
 
-function isServiceHeader(line, indent, servicesIndent) {
-  const trimmed = String(line || "").trim();
-  if (!trimmed || trimmed.startsWith("#")) return false;
-  if (!trimmed.endsWith(":")) return false;
-  if (trimmed.startsWith("-")) return false;
-  return indent > servicesIndent;
+function setStackModalLoading(loading) {
+  stackModalLoading = Boolean(loading);
+  updateStackModalBusyState();
+  if (stackModal) stackModal.classList.toggle("is-loading", stackModalLoading);
 }
 
-function findServicesBlock(lines) {
-  for (let i = 0; i < lines.length; i += 1) {
-    const line = String(lines[i] || "");
-    if (line.trim() === "services:") {
-      return { index: i, indent: countIndent(line) };
-    }
-  }
-  return { index: -1, indent: 0 };
+function updateStackModalBusyState() {
+  const isBusy = stackModalLoading || Boolean(stackModalActionInProgress);
+  [stackModalSave, stackModalSaveIcon, stackModalComposeUp, stackModalComposeDown, stackModalRedeploy]
+    .filter(Boolean)
+    .forEach((button) => { button.disabled = isBusy || stackModalLoadFailed; });
+  [
+    [stackModalComposeUp, "up"],
+    [stackModalComposeDown, "down"],
+    [stackModalRedeploy, "redeploy"],
+  ].forEach(([button, action]) => {
+    if (!button) return;
+    const active = stackModalActionInProgress === action;
+    button.classList.toggle("is-pulsing", active);
+    button.setAttribute("aria-busy", active ? "true" : "false");
+  });
 }
 
-function ensureEnvFileForServices(text) {
-  const lines = String(text || "").split(/\r?\n/);
-  const servicesInfo = findServicesBlock(lines);
-  if (servicesInfo.index < 0) {
-    const trimmed = String(text || "").trim();
-    if (!trimmed) {
-      return "services:\n  app:\n    env_file:\n      - .env";
-    }
-    return `${trimmed}\n\nservices:\n  app:\n    env_file:\n      - .env`;
-  }
-  let i = servicesInfo.index + 1;
-  let foundService = false;
-  while (i < lines.length) {
-    const line = lines[i];
-    const indent = countIndent(line);
-    if (indent <= servicesInfo.indent && !isCommentOrBlank(line)) {
-      break;
-    }
-    if (isServiceHeader(line, indent, servicesInfo.indent)) {
-      foundService = true;
-      const serviceIndent = indent;
-      let blockEnd = i + 1;
-      while (blockEnd < lines.length) {
-        const nextLine = lines[blockEnd];
-        const nextIndent = countIndent(nextLine);
-        if (nextIndent <= serviceIndent && !isCommentOrBlank(nextLine)) {
-          break;
-        }
-        blockEnd += 1;
-      }
-      let envFileLine = -1;
-      let envFileIndent = serviceIndent + 2;
-      for (let j = i + 1; j < blockEnd; j += 1) {
-        const current = lines[j];
-        const currentIndent = countIndent(current);
-        if (currentIndent === envFileIndent && String(current || "").trim().startsWith("env_file:")) {
-          envFileLine = j;
-          break;
-        }
-      }
-      if (envFileLine >= 0) {
-        let hasEnv = false;
-        let insertAt = envFileLine + 1;
-        for (let j = envFileLine + 1; j < blockEnd; j += 1) {
-          const current = lines[j];
-          const currentIndent = countIndent(current);
-          if (currentIndent <= envFileIndent && !isCommentOrBlank(current)) {
-            break;
-          }
-          if (currentIndent > envFileIndent && String(current || "").trim().startsWith("-")) {
-            insertAt = j + 1;
-            if (envFileItemRegex.test(String(current || "").trim())) {
-              hasEnv = true;
-            }
-          }
-        }
-        if (!hasEnv) {
-          lines.splice(insertAt, 0, `${" ".repeat(envFileIndent + 2)}- .env`);
-          blockEnd += 1;
-        }
-      } else {
-        let insertAt = i + 1;
-        while (insertAt < blockEnd && isCommentOrBlank(lines[insertAt])) {
-          insertAt += 1;
-        }
-        lines.splice(
-          insertAt,
-          0,
-          `${" ".repeat(envFileIndent)}env_file:`,
-          `${" ".repeat(envFileIndent + 2)}- .env`
-        );
-        blockEnd += 2;
-      }
-      i = blockEnd;
-      continue;
-    }
-    i += 1;
-  }
-  if (!foundService) {
-    const insertAt = servicesInfo.index + 1;
-    lines.splice(
-      insertAt,
-      0,
-      `${" ".repeat(servicesInfo.indent + 2)}app:`,
-      `${" ".repeat(servicesInfo.indent + 4)}env_file:`,
-      `${" ".repeat(servicesInfo.indent + 6)}- .env`
-    );
-  }
-  return lines.join("\n");
+function setStackModalOperation(action, message, variant = "") {
+  stackModalActionInProgress = action || "";
+  updateStackModalBusyState();
+  if (!stackModalOperationEl) return;
+  const text = String(message || "").trim();
+  stackModalOperationEl.textContent = text;
+  stackModalOperationEl.className = `stack-modal-operation${variant ? ` is-${variant}` : ""}${text ? "" : " hidden"}`;
 }
 
-function removeEnvFileFromServices(text) {
-  const lines = String(text || "").split(/\r?\n/);
-  const servicesInfo = findServicesBlock(lines);
-  if (servicesInfo.index < 0) return text;
-  const processed = [];
-  processed.push(...lines.slice(0, servicesInfo.index + 1));
-  let i = servicesInfo.index + 1;
-  while (i < lines.length) {
-    const currentLine = lines[i];
-    const currentIndent = countIndent(currentLine);
-    if (currentIndent <= servicesInfo.indent && !isCommentOrBlank(currentLine)) {
-      processed.push(...lines.slice(i));
-      return processed.join("\n");
-    }
-    if (!isServiceHeader(currentLine, currentIndent, servicesInfo.indent)) {
-      processed.push(currentLine);
-      i += 1;
-      continue;
-    }
-    const serviceIndent = currentIndent;
-    let blockEnd = i + 1;
-    while (blockEnd < lines.length) {
-      const nextLine = lines[blockEnd];
-      const nextIndent = countIndent(nextLine);
-      if (nextIndent <= serviceIndent && !isCommentOrBlank(nextLine)) {
-        break;
-      }
-      blockEnd += 1;
-    }
-    const block = lines.slice(i, blockEnd);
-    const newBlock = [block[0]];
-    const envFileIndent = serviceIndent + 2;
-    let k = 1;
-    while (k < block.length) {
-      const line = block[k];
-      const indent = countIndent(line);
-      const trimmed = String(line || "").trim();
-      if (indent === envFileIndent && trimmed.startsWith("env_file:")) {
-        let subEnd = k + 1;
-        while (subEnd < block.length) {
-          const subLine = block[subEnd];
-          const subIndent = countIndent(subLine);
-          if (subIndent <= envFileIndent && !isCommentOrBlank(subLine)) {
-            break;
-          }
-          subEnd += 1;
-        }
-        const sub = block.slice(k + 1, subEnd);
-        const kept = [];
-        let hasItem = false;
-        sub.forEach((subLine) => {
-          const subIndent = countIndent(subLine);
-          const subTrimmed = String(subLine || "").trim();
-          if (subIndent > envFileIndent && subTrimmed.startsWith("-")) {
-            if (envFileItemRegex.test(subTrimmed)) {
-              return;
-            }
-            hasItem = true;
-            kept.push(subLine);
-            return;
-          }
-          kept.push(subLine);
-        });
-        if (hasItem) {
-          newBlock.push(line, ...kept);
-        } else {
-          newBlock.push(...kept);
-        }
-        k = subEnd;
-        continue;
-      }
-      newBlock.push(line);
-      k += 1;
-    }
-    processed.push(...newBlock);
-    i = blockEnd;
+function updateStackEnvDeleteButton() {
+  if (!stackEnvDeleteBtn) return;
+  stackEnvDeleteBtn.disabled = !stackEnvExists && getEnvValue().trim() === "";
+  if (stackEnvDeletePending) {
+    stackEnvDeleteBtn.textContent = "Undo deletion";
+    stackEnvDeleteBtn.classList.add("is-active");
+    stackEnvDeleteBtn.classList.remove("is-confirming");
+    return;
   }
-  return processed.join("\n");
+  stackEnvDeleteBtn.textContent = stackEnvDeleteConfirming ? "Confirm delete" : "Delete .env";
+  stackEnvDeleteBtn.classList.toggle("is-confirming", stackEnvDeleteConfirming);
+  stackEnvDeleteBtn.classList.remove("is-active");
 }
 
-function updateStackEnvState() {
-  if (!stackEnvToggle || !stackEnvInput) return;
-  const enabled = Boolean(stackEnvToggle.checked);
-  stackEnvInput.disabled = !enabled;
-  if (envEditor && typeof envEditor.setReadOnly === "function") {
-    envEditor.setReadOnly(!enabled);
-  }
-  if (stackEnvToggleBtn) {
-    stackEnvToggleBtn.dataset.enabled = enabled ? "true" : "false";
-    stackEnvToggleBtn.classList.toggle("is-active", enabled);
-    const icon = stackEnvToggleBtn.querySelector(".icon-action");
-    if (icon) {
-      icon.className = `icon-action ${enabled ? "icon-key-off" : "icon-key"}`;
-    }
-    const label = enabled ? "Disable .env secrets" : "Use .env secrets";
-    stackEnvToggleBtn.setAttribute("aria-label", label);
-    stackEnvToggleBtn.setAttribute("data-tooltip", label);
-    stackEnvToggleBtn.setAttribute("aria-pressed", enabled ? "true" : "false");
-  }
-  const current = getComposeValue();
-  const next = enabled
-    ? ensureEnvFileForServices(current)
-    : removeEnvFileFromServices(current);
-  setComposeValue(next);
-  if (!enabled) {
-    setEnvValue("");
-  }
-  if (composeEditor && typeof composeEditor.forceLint === "function") {
-    composeEditor.forceLint();
-  }
-  if (envEditor && typeof envEditor.forceLint === "function") {
-    envEditor.forceLint();
-  }
+function toggleEditorWrap(editor, button) {
+  if (!editor || typeof editor.setLineWrapping !== "function" || !button) return;
+  const next = button.getAttribute("aria-pressed") !== "true";
+  editor.setLineWrapping(next);
+  button.setAttribute("aria-pressed", next ? "true" : "false");
+  button.classList.toggle("is-active", next);
+  button.textContent = next ? "No wrap" : "Wrap lines";
 }
 
 async function openStackModal(name = "") {
@@ -1379,25 +1250,34 @@ async function openStackModal(name = "") {
   }
   setComposeValue("");
   setEnvValue("");
+  stackEnvExists = false;
+  stackEnvDeletePending = false;
+  stackEnvDeleteConfirming = false;
+  stackModalLoadFailed = false;
+  if (!stackModalActionInProgress) setStackModalOperation("", "");
+  updateStackEnvDeleteButton();
   clearStackModalError();
-  if (stackEnvToggle) {
-    stackEnvToggle.checked = false;
-  }
-  updateStackEnvState();
+  setStackEditorView(window.matchMedia("(max-width: 960px)").matches ? "compose" : stackEditorView);
   stackModal.classList.remove("hidden");
   stackModal.setAttribute("aria-hidden", "false");
   if (editingStackName) {
+    setStackModalLoading(true);
     try {
       const payload = await fetchJSON(`/api/stacks/get?scope=${encodeURIComponent(scope)}&name=${encodeURIComponent(editingStackName)}`);
       if (payload) {
         setComposeValue(payload.compose_yaml || "");
         setEnvValue(payload.env || "");
-        if (stackEnvToggle) stackEnvToggle.checked = Boolean(payload.has_env);
-        updateStackEnvState();
+        stackEnvExists = Boolean(payload.has_env);
+        updateStackEnvDeleteButton();
+        if (composeEditor && typeof composeEditor.forceLint === "function") composeEditor.forceLint();
         clearStackModalError();
       }
     } catch (err) {
-      showToast(err.message || "Unable to load stack.");
+      stackModalLoadFailed = true;
+      showStackModalError(err.message || "Unable to load stack. Close the editor and try again.");
+      return;
+    } finally {
+      setStackModalLoading(false);
     }
   } else if (stackNameInput) {
     stackNameInput.focus();
@@ -1419,6 +1299,7 @@ function closeStackModal() {
 }
 
 async function saveStackFromModal({ closeOnSuccess, notifyOnSuccess = true } = {}) {
+  if (stackModalLoading || stackModalLoadFailed) return false;
   const scope = containersSelectedScope;
   if (!scope) {
     showToast("Select server first.");
@@ -1445,7 +1326,7 @@ async function saveStackFromModal({ closeOnSuccess, notifyOnSuccess = true } = {
     showStackModalError("docker-compose.yml is required.");
     return false;
   }
-  const useEnv = Boolean(stackEnvToggle && stackEnvToggle.checked);
+  const useEnv = shouldSaveStackEnv();
   const env = useEnv ? getEnvValue() : "";
   try {
     const validation = await fetchJSON("/api/stacks/validate", {
@@ -1463,6 +1344,10 @@ async function saveStackFromModal({ closeOnSuccess, notifyOnSuccess = true } = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ scope, name, compose_yaml: composeYml, env, use_env: useEnv }),
     });
+    stackEnvExists = useEnv;
+    stackEnvDeletePending = false;
+    stackEnvDeleteConfirming = false;
+    updateStackEnvDeleteButton();
     if (closeOnSuccess !== false) {
       closeStackModal();
     }
@@ -1478,6 +1363,7 @@ async function saveStackFromModal({ closeOnSuccess, notifyOnSuccess = true } = {
 }
 
 async function runStackActionFromModal(action) {
+  if (stackModalActionInProgress) return;
   const scope = containersSelectedScope;
   if (!scope) {
     showToast("Select server first.");
@@ -1488,9 +1374,29 @@ async function runStackActionFromModal(action) {
     showToast("Stack name must match A-Z, a-z, 0-9, _ or -.");
     return;
   }
+  const progressLabels = {
+    up: "Deploying stack…",
+    down: "Stopping and removing stack services…",
+    redeploy: "Pulling images and redeploying stack…",
+  };
+  const successLabels = {
+    up: "Stack deployed successfully.",
+    down: "Stack services stopped and removed.",
+    redeploy: "Stack redeployed successfully.",
+  };
+  setStackModalOperation(action, "Saving stack configuration…", "progress");
   const ok = await saveStackFromModal({ closeOnSuccess: false, notifyOnSuccess: false });
-  if (!ok) return;
-  await runStackAction(name, action);
+  if (!ok) {
+    setStackModalOperation("", "Stack action was not started because saving or validation failed.", "error");
+    return;
+  }
+  setStackModalOperation(action, progressLabels[action] || "Running stack action…", "progress");
+  const completed = await runStackAction(name, action);
+  if (completed) {
+    setStackModalOperation("", successLabels[action] || "Stack action completed.", "success");
+  } else {
+    setStackModalOperation("", "Stack action failed. Check the error notification for details.", "error");
+  }
 }
 
 async function copyToClipboard(value, label, options = {}) {
@@ -2341,6 +2247,172 @@ function renderStatus(results) {
   applySidebarFilter();
 }
 
+function closeServerHealthModal() {
+  if (serverHealthAbort) {
+    serverHealthAbort.abort();
+    serverHealthAbort = null;
+  }
+  if (!serverHealthModal) return;
+  serverHealthModal.classList.add("hidden");
+  serverHealthModal.setAttribute("aria-hidden", "true");
+}
+
+function buildServerHealthMetric(label, value) {
+  const metric = document.createElement("div");
+  metric.className = "server-health-metric";
+  const labelEl = document.createElement("span");
+  labelEl.className = "server-health-metric-label";
+  labelEl.textContent = label;
+  const valueEl = document.createElement("strong");
+  valueEl.textContent = value;
+  metric.append(labelEl, valueEl);
+  return metric;
+}
+
+function renderServerHealth(payload) {
+  if (!serverHealthBody) return;
+  const health = payload && payload.health ? payload.health : {};
+  serverHealthBody.innerHTML = "";
+  const storageKeys = ["images", "containers", "volumes", "build_cache"];
+  const totalStorage = storageKeys.reduce((sum, key) => sum + Number(health[key] && health[key].size_bytes || 0), 0);
+  const reclaimable = storageKeys.reduce((sum, key) => sum + Number(health[key] && health[key].reclaimable_bytes || 0), 0);
+  const warnings = Array.isArray(health.warnings) ? health.warnings : [];
+  const unhealthy = Number(health.containers_unhealthy || 0);
+  const shouldWarnStorage = reclaimable >= 1024 * 1024 * 1024 && reclaimable >= totalStorage * 0.25;
+  const hasWarning = unhealthy > 0 || warnings.length > 0 || shouldWarnStorage;
+
+  const summary = document.createElement("div");
+  summary.className = `server-health-summary ${hasWarning ? "is-warning" : "is-ok"}`;
+  const summaryTitle = document.createElement("strong");
+  summaryTitle.textContent = unhealthy > 0
+    ? `${unhealthy} unhealthy container${unhealthy === 1 ? "" : "s"}`
+    : warnings.length > 0
+        ? "Health check completed with warnings"
+        : shouldWarnStorage
+            ? "Docker storage cleanup available"
+            : "No obvious issues";
+  const checked = document.createElement("span");
+  const checkedDate = new Date(payload && payload.checked_at ? payload.checked_at : Date.now());
+  checked.textContent = `Checked ${checkedDate.toLocaleString()}`;
+  summary.append(summaryTitle, checked);
+  serverHealthBody.appendChild(summary);
+
+  const overview = document.createElement("section");
+  overview.className = "server-health-section";
+  const overviewTitle = document.createElement("h4");
+  overviewTitle.textContent = "Docker Engine";
+  const overviewGrid = document.createElement("div");
+  overviewGrid.className = "server-health-metrics";
+  overviewGrid.append(
+    buildServerHealthMetric("Engine", health.engine_version || "unknown"),
+    buildServerHealthMetric("API", health.api_version || "unknown"),
+    buildServerHealthMetric("Host", [health.operating_system, health.architecture].filter(Boolean).join(" · ") || "unknown"),
+    buildServerHealthMetric("Capacity", `${Number(health.cpus || 0)} CPU · ${formatBytes(health.memory_bytes)}`),
+    buildServerHealthMetric("Kernel", health.kernel_version || "unknown"),
+    buildServerHealthMetric("Storage driver", health.storage_driver || "unknown"),
+    buildServerHealthMetric("Logging driver", health.logging_driver || "unknown"),
+    buildServerHealthMetric("Docker root", health.docker_root_dir || "unknown")
+  );
+  overview.append(overviewTitle, overviewGrid);
+
+  const containers = document.createElement("section");
+  containers.className = "server-health-section";
+  const containersTitle = document.createElement("h4");
+  containersTitle.textContent = "Containers";
+  const containersGrid = document.createElement("div");
+  containersGrid.className = "server-health-counts";
+  containersGrid.append(
+    buildServerHealthMetric("Running", String(Number(health.containers_running || 0))),
+    buildServerHealthMetric("Stopped", String(Number(health.containers_stopped || 0))),
+    buildServerHealthMetric("Paused", String(Number(health.containers_paused || 0))),
+    buildServerHealthMetric("Unhealthy", String(unhealthy))
+  );
+  containers.append(containersTitle, containersGrid);
+
+  const storage = document.createElement("section");
+  storage.className = "server-health-section";
+  const storageTitle = document.createElement("div");
+  storageTitle.className = "server-health-storage-title";
+  const storageHeading = document.createElement("h4");
+  storageHeading.textContent = "Docker storage";
+  const storageTotal = document.createElement("strong");
+  storageTotal.textContent = `${formatBytes(reclaimable)} reclaimable`;
+  storageTitle.append(storageHeading, storageTotal);
+  const storageRows = document.createElement("div");
+  storageRows.className = "server-health-storage";
+  [
+    ["Images", health.images],
+    ["Containers", health.containers],
+    ["Volumes", health.volumes],
+    ["Build cache", health.build_cache],
+  ].forEach(([label, value]) => {
+    const item = value || {};
+    const row = document.createElement("div");
+    row.className = "server-health-storage-row";
+    const name = document.createElement("span");
+    name.textContent = label;
+    const count = document.createElement("span");
+    count.textContent = `${Number(item.count || 0)} total · ${Number(item.active || 0)} active`;
+    const size = document.createElement("strong");
+    size.textContent = formatBytes(item.size_bytes);
+    const reclaim = document.createElement("span");
+    reclaim.className = "server-health-reclaimable";
+    reclaim.textContent = `${formatBytes(item.reclaimable_bytes)} reclaimable`;
+    row.append(name, count, size, reclaim);
+    storageRows.appendChild(row);
+  });
+  storage.append(storageTitle, storageRows);
+  if (shouldWarnStorage) {
+    const notice = document.createElement("div");
+    notice.className = "server-health-notice";
+    notice.textContent = `${formatBytes(reclaimable)} of Docker storage can potentially be reclaimed.`;
+    storage.appendChild(notice);
+  }
+
+  serverHealthBody.append(overview, containers, storage);
+  if (warnings.length > 0) {
+    const warningList = document.createElement("ul");
+    warningList.className = "server-health-warnings";
+    warnings.forEach((warning) => {
+      const item = document.createElement("li");
+      item.textContent = String(warning);
+      warningList.appendChild(item);
+    });
+    serverHealthBody.appendChild(warningList);
+  }
+}
+
+async function openServerHealthModal(item) {
+  if (!serverHealthModal || !serverHealthBody || !item || !item.server) return;
+  if (serverHealthAbort) serverHealthAbort.abort();
+  const controller = new AbortController();
+  serverHealthAbort = controller;
+  const scope = `${item.type}:${item.server.name}`;
+  if (serverHealthTitle) serverHealthTitle.textContent = `Health check: ${item.server.name}`;
+  serverHealthBody.innerHTML = "";
+  const loading = document.createElement("div");
+  loading.className = "server-health-loading";
+  loading.textContent = "Collecting Docker Engine and storage information…";
+  serverHealthBody.appendChild(loading);
+  serverHealthModal.classList.remove("hidden");
+  serverHealthModal.setAttribute("aria-hidden", "false");
+  try {
+    const payload = await fetchJSON(`/api/servers/health?scope=${encodeURIComponent(scope)}`, {
+      signal: controller.signal,
+    });
+    renderServerHealth(payload);
+  } catch (err) {
+    if (err && err.name === "AbortError") return;
+    serverHealthBody.innerHTML = "";
+    const error = document.createElement("div");
+    error.className = "server-health-summary is-error";
+    error.textContent = err.message || "Unable to collect server health information.";
+    serverHealthBody.appendChild(error);
+  } finally {
+    if (serverHealthAbort === controller) serverHealthAbort = null;
+  }
+}
+
 function buildServerActions(item) {
   const actions = document.createElement("div");
   actions.className = "servers-row-actions";
@@ -2354,9 +2426,17 @@ function buildServerActions(item) {
     return icon;
   }
 
+  const healthBtn = document.createElement("button");
+  healthBtn.type = "button";
+  healthBtn.className = "secondary btn-small icon-action-btn has-tooltip servers-action-btn";
+  healthBtn.setAttribute("aria-label", "Health check");
+  healthBtn.setAttribute("data-tooltip", "Health check");
+  healthBtn.appendChild(makeActionIcon("icon-activity"));
+  healthBtn.addEventListener("click", () => openServerHealthModal(item));
+
   const editBtn = document.createElement("button");
   editBtn.type = "button";
-  editBtn.className = "secondary icon-action-btn has-tooltip";
+  editBtn.className = "secondary btn-small icon-action-btn has-tooltip servers-action-btn";
   editBtn.setAttribute("aria-label", "Edit server");
   editBtn.setAttribute("data-tooltip", "Edit server");
   editBtn.appendChild(makeActionIcon("icon-edit"));
@@ -2371,8 +2451,8 @@ function buildServerActions(item) {
   const maintenanceBtn = document.createElement("button");
   maintenanceBtn.type = "button";
   maintenanceBtn.className = isMaintenance
-    ? "btn-warning icon-action-btn has-tooltip"
-    : "secondary icon-action-btn has-tooltip";
+    ? "btn-warning btn-small icon-action-btn has-tooltip servers-action-btn"
+    : "secondary btn-small icon-action-btn has-tooltip servers-action-btn";
   maintenanceBtn.setAttribute("aria-label", isMaintenance ? "End Maintenance" : "Maintenance");
   maintenanceBtn.setAttribute("data-tooltip", isMaintenance ? "End Maintenance" : "Maintenance");
   maintenanceBtn.appendChild(makeActionIcon(isMaintenance ? "icon-barrier-block-off" : "icon-barrier-block"));
@@ -2382,14 +2462,14 @@ function buildServerActions(item) {
 
   const removeBtn = document.createElement("button");
   removeBtn.type = "button";
-  removeBtn.className = "secondary icon-action-btn has-tooltip servers-remove-btn";
+  removeBtn.className = "secondary btn-small icon-action-btn has-tooltip servers-action-btn servers-remove-btn";
   removeBtn.setAttribute("aria-label", "Remove server");
   removeBtn.setAttribute("data-tooltip", "Remove server");
   removeBtn.appendChild(makeActionIcon("icon-trash"));
 
   const confirmBtn = document.createElement("button");
   confirmBtn.type = "button";
-  confirmBtn.className = "btn-danger icon-action-btn has-tooltip hidden servers-confirm-btn";
+  confirmBtn.className = "btn-danger btn-small icon-action-btn has-tooltip hidden servers-action-btn servers-confirm-btn";
   confirmBtn.setAttribute("aria-label", "Confirm remove");
   confirmBtn.setAttribute("data-tooltip", "Confirm remove");
   confirmBtn.appendChild(makeActionIcon("icon-trash-x"));
@@ -2423,7 +2503,7 @@ function buildServerActions(item) {
     }
   });
 
-  actions.append(editBtn, maintenanceBtn, removeBtn, confirmBtn);
+  actions.append(healthBtn, editBtn, maintenanceBtn, removeBtn, confirmBtn);
   if (serversRemoveConfirming.has(confirmKey)) {
     setConfirming(true);
   }
@@ -2736,6 +2816,27 @@ function normalizeQuery(value) {
   return String(value || "").trim().toLowerCase();
 }
 
+function updateGlobalSearchContext() {
+  if (!sidebarSearch) return;
+  let placeholder = "Servers / containers";
+  if (currentView === "servers") {
+    placeholder = "Search servers";
+  } else if (currentView === "containers") {
+    const labels = {
+      stacks: "Search stacks",
+      images: "Search images",
+      networks: "Search networks",
+      volumes: "Search volumes",
+      logs: "Search containers",
+      resources: "Search containers",
+      shell: "Search containers",
+    };
+    placeholder = labels[containersViewMode] || "Search containers";
+  }
+  sidebarSearch.placeholder = placeholder;
+  sidebarSearch.setAttribute("aria-label", placeholder);
+}
+
 function updateSidebarSearchPulse(valueOverride) {
   if (!sidebarSearch || !sidebarSearchWrap) return;
   const query = normalizeQuery(valueOverride ?? sidebarSearch.value);
@@ -2860,7 +2961,11 @@ function applyExperimentalFeatures(cfg) {
       const enabled = Boolean(flags[view]);
       btn.classList.toggle("hidden", !enabled);
     });
-    const showContainerShortcuts = flags.containers && flags.containers_sidebar && !mobileNavQuery.matches;
+    const showContainerShortcuts = flags.containers && (
+      mobileNavQuery.matches
+        ? currentView === "containers"
+        : flags.containers_sidebar
+    );
     sidebar.querySelectorAll(".containers-sidebar-link").forEach((btn) => {
       const requiredFlag = btn.getAttribute("data-feature");
       const enabled = showContainerShortcuts && Boolean(flags[requiredFlag]);
@@ -2918,6 +3023,7 @@ function applyExperimentalFeatures(cfg) {
   }
   updateContainersExperimentalToggles();
   updateSidebarNavActive(currentView);
+  scheduleMobileNavAffordanceUpdate();
 }
 
 function isExperimentalEnabled(view) {
@@ -3016,8 +3122,8 @@ function updateContainersExperimentalToggles() {
     }
   });
 
-  // Mobile UX: container feature shortcuts in the sidebar are redundant when the
-  // sidebar becomes the compact top nav, so hide the toggle in settings.
+  // Mobile shortcuts are contextual and always use the compact top navigation,
+  // so the desktop-only sidebar preference is not applicable on small screens.
   if (expContainersSidebarInput) {
     const row = expContainersSidebarInput.closest(".toggle-row");
     if (row) row.classList.toggle("hidden", mobileNavQuery.matches);
@@ -3960,6 +4066,7 @@ function setContainersViewMode(mode) {
                 ? "networks"
                 : "table";
   containersViewMode = next;
+  updateGlobalSearchContext();
   if (topbarContainersEl) {
     const title = topbarContainersEl.querySelector("h2");
     if (title) {
@@ -5737,20 +5844,46 @@ async function refreshContainersTableResources(scope, list, options = {}) {
   const requestId = (containersTableResourcesRequestId += 1);
   try {
     const containerIds = list.map((c) => c && c.id).filter(Boolean);
-    const payload = await fetchJSON("/api/containers/resources", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ scope, container_ids: containerIds }),
-    });
+    const batches = [];
+    for (let index = 0; index < containerIds.length; index += 12) {
+      batches.push(containerIds.slice(index, index + 12));
+    }
+    const payloads = [];
+    let nextBatch = 0;
+    const worker = async () => {
+      while (nextBatch < batches.length) {
+        const batch = batches[nextBatch];
+        nextBatch += 1;
+        try {
+          const payload = await fetchJSON("/api/containers/resources", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ scope, container_ids: batch }),
+          });
+          payloads.push(payload);
+        } catch (err) {
+          payloads.push({ error: err.message || "Unable to load container resources.", resources: [] });
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(2, batches.length) }, () => worker()));
     if (requestId !== containersTableResourcesRequestId) return;
-    if (!payload || payload.error) {
+    const resources = payloads.flatMap((payload) => Array.isArray(payload && payload.resources) ? payload.resources : []);
+    const errorPayload = payloads.find((payload) => payload && payload.error);
+    if (resources.length === 0 && errorPayload) {
       if (!options.silent) {
-        showToast(payload && payload.error ? payload.error : "Unable to load container resources.");
+        showToast(errorPayload.error || "Unable to load container resources.");
       }
       return;
     }
-    const resources = Array.isArray(payload.resources) ? payload.resources : [];
-    containersTableResourcesData = new Map(resources.map((item) => [item.id, item]));
+    const activeIds = new Set(containerIds);
+    const merged = new Map(
+      Array.from(containersTableResourcesData.entries()).filter(([id]) => activeIds.has(id))
+    );
+    resources.forEach((item) => {
+      if (item && item.id) merged.set(item.id, item);
+    });
+    containersTableResourcesData = merged;
     if (currentView === "containers" && containersViewMode === "table" && containersSelectedScope === scope) {
       const currentList = Array.from(containersCache.values()).map((entry) => entry.data);
       renderContainers(currentList, scope);
@@ -7750,11 +7883,11 @@ async function runImageRemove() {
 }
 
 async function runStackAction(name, action) {
-  if (!name || !action) return;
+  if (!name || !action) return false;
   const scope = containersSelectedScope;
   if (!scope) {
     showToast("Select server first.");
-    return;
+    return false;
   }
   const optimisticByAction = {
     up: "deploying",
@@ -7796,9 +7929,11 @@ async function runStackAction(name, action) {
     const toastType = ["down", "stop", "kill", "rm"].includes(normalized) ? "warning" : "success";
     const label = labelByAction[normalized] || normalized;
     notify({ type: toastType, message: `Stack ${name}: ${label}` });
+    return true;
   } catch (err) {
     stackStatusOverrides.delete(name);
     notify({ type: "error", message: err.message || "Stack action failed." });
+    return false;
   }
 }
 
@@ -8695,6 +8830,7 @@ function updateTopbarHeight() {
 
 const mobileNavQuery = window.matchMedia("(max-width: 720px)");
 let mobileNavHeight = 0;
+let mobileNavAffordanceFrame = 0;
 
 function updateMobileViewportHeight() {
   if (!mobileNavQuery.matches) {
@@ -8710,18 +8846,7 @@ const topbarCenterOriginalNextSibling = topbarCenterEl ? topbarCenterEl.nextElem
 
 function syncContainersTopbarSearchPlacement() {
   if (!topbarCenterEl || !containersTopbarSearchSlot || !topbarCenterOriginalParent) return;
-  const shouldInline = mobileNavQuery.matches && currentView === "containers";
-
-  containersTopbarSearchSlot.setAttribute("aria-hidden", shouldInline ? "false" : "true");
-
-  if (shouldInline) {
-    if (!containersTopbarSearchSlot.contains(topbarCenterEl)) {
-      containersTopbarSearchSlot.appendChild(topbarCenterEl);
-    }
-    updateTopbarHeight();
-    updateMobileNavHeight();
-    return;
-  }
+  containersTopbarSearchSlot.setAttribute("aria-hidden", "true");
 
   if (topbarCenterEl.parentElement !== topbarCenterOriginalParent) {
     if (
@@ -8732,9 +8857,44 @@ function syncContainersTopbarSearchPlacement() {
     } else {
       topbarCenterOriginalParent.appendChild(topbarCenterEl);
     }
-    updateTopbarHeight();
-    updateMobileNavHeight();
   }
+  updateTopbarHeight();
+  updateMobileNavHeight();
+}
+
+function updateMobileNavScrollAffordance() {
+  mobileNavAffordanceFrame = 0;
+  if (!sidebar || !sidebarNav || !mobileNavQuery.matches) {
+    if (sidebar) sidebar.classList.remove("can-scroll-left", "can-scroll-right");
+    return;
+  }
+  const maxScroll = Math.max(0, sidebarNav.scrollWidth - sidebarNav.clientWidth);
+  sidebar.classList.toggle("can-scroll-left", sidebarNav.scrollLeft > 4);
+  sidebar.classList.toggle("can-scroll-right", sidebarNav.scrollLeft < maxScroll - 4);
+}
+
+function scheduleMobileNavAffordanceUpdate() {
+  if (mobileNavAffordanceFrame) cancelAnimationFrame(mobileNavAffordanceFrame);
+  mobileNavAffordanceFrame = requestAnimationFrame(updateMobileNavScrollAffordance);
+}
+
+function revealActiveMobileNavItem() {
+  if (!sidebarNav || !mobileNavQuery.matches) return;
+  const active = sidebarNav.querySelector(".sidebar-link.active:not(.hidden)");
+  if (!active) {
+    scheduleMobileNavAffordanceUpdate();
+    return;
+  }
+  const itemLeft = active.offsetLeft;
+  const itemRight = itemLeft + active.offsetWidth;
+  const visibleLeft = sidebarNav.scrollLeft;
+  const visibleRight = visibleLeft + sidebarNav.clientWidth;
+  if (itemLeft < visibleLeft + 8) {
+    sidebarNav.scrollTo({ left: Math.max(0, itemLeft - 8), behavior: "smooth" });
+  } else if (itemRight > visibleRight - 8) {
+    sidebarNav.scrollTo({ left: itemRight - sidebarNav.clientWidth + 8, behavior: "smooth" });
+  }
+  scheduleMobileNavAffordanceUpdate();
 }
 
 function updateMobileNavHeight() {
@@ -8754,6 +8914,7 @@ function updateMobileNavHeight() {
   mobileNavHeight = Math.ceil(topbarHeight + sidebarHeight);
   document.documentElement.style.setProperty("--mobile-nav-h", `${mobileNavHeight}px`);
   updateTopbarHeight();
+  scheduleMobileNavAffordanceUpdate();
 }
 
 mobileNavQuery.addEventListener("change", () => {
@@ -8767,6 +8928,7 @@ mobileNavQuery.addEventListener("change", () => {
 });
 
 window.addEventListener("resize", updateMobileViewportHeight);
+window.addEventListener("resize", scheduleMobileNavAffordanceUpdate);
 if (window.visualViewport) {
   window.visualViewport.addEventListener("resize", updateMobileViewportHeight);
 }
@@ -8806,7 +8968,13 @@ function updateSidebarNavActive(nextView) {
       active = true;
     }
     btn.classList.toggle("active", active);
+    if (active) {
+      btn.setAttribute("aria-current", "page");
+    } else {
+      btn.removeAttribute("aria-current");
+    }
   });
+  requestAnimationFrame(revealActiveMobileNavItem);
 }
 
 function isSidebarCollapsed() {
@@ -8851,6 +9019,8 @@ function setView(nextView) {
     nextView = "status";
   }
   currentView = nextView;
+  document.body.dataset.view = nextView;
+  updateGlobalSearchContext();
   if (nextView !== "containers") {
     setContainersWorkspaceFocus(false);
   }
@@ -8874,6 +9044,7 @@ function setView(nextView) {
   if (topbarLogsEl) {
     topbarLogsEl.classList.toggle("hidden", nextView !== "logs");
   }
+  if (currentConfig) applyExperimentalFeatures(currentConfig);
   if (sidebarSearch && prevView !== nextView) {
     sidebarSearch.value = "";
     applySidebarFilter("");
@@ -9355,15 +9526,24 @@ if (stackModalClose) {
   });
 }
 
-if (stackEnvToggle) {
-  stackEnvToggle.addEventListener("change", () => {
-    updateStackEnvState();
-  });
-}
-if (stackEnvToggleBtn && stackEnvToggle) {
-  stackEnvToggleBtn.addEventListener("click", () => {
-    stackEnvToggle.checked = !stackEnvToggle.checked;
-    updateStackEnvState();
+if (stackViewSplitBtn) stackViewSplitBtn.addEventListener("click", () => setStackEditorView("split"));
+if (stackViewComposeBtn) stackViewComposeBtn.addEventListener("click", () => setStackEditorView("compose"));
+if (stackViewEnvBtn) stackViewEnvBtn.addEventListener("click", () => setStackEditorView("env"));
+if (stackComposeWrapBtn) stackComposeWrapBtn.addEventListener("click", () => toggleEditorWrap(composeEditor, stackComposeWrapBtn));
+if (stackEnvWrapBtn) stackEnvWrapBtn.addEventListener("click", () => toggleEditorWrap(envEditor, stackEnvWrapBtn));
+if (stackEnvDeleteBtn) {
+  stackEnvDeleteBtn.addEventListener("click", () => {
+    if (stackEnvDeletePending) {
+      stackEnvDeletePending = false;
+      stackEnvDeleteConfirming = false;
+    } else if (stackEnvDeleteConfirming) {
+      stackEnvDeletePending = true;
+      stackEnvDeleteConfirming = false;
+    } else {
+      stackEnvDeleteConfirming = true;
+    }
+    updateStackEnvDeleteButton();
+    if (composeEditor && typeof composeEditor.forceLint === "function") composeEditor.forceLint();
   });
 }
 if (stackComposeInput) {
@@ -9374,6 +9554,9 @@ if (stackComposeInput) {
 if (stackEnvInput) {
   stackEnvInput.addEventListener("input", () => {
     clearStackModalError();
+    if (stackEnvDeletePending) stackEnvDeletePending = false;
+    stackEnvDeleteConfirming = false;
+    updateStackEnvDeleteButton();
   });
 }
 
@@ -9424,6 +9607,10 @@ if (serverConnectionTypeSelect) {
 
 async function init() {
   sidebar.setAttribute("aria-hidden", "false");
+  if (sidebarNav) {
+    sidebarNav.addEventListener("scroll", scheduleMobileNavAffordanceUpdate, { passive: true });
+    scheduleMobileNavAffordanceUpdate();
+  }
   initThemeToggle();
   if (pinGuardInput) {
     pinGuardInput.addEventListener("input", () => {
@@ -10124,6 +10311,16 @@ async function init() {
       }
     });
   }
+  if (serverHealthCloseBtn) {
+    serverHealthCloseBtn.addEventListener("click", closeServerHealthModal);
+  }
+  if (serverHealthModal) {
+    serverHealthModal.addEventListener("click", (event) => {
+      if (event.target && event.target.dataset && event.target.dataset.close) {
+        closeServerHealthModal();
+      }
+    });
+  }
   if (networkDetailsCloseBtn) {
     networkDetailsCloseBtn.addEventListener("click", closeNetworkDetailsModal);
   }
@@ -10216,6 +10413,9 @@ async function init() {
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape" && detailsModal && !detailsModal.classList.contains("hidden")) {
       closeDetailsModal();
+    }
+    if (event.key === "Escape" && serverHealthModal && !serverHealthModal.classList.contains("hidden")) {
+      closeServerHealthModal();
     }
     if (event.key === "Escape" && networkDetailsModal && !networkDetailsModal.classList.contains("hidden")) {
       closeNetworkDetailsModal();
@@ -10318,6 +10518,8 @@ async function init() {
   const storedServersView = localStorage.getItem(serversViewStorageKey);
   if (storedServersView === "cards" || storedServersView === "table") {
     serversViewMode = storedServersView;
+  } else if (mobileNavQuery.matches) {
+    serversViewMode = "cards";
   }
   const storedResourcesView = localStorage.getItem(containersResourcesViewStorageKey);
   if (storedResourcesView === "cards" || storedResourcesView === "table") {
