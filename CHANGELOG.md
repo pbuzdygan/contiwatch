@@ -1,5 +1,23 @@
 # Changelog
 
+## v1.3.3
+
+## Bug fixes
+- Updates: removed the two-minute whole-batch deadline that cancelled servers waiting behind slow remote image pulls.
+- Updates: remote image pulls now use a long per-operation timeout while manual stop remains available for cancelling the batch.
+- Updates: fixed remote Contiwatch containers being mistaken for the running agent solely because of their image name.
+- Updates: agent self-updates are now processed last and confirmed from the refreshed agent snapshot after restart.
+- Updates: protected the agent self-update endpoint from targeting a container other than the running agent.
+- Updates: fixed repeated self-updates after Docker assigned a new container ID but the recreated agent retained its previous generated hostname.
+- Updates: added a compatibility route for centrally upgrading pre-`0.5.34` agents that do not expose the `self` marker, including containers whose untagged image is reported only by image ID.
+- Updates UI: fixed premature “finished” feedback while remote scans were still running.
+- Updates UI: `Latest` no longer includes updated or failed containers, and a separate `Failed` counter makes operation errors visible.
+- Discord: scan notifications now distinguish detected updates, successfully updated containers, and containers that remain outdated.
+
+## Improvements
+- Updates UI: the final batch notification reports updated, remaining, failed, and cancelled totals.
+- Updates: live scan results now carry their terminal state before being broadcast to the UI.
+
 ## v1.3.2
 
 ## Bug fixes

@@ -243,6 +243,9 @@ The check intentionally does not report live host CPU/RAM percentages or host fi
 Notes:
 - `POST /api/scan` is a one-off trigger; if a scan is already running it returns `409`.
 - `POST /api/update/{container_id}` returns `old_image_id`, `new_image_id`, and `applied_image_id` to help debug tag/image mismatches.
+- Scan container entries include `self=true` only for the container running the responding Contiwatch process; controllers use it to schedule that agent update last and verify its post-restart status.
+- Self detection uses Docker runtime metadata in addition to the container hostname, so a stale generated hostname cannot make an agent update itself through the regular in-process recreation path. Legacy agents without `self=true` are recognized conservatively by their Contiwatch image and agent-style container name.
+- A full manual or scheduled batch has no shared wall-clock deadline. Individual remote scan, update, and restart-verification operations remain bounded, and a manual batch can be stopped with `POST /api/scan/stop`.
 - Periodic scans are disabled by default; enable via `scheduler_enabled` in the config (UI).
 - Agent mode exposes a limited API surface (token required).
 - Controller mode requires `APP_PIN` and enforces an active PIN session for protected API endpoints. The public exceptions are `/api/health`, `/api/version`, `/api/meta`, `/api/release`, `/api/pin/status`, `/api/pin/verify`, and `/api/pin/logout`; `/api/pin/ws-ticket` is protected.

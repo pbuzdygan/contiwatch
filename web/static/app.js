@@ -289,6 +289,7 @@ let cachedServerInfo = {};
 let scanPollingTimer = null;
 let scanActive = false;
 let scanRequestActive = false;
+let scanCompletionPending = false;
 let lastStatusResults = [];
 let scanStateOverrides = {};
 let currentScanStartedAtMs = null;
@@ -1541,7 +1542,8 @@ function buildContainerCard(container, result, canUpdateStopped, variant) {
   statusLine.innerHTML = `${statusIcon}<span>${statusLabel}</span>`;
   card.appendChild(statusLine);
 
-  const isSelfContainer = result.local && container.name === "contiwatch";
+  const isSelfContainer = Boolean(container.self);
+  const isLocalSelfContainer = result.local && isSelfContainer;
   const serverKey = serverScopeKey(result);
   const pendingKey = pendingSelfUpdateKey(serverKey, container.name);
   const isPendingSelfUpdate = Boolean(pendingSelfUpdates[pendingKey] && pendingSelfUpdates[pendingKey] > Date.now());
@@ -1553,7 +1555,7 @@ function buildContainerCard(container, result, canUpdateStopped, variant) {
     !currentScanController &&
     !updateInProgress &&
     (container.running || canUpdateStopped) &&
-    !isSelfContainer &&
+    !isLocalSelfContainer &&
     !isPendingSelfUpdate;
   const blockedByStoppedSetting =
     container.update_available &&
@@ -1563,7 +1565,7 @@ function buildContainerCard(container, result, canUpdateStopped, variant) {
     !updateInProgress &&
     !container.running &&
     !updateStoppedEnabled &&
-    !isSelfContainer &&
+    !isLocalSelfContainer &&
     !isPendingSelfUpdate;
 
   const actions = document.createElement("div");
@@ -1580,7 +1582,7 @@ function buildContainerCard(container, result, canUpdateStopped, variant) {
   infoBtn.className = "btn-small secondary";
   infoBtn.textContent = "Info";
 
-  if (isSelfContainer) {
+  if (isLocalSelfContainer) {
     updateBtn.textContent = "Self-update disabled";
     updateBtn.disabled = true;
   }
@@ -1638,7 +1640,9 @@ function buildContainerCard(container, result, canUpdateStopped, variant) {
         : `remote:${result.server_name || "remote"}`;
       const serverParam = encodeURIComponent(scope);
       let updateURL = `/api/update/${encodeURIComponent(container.id)}?server=${serverParam}`;
-      if (!result.local && isContiwatchImage(container.image)) {
+      const legacyAgentName = String(container.name || "");
+      const isLegacyRemoteAgent = !result.local && /agent/i.test(legacyAgentName) && (/contiwatch/i.test(legacyAgentName) || isContiwatchImage(container.image));
+      if (!result.local && (isSelfContainer || isLegacyRemoteAgent)) {
         updateURL += "&self_update=1";
       }
       updateResult = await fetchJSON(updateURL, { method: "POST" });
@@ -1938,9 +1942,7 @@ function renderStatus(results) {
     const isMaintenance = Boolean(serverConfig && serverConfig.maintenance);
     const backendState = String(result.scan_state || "").toLowerCase();
     const overrideState = scanStateOverrides[key];
-    let scanState = backendState && backendState !== "idle"
-      ? backendState
-      : (overrideState || backendState);
+    let scanState = overrideState || backendState;
     const cancelError = result.error && /cancelled|canceled|context canceled/i.test(result.error);
     const isPending = scanState === "pending";
     const isScanningActive = scanState === "scanning";
@@ -2108,7 +2110,13 @@ function renderStatus(results) {
     const skipped = hasCheckedAt && Array.isArray(result.containers)
       ? result.containers.filter((container) => String(container.error || "").startsWith("skipped:")).length
       : 0;
-    const upToDate = totalScanned > 0 ? Math.max(0, totalScanned - updates - skipped) : 0;
+    const failed = hasCheckedAt && Array.isArray(result.containers)
+      ? result.containers.filter((container) => {
+        const error = String(container.error || "");
+        return error && !error.startsWith("skipped:");
+      }).length
+      : 0;
+    const upToDate = totalScanned > 0 ? Math.max(0, totalScanned - updates - updated - skipped - failed) : 0;
 
     const upToDateEl = document.createElement("span");
     upToDateEl.className = `summary-metric${hasCheckedAt && upToDate > 0 ? " metric-success" : ""}`;
@@ -2140,6 +2148,12 @@ function renderStatus(results) {
       '<svg xmlns="http://www.w3.org/2000/svg" class="summary-icon icon icon-tabler icons-tabler-outline icon-tabler-chevrons-right" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M7 7l5 5l-5 5" /><path d="M13 7l5 5l-5 5" /></svg>' +
       `<span>${skipped}</span><span class="summary-label">Skipped</span>`;
 
+    const failedEl = document.createElement("span");
+    failedEl.className = `summary-metric${hasCheckedAt && failed > 0 ? " metric-error" : ""}`;
+    failedEl.innerHTML =
+      '<svg xmlns="http://www.w3.org/2000/svg" class="summary-icon icon icon-tabler icons-tabler-outline icon-tabler-alert-triangle" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M12 9v4"/><path d="M12 17v.01"/><path d="M5.07 19h13.86a2 2 0 0 0 1.74 -3l-6.93 -12a2 2 0 0 0 -3.48 0l-6.93 12a2 2 0 0 0 1.74 3"/></svg>' +
+      `<span>${failed}</span><span class="summary-label">Failed</span>`;
+
     summaryTop.appendChild(upToDateEl);
     summaryTop.appendChild(updatesEl);
     summaryTop.appendChild(scannedEl);
@@ -2149,6 +2163,7 @@ function renderStatus(results) {
     summaryBottom.className = "server-summary-metrics";
     summaryBottom.appendChild(updatedEl);
     summaryBottom.appendChild(skippedEl);
+    summaryBottom.appendChild(failedEl);
     summary.appendChild(summaryBottom);
 
     const meta = document.createElement("div");
@@ -8445,6 +8460,35 @@ function updateScanPolling(results) {
     scanStateOverrides = {};
     currentScanStartedAtMs = null;
   }
+  if (!active && scanCompletionPending && !scanRequestActive && !currentScanController) {
+    scanCompletionPending = false;
+    notifyScanCompletion(results);
+  }
+}
+
+function notifyScanCompletion(results) {
+  const list = Array.isArray(results) ? results : [];
+  const cancelled = list.filter((result) => {
+    const state = String(result.scan_state || "").toLowerCase();
+    return state === "cancelled" || /cancelled|canceled|context canceled/i.test(String(result.error || ""));
+  }).length;
+  const failedServers = list.filter((result) => {
+    const state = String(result.scan_state || "").toLowerCase();
+    return state === "error" || (Boolean(result.error) && state !== "cancelled");
+  }).length;
+  const containers = list.flatMap((result) => Array.isArray(result.containers) ? result.containers : []);
+  const failedContainers = containers.filter((container) => {
+    const error = String(container.error || "");
+    return error && !error.startsWith("skipped:");
+  }).length;
+  const failed = failedServers + failedContainers;
+  const updated = containers.filter((container) => container.updated).length;
+  const remaining = containers.filter((container) => container.update_available).length;
+  const type = failed > 0 ? "error" : (cancelled > 0 || remaining > 0 ? "warning" : "success");
+  notify({
+    type,
+    message: `Check updates finished: ${updated} updated, ${remaining} remaining, ${failed} failed, ${cancelled} cancelled`,
+  });
 }
 
 function applyOptimisticScanState(scope, cancelledScopes = []) {
@@ -9138,6 +9182,7 @@ function goToStatus() {
 
 scanBtn.addEventListener("click", async () => {
   if (currentScanController || scanActive) {
+    scanCompletionPending = false;
     try {
       await fetchJSON("/api/scan/stop", { method: "POST" });
     } catch (err) {
@@ -9163,6 +9208,7 @@ scanBtn.addEventListener("click", async () => {
     return;
   }
   scanRequestActive = true;
+  scanCompletionPending = !wasSelectiveScan;
   setScanningUI(true);
   startScanPolling();
   const scanTargets = wasSelectiveScan ? Array.from(selectedScanServers) : "all";
@@ -9195,9 +9241,10 @@ scanBtn.addEventListener("click", async () => {
         : `Check updates finished (${scannedCount} scanned)`;
       notify({ type: skippedCount > 0 ? "warning" : "success", message: msg });
     } else {
-      notify({ type: "success", message: "Check updates finished" });
+      notify({ type: "info", message: "Check updates started — waiting for all servers." });
     }
   } catch (err) {
+    scanCompletionPending = false;
     if (err.name === "AbortError" || /aborted|canceled|cancelled/i.test(err.message)) {
       notify({ type: "warning", message: "Scan cancelled." });
     } else {

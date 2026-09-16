@@ -319,9 +319,7 @@ func (s *Server) runScheduledScan(runCtx context.Context) {
 	}
 	if len(currentCfg.RemoteServers) > 0 {
 		s.addLog("info", fmt.Sprintf("scheduled remote scans started: servers=%d", len(currentCfg.RemoteServers)))
-		remoteCtx, cancel := context.WithTimeout(runCtx, 2*time.Minute)
-		s.triggerRemoteScans(remoteCtx, currentCfg.RemoteServers)
-		cancel()
+		s.triggerRemoteScans(runCtx, currentCfg.RemoteServers)
 		s.addLog("info", "scheduled remote scans finished")
 	}
 	if err == nil {

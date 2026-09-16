@@ -1208,8 +1208,13 @@ h2 {
   color: var(--status-warning);
 }
 
+.summary-metric.metric-error {
+  color: var(--status-error);
+}
+
 .summary-metric.metric-success .summary-label,
-.summary-metric.metric-warning .summary-label {
+.summary-metric.metric-warning .summary-label,
+.summary-metric.metric-error .summary-label {
   color: inherit;
 }
 
