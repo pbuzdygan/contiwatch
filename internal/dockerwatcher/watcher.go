@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -29,6 +30,10 @@ import (
 const policyLabel = "contiwatch.policy"
 
 var ErrSkipContainer = errors.New("container skipped")
+
+var containerIDPattern = regexp.MustCompile(`(?i)(?:^|[^a-f0-9])([a-f0-9]{64})(?:[^a-f0-9]|$)`)
+var selfContainerCandidatesOnce sync.Once
+var selfContainerCandidates []string
 
 // ContainerStatus describes the last known state for a container.
 type ContainerStatus struct {
@@ -1221,6 +1226,9 @@ func (w *Watcher) recreateContainer(ctx context.Context, inspect container.Inspe
 		return "", errors.New("missing container config")
 	}
 	config.Image = imageRef
+	if isDockerGeneratedHostname(config.Hostname) {
+		config.Hostname = ""
+	}
 
 	hostConfig := inspect.HostConfig
 	if hostConfig == nil {
@@ -1549,11 +1557,68 @@ func (w *Watcher) pruneDanglingImages(ctx context.Context) (int, uint64, error) 
 }
 
 func IsSelfContainer(containerID string) bool {
-	hostname, err := os.Hostname()
-	if err != nil || hostname == "" {
+	containerID = strings.ToLower(strings.TrimSpace(containerID))
+	if containerID == "" {
 		return false
 	}
-	return strings.HasPrefix(containerID, hostname)
+	selfContainerCandidatesOnce.Do(func() {
+		hostname, err := os.Hostname()
+		if err == nil && hostname != "" {
+			selfContainerCandidates = append(selfContainerCandidates, hostname)
+		}
+		mountInfo, _ := os.ReadFile("/proc/self/mountinfo")
+		cgroup, _ := os.ReadFile("/proc/self/cgroup")
+		selfContainerCandidates = append(selfContainerCandidates, containerIDsFromRuntimeMetadata(string(mountInfo), string(cgroup))...)
+	})
+	return matchesContainerID(containerID, selfContainerCandidates)
+}
+
+func matchesContainerID(containerID string, candidates []string) bool {
+	containerID = strings.ToLower(strings.TrimSpace(containerID))
+	for _, candidate := range candidates {
+		candidate = strings.ToLower(strings.TrimSpace(candidate))
+		if len(candidate) >= 12 && strings.HasPrefix(containerID, candidate) {
+			return true
+		}
+	}
+	return false
+}
+
+func containerIDsFromRuntimeMetadata(mountInfo, cgroup string) []string {
+	seen := map[string]struct{}{}
+	result := []string{}
+	appendMatches := func(value string) {
+		for _, match := range containerIDPattern.FindAllStringSubmatch(value, -1) {
+			id := strings.ToLower(match[1])
+			if _, ok := seen[id]; ok {
+				continue
+			}
+			seen[id] = struct{}{}
+			result = append(result, id)
+		}
+	}
+	for _, line := range strings.Split(mountInfo, "\n") {
+		if strings.Contains(line, " /etc/hostname ") || strings.Contains(line, " /etc/hosts ") || strings.Contains(line, " /etc/resolv.conf ") {
+			appendMatches(line)
+		}
+	}
+	for _, line := range strings.Split(cgroup, "\n") {
+		appendMatches(line)
+	}
+	return result
+}
+
+func isDockerGeneratedHostname(hostname string) bool {
+	hostname = strings.TrimSpace(hostname)
+	if len(hostname) != 12 {
+		return false
+	}
+	for _, char := range hostname {
+		if !((char >= '0' && char <= '9') || (char >= 'a' && char <= 'f')) {
+			return false
+		}
+	}
+	return true
 }
 
 func (w *Watcher) TriggerSelfUpdate(ctx context.Context, containerID string) error {

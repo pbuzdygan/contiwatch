@@ -30,26 +30,45 @@ func TestBuildScanSummarySeparatesDetectedUpdatedAndRemaining(t *testing.T) {
 	}
 }
 
+func TestRemoteAgentUpdateTargetSupportsLegacyAgentWithoutMisclassifyingOtherContainers(t *testing.T) {
+	tests := []struct {
+		name      string
+		container dockerwatcher.ContainerStatus
+		expected  bool
+	}{
+		{name: "explicit self marker", container: dockerwatcher.ContainerStatus{Self: true}, expected: true},
+		{name: "legacy agent", container: dockerwatcher.ContainerStatus{Name: "contiwatch-agent-dev", Image: "ghcr.io/pbuzdygan/contiwatch:dev_latest"}, expected: true},
+		{name: "other contiwatch service", container: dockerwatcher.ContainerStatus{Name: "contiwatch-dashboard", Image: "ghcr.io/pbuzdygan/contiwatch:dev_latest"}, expected: false},
+		{name: "unrelated agent", container: dockerwatcher.ContainerStatus{Name: "metrics-agent", Image: "example/metrics:latest"}, expected: false},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := isRemoteAgentUpdateTarget(test.container); got != test.expected {
+				t.Fatalf("expected %t, got %t", test.expected, got)
+			}
+		})
+	}
+}
+
 func TestAutoUpdateRemoteUpdatesAgentLastAndConfirmsRestart(t *testing.T) {
 	requestOrder := []string{}
 	agent := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
+		case r.URL.Path == "/api/self-update":
+			id := r.URL.Query().Get("container")
+			requestOrder = append(requestOrder, "self:"+id)
+			writeJSON(w, http.StatusOK, map[string]string{"status": "scheduled"})
 		case strings.HasPrefix(r.URL.Path, "/api/update/"):
 			id := strings.TrimPrefix(r.URL.Path, "/api/update/")
 			requestOrder = append(requestOrder, id)
-			if id == "agent-id" {
-				writeJSON(w, http.StatusOK, dockerwatcher.UpdateResult{
-					ID: id, Name: "agent", Message: "self update scheduled; recheck in 30s",
-				})
-				return
-			}
 			writeJSON(w, http.StatusOK, dockerwatcher.UpdateResult{ID: id, Name: "app", Updated: true})
 		case r.URL.Path == "/api/status":
 			writeJSON(w, http.StatusOK, dockerwatcher.ScanResult{
 				CheckedAt: time.Now(),
 				Containers: []dockerwatcher.ContainerStatus{
 					{ID: "app-new-id", Name: "app", Updated: true},
-					{ID: "agent-new-id", Name: "agent", Self: true, Updated: true},
+					{ID: "agent-new-id", Name: "contiwatch-agent-dev", Self: true, Updated: true},
 				},
 			})
 		default:
@@ -62,7 +81,7 @@ func TestAutoUpdateRemoteUpdatesAgentLastAndConfirmsRestart(t *testing.T) {
 	result := dockerwatcher.ScanResult{
 		ServerName: "remote",
 		Containers: []dockerwatcher.ContainerStatus{
-			{ID: "agent-id", Name: "agent", Image: "contiwatch:latest", Self: true, Policy: config.PolicyUpdate, UpdateAvailable: true},
+			{ID: "agent-id", Name: "contiwatch-agent-dev", Image: "contiwatch:latest", Policy: config.PolicyUpdate, UpdateAvailable: true},
 			{ID: "app-id", Name: "app", Image: "app:latest", Policy: config.PolicyUpdate, UpdateAvailable: true},
 		},
 	}
@@ -76,7 +95,7 @@ func TestAutoUpdateRemoteUpdatesAgentLastAndConfirmsRestart(t *testing.T) {
 	if updated != 2 {
 		t.Fatalf("expected two confirmed updates, got %d", updated)
 	}
-	if len(requestOrder) != 2 || requestOrder[0] != "app-id" || requestOrder[1] != "agent-id" {
+	if len(requestOrder) != 2 || requestOrder[0] != "app-id" || requestOrder[1] != "self:agent-id" {
 		t.Fatalf("unexpected update order: %v", requestOrder)
 	}
 	if len(result.Containers) != 2 || !result.Containers[0].Updated || !result.Containers[1].Updated {

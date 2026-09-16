@@ -1986,7 +1986,7 @@ func (s *Server) autoUpdateRemote(ctx context.Context, cfg config.Config, remote
 		return 0, nil
 	}
 	sort.SliceStable(targets, func(i, j int) bool {
-		return !targets[i].Self && targets[j].Self
+		return !isRemoteAgentUpdateTarget(targets[i]) && isRemoteAgentUpdateTarget(targets[j])
 	})
 	s.setScanState(false, remote.Name, scanStateUpdating)
 	s.addLog("info", fmt.Sprintf("remote update started: %s containers=%d", remote.Name, len(targets)))
@@ -1997,18 +1997,19 @@ func (s *Server) autoUpdateRemote(ctx context.Context, cfg config.Config, remote
 		}
 		var updateResult dockerwatcher.UpdateResult
 		var err error
-		updateResult, err = s.updateRemoteContainer(ctx, remote, container.ID, cfg.PruneDanglingImages)
+		isAgentTarget := isRemoteAgentUpdateTarget(container)
+		if isAgentTarget {
+			updateResult, err = s.updateRemoteSelfUpdate(ctx, remote, container.ID)
+		} else {
+			updateResult, err = s.updateRemoteContainer(ctx, remote, container.ID, cfg.PruneDanglingImages)
+		}
 		if err != nil {
-			if isRemoteUpdateDisconnect(err) && (container.Self || isContiwatchImage(container.Image)) {
-				msg := "update triggered; agent restarting"
-				if container.Self || isContiwatchImage(container.Image) {
-					msg = "self update scheduled; agent restarting"
-				}
+			if isRemoteUpdateDisconnect(err) && isAgentTarget {
 				updateResult = dockerwatcher.UpdateResult{
 					ID:      container.ID,
 					Name:    shortID(container.ID),
 					Updated: false,
-					Message: msg,
+					Message: "self update scheduled; agent restarting",
 				}
 				s.addLog("warn", fmt.Sprintf("update connection closed: %s (agent restarting)", container.ID))
 			} else {
@@ -2035,6 +2036,14 @@ func (s *Server) autoUpdateRemote(ctx context.Context, cfg config.Config, remote
 	}
 	s.addLog("info", fmt.Sprintf("remote update finished: %s updated=%d", remote.Name, updatedCount))
 	return updatedCount, nil
+}
+
+func isRemoteAgentUpdateTarget(container dockerwatcher.ContainerStatus) bool {
+	if container.Self {
+		return true
+	}
+	name := strings.ToLower(strings.TrimSpace(container.Name))
+	return isContiwatchImage(container.Image) && strings.Contains(name, "agent")
 }
 
 func markScanResultUpdateError(result *dockerwatcher.ScanResult, containerID string, updateErr error) {

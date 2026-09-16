@@ -1640,7 +1640,8 @@ function buildContainerCard(container, result, canUpdateStopped, variant) {
         : `remote:${result.server_name || "remote"}`;
       const serverParam = encodeURIComponent(scope);
       let updateURL = `/api/update/${encodeURIComponent(container.id)}?server=${serverParam}`;
-      if (!result.local && isSelfContainer) {
+      const isLegacyRemoteAgent = !result.local && isContiwatchImage(container.image) && /agent/i.test(String(container.name || ""));
+      if (!result.local && (isSelfContainer || isLegacyRemoteAgent)) {
         updateURL += "&self_update=1";
       }
       updateResult = await fetchJSON(updateURL, { method: "POST" });
