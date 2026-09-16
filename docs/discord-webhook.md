@@ -53,7 +53,7 @@ Body żądania:
 ### 3) Podsumowanie skanu (wykryte aktualizacje i/lub zaktualizowane kontenery)
 
 **Kiedy:** po zakończeniu procesu dla danego serwera (skan + ewentualne auto-update), jeśli:
-- `discord_notify_on_update_detected=true` **i** wykryto przynajmniej 1 aktualizację (`updates > 0`), **lub**
+- `discord_notify_on_update_detected=true` **i** wykryto przynajmniej 1 aktualizację (`detected > 0`), **lub**
 - `discord_notify_on_container_updated=true` **i** w wyniku skanu przynajmniej 1 kontener ma `updated > 0`.
 
 Uwaga: w trybie auto-update Contiwatch **nie wysyła** osobnych powiadomień per-kontener (pkt 4). Zamiast tego, wynik aktualizacji agreguje do tego jednego powiadomienia.
@@ -65,12 +65,15 @@ Uwaga: w trybie auto-update Contiwatch **nie wysyła** osobnych powiadomień per
 - `Server: <serverLabel> (local|remote)`
 - `Scanned images: <total>`
 - jeśli `discord_notify_on_update_detected=true`:
-  - `Updates available: <updates>`
+  - `Updates detected: <detected>`
+  - `Remaining outdated: <remaining>`
 - jeśli `discord_notify_on_container_updated=true`:
   - `Updated: <updated>`
+- jeśli wystąpiły błędy operacji:
+  - `Failed: <failed>`
 
 **Dodatkowe sekcje (doklejane, gdy > 0):**
-- `Containers with updates:` + lista `- <containerName>`
+- `Containers still outdated:` + lista `- <containerName>`
 - `Containers updated:` + lista `- <containerName>`
 
 ### 4) Wynik aktualizacji pojedynczego kontenera (manual lub auto-update)

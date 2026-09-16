@@ -39,6 +39,7 @@ type ContainerStatus struct {
 	NewImageID      string    `json:"new_image_id,omitempty"`
 	Running         bool      `json:"running"`
 	Paused          bool      `json:"paused"`
+	Self            bool      `json:"self,omitempty"`
 	Policy          string    `json:"policy"`
 	UpdateAvailable bool      `json:"update_available"`
 	Updated         bool      `json:"updated"`
@@ -590,6 +591,7 @@ func (w *Watcher) scanContainer(ctx context.Context, item container.Summary, cfg
 		Name:        strings.TrimPrefix(firstOrEmpty(item.Names), "/"),
 		Image:       item.Image,
 		ImageID:     item.ImageID,
+		Self:        IsSelfContainer(item.ID),
 		Policy:      cfg.GlobalPolicy,
 		LastChecked: time.Now(),
 	}

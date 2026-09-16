@@ -15,6 +15,7 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -93,13 +94,16 @@ type scanState struct {
 }
 
 const (
-	scanStateIdle      = "idle"
-	scanStatePending   = "pending"
-	scanStateScanning  = "scanning"
-	scanStateUpdating  = "updating"
-	scanStateDone      = "done"
-	scanStateCancelled = "cancelled"
-	scanStateError     = "error"
+	scanStateIdle        = "idle"
+	scanStatePending     = "pending"
+	scanStateScanning    = "scanning"
+	scanStateUpdating    = "updating"
+	scanStateDone        = "done"
+	scanStateCancelled   = "cancelled"
+	scanStateError       = "error"
+	remoteScanTimeout    = 5 * time.Minute
+	remoteUpdateTimeout  = 15 * time.Minute
+	remoteRestartTimeout = 5 * time.Minute
 )
 
 func New(store *config.Store, watcher *dockerwatcher.Watcher, agentMode bool, agentToken string, version string) (*Server, error) {
@@ -266,7 +270,7 @@ func (s *Server) applyScanState(result *dockerwatcher.ScanResult, local bool, na
 	if !ok {
 		return
 	}
-	if state.State == "" || state.State == scanStateIdle || state.State == scanStateDone {
+	if state.State == "" || state.State == scanStateIdle {
 		return
 	}
 	result.ScanState = state.State
@@ -940,10 +944,8 @@ func (s *Server) handleScan(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		cleanup = false
-		remoteCtx, remoteCancel := context.WithTimeout(ctx, 2*time.Minute)
 		go func() {
-			defer remoteCancel()
-			s.triggerRemoteScans(remoteCtx, cfg.RemoteServers)
+			s.triggerRemoteScans(ctx, cfg.RemoteServers)
 			s.scanMutex.Lock()
 			s.scanCancel = nil
 			s.scanMutex.Unlock()
@@ -1140,7 +1142,7 @@ func (s *Server) handleUpdateContainer(w http.ResponseWriter, r *http.Request) {
 	updateCtx := r.Context()
 	var cancel context.CancelFunc
 	if s.agentMode {
-		updateCtx, cancel = context.WithTimeout(context.Background(), 2*time.Minute)
+		updateCtx, cancel = context.WithTimeout(context.Background(), remoteUpdateTimeout)
 		defer cancel()
 	}
 
@@ -1271,7 +1273,7 @@ func (s *Server) handleUpdateContainer(w http.ResponseWriter, r *http.Request) {
 		break
 	}
 	s.lastScanMutex.Unlock()
-	go s.saveScanState()
+	s.saveScanState()
 
 	writeJSON(w, http.StatusOK, result)
 }
@@ -1299,6 +1301,10 @@ func (s *Server) handleSelfUpdate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, errors.New("container id required"))
 		return
 	}
+	if !dockerwatcher.IsSelfContainer(containerID) {
+		writeError(w, http.StatusBadRequest, errors.New("container is not the running agent"))
+		return
+	}
 
 	s.scanMutex.Lock()
 	if s.scanRunning || s.updateRunning {
@@ -1314,7 +1320,7 @@ func (s *Server) handleSelfUpdate(w http.ResponseWriter, r *http.Request) {
 		s.scanMutex.Unlock()
 	}()
 
-	updateCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	updateCtx, cancel := context.WithTimeout(context.Background(), remoteUpdateTimeout)
 	defer cancel()
 	if err := s.watcher.TriggerSelfUpdateWithLogs(updateCtx, containerID, func(level, message string) {
 		s.addLog(level, fmt.Sprintf("self-update helper: %s", message))
@@ -1443,13 +1449,13 @@ func (s *Server) runScan(ctx context.Context) (dockerwatcher.ScanResult, error) 
 		s.lastScan = result
 		s.lastScans = results
 		s.lastScanMutex.Unlock()
-		go s.saveScanState()
+		s.saveScanState()
 	} else {
 		s.lastScanMutex.Lock()
 		s.lastScan = dockerwatcher.ScanResult{}
 		s.lastScans = nil
 		s.lastScanMutex.Unlock()
-		go s.saveScanState()
+		s.saveScanState()
 	}
 
 	if len(results) == 0 {
@@ -1459,6 +1465,7 @@ func (s *Server) runScan(ctx context.Context) (dockerwatcher.ScanResult, error) 
 }
 
 func (s *Server) updateLastScans(result dockerwatcher.ScanResult) {
+	s.applyScanState(&result, result.Local, result.ServerName)
 	s.lastScanMutex.Lock()
 	updated := false
 	for i := range s.lastScans {
@@ -1606,7 +1613,7 @@ func (s *Server) scanRemoteServer(ctx context.Context, remote config.RemoteServe
 	if remote.Token != "" {
 		req.Header.Set("Authorization", "Bearer "+remote.Token)
 	}
-	client := &http.Client{Timeout: 60 * time.Second}
+	client := &http.Client{Timeout: remoteScanTimeout}
 	resp, err := client.Do(req)
 	if err != nil {
 		return dockerwatcher.ScanResult{}, err
@@ -1640,7 +1647,7 @@ func (s *Server) updateRemoteContainer(ctx context.Context, remote config.Remote
 	if remote.Token != "" {
 		req.Header.Set("Authorization", "Bearer "+remote.Token)
 	}
-	client := &http.Client{Timeout: 60 * time.Second}
+	client := &http.Client{Timeout: remoteUpdateTimeout}
 	resp, err := client.Do(req)
 	if err != nil {
 		return dockerwatcher.UpdateResult{}, err
@@ -1674,7 +1681,7 @@ func (s *Server) updateRemoteSelfUpdate(ctx context.Context, remote config.Remot
 	if remote.Token != "" {
 		req.Header.Set("Authorization", "Bearer "+remote.Token)
 	}
-	client := &http.Client{Timeout: 60 * time.Second}
+	client := &http.Client{Timeout: remoteUpdateTimeout}
 	resp, err := client.Do(req)
 	if err != nil {
 		return dockerwatcher.UpdateResult{}, err
@@ -1706,10 +1713,12 @@ func (s *Server) triggerRemoteScans(ctx context.Context, remotes []config.Remote
 	defer s.remoteScanRunning.Add(-1)
 	successCount := 0
 	failCount := 0
+	cancelledCount := 0
 	for i, remote := range remotes {
 		if ctx.Err() != nil {
 			for _, remaining := range remotes[i:] {
 				s.setScanState(false, remaining.Name, scanStateCancelled)
+				cancelledCount++
 			}
 			break
 		}
@@ -1732,8 +1741,10 @@ func (s *Server) triggerRemoteScans(ctx context.Context, remotes []config.Remote
 		if err != nil {
 			if ctx.Err() != nil {
 				s.setScanState(false, remote.Name, scanStateCancelled)
+				cancelledCount++
 			} else {
 				s.setScanState(false, remote.Name, scanStateError)
+				failCount++
 			}
 			s.addLog("error", fmt.Sprintf("remote scan failed: %s: %v", remote.Name, err))
 			s.updateLastScans(dockerwatcher.ScanResult{
@@ -1743,7 +1754,6 @@ func (s *Server) triggerRemoteScans(ctx context.Context, remotes []config.Remote
 				CheckedAt:  time.Now(),
 				Error:      err.Error(),
 			})
-			failCount++
 			continue
 		}
 		s.addLog("info", fmt.Sprintf("remote scan finished: %s %s", remote.Name, s.formatScanSummary(result)))
@@ -1751,20 +1761,23 @@ func (s *Server) triggerRemoteScans(ctx context.Context, remotes []config.Remote
 		if _, err := s.autoUpdateRemote(ctx, cfg, remote, &result); err != nil {
 			if ctx.Err() != nil {
 				s.setScanState(false, remote.Name, scanStateCancelled)
+				cancelledCount++
 			} else {
 				s.setScanState(false, remote.Name, scanStateError)
+				failCount++
 			}
 			s.addLog("error", fmt.Sprintf("remote update failed: %s: %v", remote.Name, err))
-			failCount++
+			result.Error = err.Error()
+			s.updateLastScans(result)
 			continue
 		}
+		s.setScanState(false, remote.Name, scanStateDone)
 		s.updateLastScans(result)
 		s.sendScanNotification(cfg, result)
-		s.setScanState(false, remote.Name, scanStateDone)
 		successCount++
 	}
 	if len(remotes) > 0 {
-		s.addLog("info", fmt.Sprintf("remote scans completed: ok=%d failed=%d", successCount, failCount))
+		s.addLog("info", fmt.Sprintf("remote scans completed: ok=%d failed=%d cancelled=%d", successCount, failCount, cancelledCount))
 		if ctx.Err() != nil {
 			s.addLog("warn", fmt.Sprintf("remote scans aborted: %v", ctx.Err()))
 		}
@@ -1774,11 +1787,13 @@ func (s *Server) triggerRemoteScans(ctx context.Context, remotes []config.Remote
 func (s *Server) formatScanSummary(result dockerwatcher.ScanResult) string {
 	summary := s.buildScanSummary(result)
 	return fmt.Sprintf(
-		"containers=%d updates=%d ready=%d skipped=%d updated=%d",
+		"containers=%d detected=%d remaining=%d ready=%d skipped=%d failed=%d updated=%d",
 		summary.total,
-		summary.updates,
+		summary.detected,
+		summary.remaining,
 		summary.ready,
 		summary.skipped,
+		summary.failed,
 		summary.updated,
 	)
 }
@@ -1805,13 +1820,16 @@ func (s *Server) logDigestUnknown(result dockerwatcher.ScanResult) {
 }
 
 type scanSummary struct {
-	total        int
-	updates      int
-	ready        int
-	skipped      int
-	updated      int
-	updateNames  []string
-	updatedNames []string
+	total          int
+	detected       int
+	remaining      int
+	ready          int
+	skipped        int
+	failed         int
+	updated        int
+	detectedNames  []string
+	remainingNames []string
+	updatedNames   []string
 }
 
 func (s *Server) buildScanSummary(result dockerwatcher.ScanResult) scanSummary {
@@ -1819,21 +1837,29 @@ func (s *Server) buildScanSummary(result dockerwatcher.ScanResult) scanSummary {
 		total: len(result.Containers),
 	}
 	for _, container := range result.Containers {
+		if container.Error != "" && !strings.HasPrefix(container.Error, "skipped:") {
+			summary.failed++
+		}
 		if container.Updated {
 			summary.updated++
 			summary.updatedNames = append(summary.updatedNames, container.Name)
 		}
-		hasUpdate := container.UpdateAvailable || container.Updated
-		if !hasUpdate {
+		if container.UpdateAvailable || container.Updated {
+			summary.detected++
+			summary.detectedNames = append(summary.detectedNames, container.Name)
+		}
+		if !container.UpdateAvailable {
 			continue
 		}
-		summary.updates++
-		summary.updateNames = append(summary.updateNames, container.Name)
-		if container.UpdateAvailable && strings.HasPrefix(container.Error, "skipped:") {
-			summary.skipped++
+		summary.remaining++
+		summary.remainingNames = append(summary.remainingNames, container.Name)
+		if container.Error != "" {
+			if strings.HasPrefix(container.Error, "skipped:") {
+				summary.skipped++
+			}
 			continue
 		}
-		if container.UpdateAvailable && container.Policy == config.PolicyUpdate && !container.Updated {
+		if container.Policy == config.PolicyUpdate && !container.Updated {
 			summary.ready++
 		}
 	}
@@ -1847,7 +1873,7 @@ func (s *Server) sendScanNotification(cfg config.Config, result dockerwatcher.Sc
 	notifyUpdates := cfg.DiscordNotifyOnUpdateDetected != nil && *cfg.DiscordNotifyOnUpdateDetected
 	notifyUpdated := cfg.DiscordNotifyOnContainerUpdated != nil && *cfg.DiscordNotifyOnContainerUpdated
 	summary := s.buildScanSummary(result)
-	if (!notifyUpdates || summary.updates == 0) && (!notifyUpdated || summary.updated == 0) {
+	if (!notifyUpdates || summary.detected == 0) && (!notifyUpdated || summary.updated == 0) {
 		return
 	}
 	serverLabel := result.ServerName
@@ -1869,15 +1895,19 @@ func (s *Server) sendScanNotification(cfg config.Config, result dockerwatcher.Sc
 	}
 	if notifyUpdates {
 		lines = append(lines,
-			fmt.Sprintf("Updates available: %d", summary.updates),
+			fmt.Sprintf("Updates detected: %d", summary.detected),
+			fmt.Sprintf("Remaining outdated: %d", summary.remaining),
 		)
 	}
 	if notifyUpdated {
 		lines = append(lines, fmt.Sprintf("Updated: %d", summary.updated))
 	}
+	if summary.failed > 0 {
+		lines = append(lines, fmt.Sprintf("Failed: %d", summary.failed))
+	}
 	description := strings.Join(lines, "\n")
-	if notifyUpdates && summary.updates > 0 {
-		description += "\n\nContainers with updates:\n- " + strings.Join(summary.updateNames, "\n- ")
+	if notifyUpdates && summary.remaining > 0 {
+		description += "\n\nContainers still outdated:\n- " + strings.Join(summary.remainingNames, "\n- ")
 	}
 	if notifyUpdated && summary.updated > 0 {
 		description += "\n\nContainers updated:\n- " + strings.Join(summary.updatedNames, "\n- ")
@@ -1955,6 +1985,9 @@ func (s *Server) autoUpdateRemote(ctx context.Context, cfg config.Config, remote
 	if len(targets) == 0 {
 		return 0, nil
 	}
+	sort.SliceStable(targets, func(i, j int) bool {
+		return !targets[i].Self && targets[j].Self
+	})
 	s.setScanState(false, remote.Name, scanStateUpdating)
 	s.addLog("info", fmt.Sprintf("remote update started: %s containers=%d", remote.Name, len(targets)))
 	updatedCount := 0
@@ -1964,15 +1997,11 @@ func (s *Server) autoUpdateRemote(ctx context.Context, cfg config.Config, remote
 		}
 		var updateResult dockerwatcher.UpdateResult
 		var err error
-		if isContiwatchImage(container.Image) {
-			updateResult, err = s.updateRemoteSelfUpdate(ctx, remote, container.ID)
-		} else {
-			updateResult, err = s.updateRemoteContainer(ctx, remote, container.ID, cfg.PruneDanglingImages)
-		}
+		updateResult, err = s.updateRemoteContainer(ctx, remote, container.ID, cfg.PruneDanglingImages)
 		if err != nil {
-			if isRemoteUpdateDisconnect(err) {
+			if isRemoteUpdateDisconnect(err) && (container.Self || isContiwatchImage(container.Image)) {
 				msg := "update triggered; agent restarting"
-				if isContiwatchImage(container.Image) {
+				if container.Self || isContiwatchImage(container.Image) {
 					msg = "self update scheduled; agent restarting"
 				}
 				updateResult = dockerwatcher.UpdateResult{
@@ -1984,8 +2013,19 @@ func (s *Server) autoUpdateRemote(ctx context.Context, cfg config.Config, remote
 				s.addLog("warn", fmt.Sprintf("update connection closed: %s (agent restarting)", container.ID))
 			} else {
 				s.addLog("error", fmt.Sprintf("update failed: %s: %v", container.ID, err))
+				markScanResultUpdateError(result, container.ID, err)
 				continue
 			}
+		}
+		if isAgentRestartUpdate(updateResult) {
+			refreshed, waitErr := s.waitForRemoteUpdateConfirmation(ctx, remote, container)
+			if waitErr != nil {
+				return updatedCount, waitErr
+			}
+			*result = refreshed
+			updatedCount++
+			s.addLog("info", fmt.Sprintf("remote self update confirmed: %s on %s", container.Name, remote.Name))
+			continue
 		}
 		s.logUpdateResult(cfg, remote.Name, "remote", updateResult, true, false)
 		updateScanResultContainer(result, container.ID, updateResult)
@@ -1995,6 +2035,53 @@ func (s *Server) autoUpdateRemote(ctx context.Context, cfg config.Config, remote
 	}
 	s.addLog("info", fmt.Sprintf("remote update finished: %s updated=%d", remote.Name, updatedCount))
 	return updatedCount, nil
+}
+
+func markScanResultUpdateError(result *dockerwatcher.ScanResult, containerID string, updateErr error) {
+	if result == nil || updateErr == nil {
+		return
+	}
+	for i := range result.Containers {
+		if result.Containers[i].ID == containerID {
+			result.Containers[i].Error = "update failed: " + updateErr.Error()
+			result.Containers[i].LastChecked = time.Now()
+			return
+		}
+	}
+}
+
+func isAgentRestartUpdate(result dockerwatcher.UpdateResult) bool {
+	message := strings.ToLower(result.Message)
+	return !result.Updated && (strings.Contains(message, "agent restarting") || strings.Contains(message, "self update scheduled"))
+}
+
+func (s *Server) waitForRemoteUpdateConfirmation(ctx context.Context, remote config.RemoteServer, target dockerwatcher.ContainerStatus) (dockerwatcher.ScanResult, error) {
+	waitCtx, cancel := context.WithTimeout(ctx, remoteRestartTimeout)
+	defer cancel()
+
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+	for {
+		refreshed, err := fetchRemoteScanStatus(waitCtx, remote)
+		if err == nil {
+			for _, container := range refreshed.Containers {
+				if container.Name != target.Name && container.ID != target.ID {
+					continue
+				}
+				if container.Updated && !container.UpdateAvailable {
+					return refreshed, nil
+				}
+			}
+		}
+		select {
+		case <-waitCtx.Done():
+			if ctx.Err() != nil {
+				return dockerwatcher.ScanResult{}, ctx.Err()
+			}
+			return dockerwatcher.ScanResult{}, fmt.Errorf("agent restart verification timed out: %s", remote.Name)
+		case <-ticker.C:
+		}
+	}
 }
 
 func (s *Server) syncRemotePolicies(cfg config.Config, remotes []config.RemoteServer) {
