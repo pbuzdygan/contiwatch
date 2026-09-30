@@ -70,6 +70,7 @@ type Server struct {
 	trustedProxies        []netip.Prefix
 	version               string
 	remoteScanRunning     atomic.Int64
+	stackJobs             *stackJobManager
 
 	serverInfoMu      sync.RWMutex
 	serverInfo        map[string]serverInfoSnapshot
@@ -150,6 +151,7 @@ func New(store *config.Store, watcher *dockerwatcher.Watcher, agentMode bool, ag
 		scanStates:          map[string]scanState{},
 		statePath:           statePath,
 		serverInfo:          map[string]serverInfoSnapshot{},
+		stackJobs:           newStackJobManager(),
 	}
 	s.routes()
 	s.loadScanState()
@@ -398,6 +400,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/api/stacks/save", s.handleStackSave)
 	s.mux.HandleFunc("/api/stacks/validate", s.handleStackValidate)
 	s.mux.HandleFunc("/api/stacks/action", s.handleStackAction)
+	s.mux.HandleFunc("/api/stacks/jobs", s.handleStackJobs)
+	s.mux.HandleFunc("/api/stacks/jobs/extend", s.handleStackJobExtend)
 	s.mux.HandleFunc("/api/self-update", s.handleSelfUpdate)
 	s.mux.HandleFunc("/api/logs", s.handleLogs)
 	s.mux.HandleFunc("/api/notifications/test", s.handleNotificationsTest)

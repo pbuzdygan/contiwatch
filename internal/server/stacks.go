@@ -1,7 +1,6 @@
 package server
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -21,8 +20,10 @@ import (
 )
 
 const (
-	stacksBaseDir         = "/data/stacks"
-	stackActionTimeoutSec = 180
+	stacksBaseDir                  = "/data/stacks"
+	stackActionTimeout             = 3 * time.Minute
+	stackImageActionTimeout        = 10 * time.Minute
+	remoteStackActionGraceDuration = 30 * time.Second
 )
 
 var stackNamePattern = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
@@ -261,93 +262,79 @@ func (s *Server) handleStackAction(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
-	var payload stackActionRequest
-	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+	payload, err := s.decodeStackActionRequest(r)
+	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
+	}
+
+	// Synchronous endpoint kept for controllers older than 1.3.4 that call
+	// agents directly; the UI uses the extendable /api/stacks/jobs flow.
+	ctx, cancel := context.WithTimeout(context.Background(), s.stackActionTimeout(payload))
+	defer cancel()
+	if err := s.executeStackAction(ctx, s.store.Get(), payload, nil); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, stackActionResponse{Name: payload.Name, Action: payload.Action})
+}
+
+// parsedStackActionRequest is a validated stack action together with the
+// resolved target server (controller mode only).
+type parsedStackActionRequest struct {
+	stackActionRequest
+	serverType string
+	serverName string
+}
+
+// decodeStackActionRequest reads and validates a stack action request body.
+// Agents require the compose payload; controllers require a valid scope.
+func (s *Server) decodeStackActionRequest(r *http.Request) (parsedStackActionRequest, error) {
+	var payload stackActionRequest
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		return parsedStackActionRequest{}, err
 	}
 	payload.Action = strings.TrimSpace(strings.ToLower(payload.Action))
 	payload.Name = strings.TrimSpace(payload.Name)
 	payload.Scope = strings.TrimSpace(payload.Scope)
 	if payload.Name == "" || payload.Action == "" {
-		writeError(w, http.StatusBadRequest, errors.New("name and action are required"))
-		return
+		return parsedStackActionRequest{}, errors.New("name and action are required")
+	}
+	if !isValidStackAction(payload.Action) {
+		return parsedStackActionRequest{}, fmt.Errorf("unknown stack action: %s", payload.Action)
 	}
 	if err := validateStackSegment(payload.Name, "stack"); err != nil {
-		writeError(w, http.StatusBadRequest, err)
-		return
+		return parsedStackActionRequest{}, err
 	}
-
-	cfg := s.store.Get()
 	if s.agentMode {
 		if strings.TrimSpace(payload.ComposeYml) == "" {
-			writeError(w, http.StatusBadRequest, errors.New("compose_yaml is required"))
-			return
+			return parsedStackActionRequest{}, errors.New("compose_yaml is required")
 		}
 		sanitized, invalid := sanitizeEnvContent(payload.Env)
 		payload.Env = sanitized
 		if payload.UseEnv && len(invalid) > 0 {
 			s.addLog("warn", fmt.Sprintf("stack %s env invalid lines ignored: %s", payload.Name, strings.Join(invalid, ", ")))
 		}
-		dockerHost := ""
-		if len(cfg.LocalServers) == 1 {
-			dockerHost = dockerHostFromSocket(cfg.LocalServers[0].Socket)
-		}
-		if err := runComposeFromPayload(payload, dockerHost); err != nil {
-			writeError(w, http.StatusBadRequest, err)
-			return
-		}
-		writeJSON(w, http.StatusOK, stackActionResponse{Name: payload.Name, Action: payload.Action})
-		return
+		return parsedStackActionRequest{stackActionRequest: payload}, nil
 	}
-
 	if payload.Scope == "" {
-		writeError(w, http.StatusBadRequest, errors.New("scope is required"))
-		return
+		return parsedStackActionRequest{}, errors.New("scope is required")
 	}
 	serverType, serverName, err := parseScope(payload.Scope)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err)
-		return
+		return parsedStackActionRequest{}, err
 	}
 	if err := validateStackSegment(serverName, "server"); err != nil {
-		writeError(w, http.StatusBadRequest, err)
-		return
+		return parsedStackActionRequest{}, err
 	}
-	if serverType == "remote" {
-		if err := s.runRemoteStackAction(cfg, serverName, payload); err != nil {
-			writeError(w, http.StatusBadRequest, err)
-			return
-		}
-		if payload.Action == "rm" {
-			if err := deleteStackDir(serverName, payload.Name); err != nil {
-				s.addLog("warn", fmt.Sprintf("stack %s remove cleanup failed: %s", payload.Name, err.Error()))
-			}
-		}
-		writeJSON(w, http.StatusOK, stackActionResponse{Name: payload.Name, Action: payload.Action})
-		return
+	return parsedStackActionRequest{stackActionRequest: payload, serverType: serverType, serverName: serverName}, nil
+}
+
+func agentDockerHost(cfg config.Config) string {
+	if len(cfg.LocalServers) == 1 {
+		return dockerHostFromSocket(cfg.LocalServers[0].Socket)
 	}
-	envFile, invalid, err := prepareEnvFileFromDisk(serverName, payload.Name)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err)
-		return
-	}
-	if envFile != "" {
-		defer os.Remove(envFile)
-	}
-	if len(invalid) > 0 {
-		s.addLog("warn", fmt.Sprintf("stack %s env invalid lines ignored: %s", payload.Name, strings.Join(invalid, ", ")))
-	}
-	if err := runComposeFromStorage(cfg, serverName, payload.Name, payload.Action, envFile); err != nil {
-		writeError(w, http.StatusBadRequest, err)
-		return
-	}
-	if payload.Action == "rm" {
-		if err := deleteStackDir(serverName, payload.Name); err != nil {
-			s.addLog("warn", fmt.Sprintf("stack %s remove cleanup failed: %s", payload.Name, err.Error()))
-		}
-	}
-	writeJSON(w, http.StatusOK, stackActionResponse{Name: payload.Name, Action: payload.Action})
+	return ""
 }
 
 func buildStackSummaries(stacks []stackSummary, containers []dockerwatcher.ContainerInfo) []stackSummary {
@@ -516,50 +503,44 @@ func writePrivateFileAtomically(path string, data []byte) error {
 	return os.Chmod(path, 0o600)
 }
 
-func (s *Server) runRemoteStackAction(cfg config.Config, serverName string, payload stackActionRequest) error {
+// buildRemoteStackActionRequest resolves the remote agent and embeds the stored
+// stack files, because agents do not keep stack definitions on their own disk.
+func buildRemoteStackActionRequest(cfg config.Config, serverName string, payload stackActionRequest) (config.RemoteServer, stackActionRequest, error) {
 	remote, ok := findRemoteServer(cfg.RemoteServers, serverName)
 	if !ok {
-		return errors.New("remote server not found")
+		return config.RemoteServer{}, stackActionRequest{}, errors.New("remote server not found")
 	}
 	if remote.URL == "" {
-		return errors.New("remote url missing")
+		return config.RemoteServer{}, stackActionRequest{}, errors.New("remote url missing")
 	}
 	detail, err := loadStackDetail(serverName, payload.Name)
 	if err != nil {
-		return err
+		return config.RemoteServer{}, stackActionRequest{}, err
 	}
-	body, err := json.Marshal(stackActionRequest{
+	return remote, stackActionRequest{
 		Name:       payload.Name,
 		Action:     payload.Action,
 		ComposeYml: detail.ComposeYml,
 		Env:        detail.Env,
 		UseEnv:     detail.HasEnv,
-	})
+	}, nil
+}
+
+// postRemoteStackAction runs a stack action through the synchronous agent
+// endpoint. The caller's context bounds the whole request.
+func postRemoteStackAction(ctx context.Context, remote config.RemoteServer, request stackActionRequest) error {
+	resp, err := doRemoteStackRequest(ctx, remote, http.MethodPost, "/api/stacks/action", request)
 	if err != nil {
-		return err
-	}
-	endpoint := strings.TrimSuffix(remote.URL, "/") + "/api/stacks/action"
-	req, err := http.NewRequest(http.MethodPost, endpoint, bytes.NewReader(body))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	if remote.Token != "" {
-		req.Header.Set("Authorization", "Bearer "+remote.Token)
-	}
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		return err
+		return stackContextError(ctx, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("status %d", resp.StatusCode)
+		return remoteStackResponseError(resp)
 	}
 	return nil
 }
 
-func runComposeFromStorage(cfg config.Config, serverName, stackName, action, envFile string) error {
+func runComposeFromStorage(ctx context.Context, cfg config.Config, serverName, stackName, action, envFile string) error {
 	local, ok := findLocalServer(cfg.LocalServers, serverName)
 	if !ok {
 		return errors.New("local server not found")
@@ -572,10 +553,10 @@ func runComposeFromStorage(cfg config.Config, serverName, stackName, action, env
 	if host := dockerHostFromSocket(local.Socket); host != "" {
 		env["DOCKER_HOST"] = host
 	}
-	return runComposeAction(dir, stackName, action, env, envFile)
+	return runComposeAction(ctx, dir, stackName, action, env, envFile)
 }
 
-func runComposeFromPayload(payload stackActionRequest, dockerHost string) error {
+func runComposeFromPayload(ctx context.Context, payload stackActionRequest, dockerHost string) error {
 	tempDir, err := os.MkdirTemp("", "contiwatch-stack-*")
 	if err != nil {
 		return err
@@ -596,46 +577,74 @@ func runComposeFromPayload(payload stackActionRequest, dockerHost string) error 
 	if dockerHost != "" {
 		env["DOCKER_HOST"] = dockerHost
 	}
-	return runComposeAction(tempDir, payload.Name, payload.Action, env, envFile)
+	return runComposeAction(ctx, tempDir, payload.Name, payload.Action, env, envFile)
 }
 
-func runComposeAction(dir, projectName, action string, env map[string]string, envFile string) error {
+// runComposeAction runs a stack action until it completes or ctx ends. The
+// context carries the whole action budget, so redeploy shares one deadline
+// across its pull and up steps.
+func runComposeAction(ctx context.Context, dir, projectName, action string, env map[string]string, envFile string) error {
 	projectName = composeProjectName(projectName)
 
 	if action == "redeploy" {
-		if err := runComposeSingleAction(dir, projectName, "pull", env, envFile); err != nil {
+		if err := runComposeSingleAction(ctx, dir, projectName, "pull", env, envFile); err != nil {
 			return fmt.Errorf("compose pull failed: %w", err)
 		}
-		if err := runComposeSingleAction(dir, projectName, "up", env, envFile); err != nil {
+		if err := runComposeSingleAction(ctx, dir, projectName, "up", env, envFile); err != nil {
 			return fmt.Errorf("compose up failed: %w", err)
 		}
 		return nil
 	}
-	return runComposeSingleAction(dir, projectName, action, env, envFile)
+	return runComposeSingleAction(ctx, dir, projectName, action, env, envFile)
 }
 
-func runComposeSingleAction(dir, projectName, action string, env map[string]string, envFile string) error {
+func runComposeSingleAction(ctx context.Context, dir, projectName, action string, env map[string]string, envFile string) error {
 	args, err := buildComposeArgs(projectName, action, envFile)
 	if err != nil {
 		return err
 	}
-	timeout := stackActionTimeoutSec * time.Second
-	if action == "pull" || action == "redeploy" {
-		timeout = 10 * time.Minute
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
 	cmd := exec.CommandContext(ctx, "docker", args...)
 	cmd.Dir = dir
 	cmd.Env = mergeComposeEnv(env, envFile)
 	output, err := cmd.CombinedOutput()
-	if ctx.Err() == context.DeadlineExceeded {
-		return errors.New("compose action timed out")
+	if ctx.Err() != nil {
+		return stackContextError(ctx, ctx.Err())
 	}
 	if err != nil {
 		return fmt.Errorf("compose failed: %s", strings.TrimSpace(string(output)))
 	}
 	return nil
+}
+
+func composeActionTimeout(action string) time.Duration {
+	switch action {
+	case "up", "pull":
+		return stackImageActionTimeout
+	default:
+		return stackActionTimeout
+	}
+}
+
+// stackActionBudget is the initial time allowed for a whole stack action.
+func stackActionBudget(action string) time.Duration {
+	if action == "redeploy" {
+		return composeActionTimeout("pull") + composeActionTimeout("up")
+	}
+	return composeActionTimeout(action)
+}
+
+// remoteStackActionTimeout outlives the agent-side budget so the agent can
+// report its own result before the controller gives up.
+func remoteStackActionTimeout(action string) time.Duration {
+	return stackActionBudget(action) + remoteStackActionGraceDuration
+}
+
+func isValidStackAction(action string) bool {
+	if action == "redeploy" {
+		return true
+	}
+	_, err := buildComposeArgs("stack", action, "")
+	return err == nil
 }
 
 func composeProjectName(name string) string {

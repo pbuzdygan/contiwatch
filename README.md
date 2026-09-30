@@ -14,9 +14,7 @@
 - ✅ Optional update (recreate container) or notify-only
 - ✅ Simple HTML UI for updates, servers, events, and settings
 - ✅ Server maintenance mode to pause scans and updates per server
-- ✅ Experimental containers management UI (opt-in)
-- ✅ Experimental container shell (opt-in)
-- ✅ Experimental container logs (opt-in)
+- ✅ Containers management UI: containers, stacks, images, networks, volumes, logs, resources and shell (each can be hidden in Settings → Menu visibility)
 - ✅ Discord webhook notifications
 
 ---
@@ -160,7 +158,7 @@ Important:
 - `discord_notify_on_container_updated`
 - `update_stopped_containers` (if `true`, `update` policy also updates stopped containers but keeps them stopped)
 - `prune_dangling_images` (if `true`, prune dangling images after updates)
-- `experimental_features` (object of feature flags: `containers`, `containers_sidebar`, `stacks`, `images`, `networks`, `volumes`, `container_shell`, `container_logs`, `container_resources`)
+- `experimental_features` (menu visibility flags shown in Settings → Menu visibility; the config key keeps its historical name: `containers`, `containers_sidebar`, `stacks`, `images`, `networks`, `volumes`, `container_shell`, `container_logs`, `container_resources`)
 - `experimental_features.container_shell` (enables container shell UI)
 - `experimental_features.container_logs` (enables container logs UI)
 - `experimental_features.container_resources` (enables container resources UI)
@@ -234,7 +232,12 @@ The check intentionally does not report live host CPU/RAM percentages or host fi
 - `GET /api/stacks/get?scope=local:{name}|remote:{name}&name={stack}` fetch compose + env content
 - `PUT /api/stacks/save` save compose + env without deploy
 - `POST /api/stacks/validate` validate compose yaml (Docker Compose config)
-- `POST /api/stacks/action` run stack action (`up`, `down`, `start`, `stop`, `restart`, `kill`, `rm`)
+- `POST /api/stacks/action` run stack action synchronously (`up`, `down`, `pull`, `redeploy`, `start`, `stop`, `restart`, `kill`, `rm`); kept for compatibility with older controllers
+- `POST /api/stacks/jobs` start a stack action in the background (same body as `/api/stacks/action`); returns `202` with the job (`id`, `status`, `remaining_ms`, `extendable`, …) or `409` when an action already runs for that stack
+- `GET /api/stacks/jobs?id={job}` job status: `running`, `succeeded` or `failed` (with `error`)
+- `POST /api/stacks/jobs/extend` body `{ "id": "{job}" }` pushes the job timeout back by 10 minutes (forwarded to the remote agent for remote stacks)
+
+Stack action timeouts: `up`/`pull` 10 min, `redeploy` 20 min, other actions 3 min. About 90 seconds before the limit the UI shows a warning with an **Extend** button; if nobody extends the job, the action is stopped when the timeout expires. Timeout extension for remote stacks requires the agent to run `1.3.4` or newer; older agents fall back to the synchronous call without extension.
 - `POST /api/update/{container_id}` update container
 - `POST /api/self-update?container={container_id}` update agent container via helper (agent mode only)
 - `GET/POST/DELETE /api/logs`
