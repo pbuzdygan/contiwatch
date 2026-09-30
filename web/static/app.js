@@ -103,6 +103,7 @@ const topbarLogsEl = document.getElementById("topbar-logs");
 const viewStatusEl = document.getElementById("view-status");
 const viewSettingsEl = document.getElementById("view-settings");
 const viewContainersEl = document.getElementById("view-containers");
+const topbarContainersTableBtn = document.getElementById("topbar-containers-table");
 const topbarContainersStacksBtn = document.getElementById("topbar-containers-stacks");
 const topbarContainersImagesBtn = document.getElementById("topbar-containers-images");
 const topbarContainersVolumesBtn = document.getElementById("topbar-containers-volumes");
@@ -259,6 +260,7 @@ const stackModalCancel = document.getElementById("stack-modal-cancel");
 const stackModalComposeUp = document.getElementById("stack-modal-compose-up");
 const stackModalComposeDown = document.getElementById("stack-modal-compose-down");
 const stackModalRedeploy = document.getElementById("stack-modal-redeploy");
+const stackModalRestart = document.getElementById("stack-modal-restart");
 const stackNameInput = document.getElementById("stack-name-input");
 const stackNameRow = document.getElementById("stack-name-row");
 const stackComposeEditorEl = document.getElementById("stack-compose-editor");
@@ -326,14 +328,14 @@ let containersSortMode = "name:asc";
 let stacksSortMode = "name:asc";
 let imagesSortMode = "repository:asc";
 let containersRefreshTimer = null;
-let containersUpdateInProgress = false;
+const containersRefreshState = { inFlight: false };
 let containersTableResourcesData = new Map();
 let containersTableResourcesUpdateInProgress = false;
 let containersTableResourcesRequestId = 0;
 let containersTableResourcesScope = "";
 let stacksRefreshTimer = null;
-let stacksUpdateInProgress = false;
-let imagesUpdateInProgress = false;
+const stacksRefreshState = { inFlight: false };
+const imagesRefreshState = { inFlight: false };
 let containersCache = new Map();
 let containersKillConfirming = new Set();
 let containersRemoveConfirming = new Set();
@@ -348,13 +350,13 @@ let imagesPullAutoCloseTimer = null;
 let imagesPullAutoCloseRemainingSec = 0;
 let imagesPullLastRef = "";
 let volumesSortMode = "name:asc";
-let volumesUpdateInProgress = false;
+const volumesRefreshState = { inFlight: false };
 let volumesCache = [];
 let volumesActionConfirming = new Set();
 let currentVolumeDetails = null;
 let currentVolumeUsedBy = null;
 let networksSortMode = "name:asc";
-let networksUpdateInProgress = false;
+const networksRefreshState = { inFlight: false };
 let networksCache = [];
 let networksActionConfirming = new Set();
 let networksRefreshRequestId = 0;
@@ -1184,13 +1186,14 @@ function setStackModalLoading(loading) {
 
 function updateStackModalBusyState() {
   const isBusy = stackModalLoading || Boolean(stackModalActionInProgress);
-  [stackModalSave, stackModalSaveIcon, stackModalComposeUp, stackModalComposeDown, stackModalRedeploy]
+  [stackModalSave, stackModalSaveIcon, stackModalComposeUp, stackModalComposeDown, stackModalRedeploy, stackModalRestart]
     .filter(Boolean)
     .forEach((button) => { button.disabled = isBusy || stackModalLoadFailed; });
   [
     [stackModalComposeUp, "up"],
     [stackModalComposeDown, "down"],
     [stackModalRedeploy, "redeploy"],
+    [stackModalRestart, "restart"],
   ].forEach(([button, action]) => {
     if (!button) return;
     const active = stackModalActionInProgress === action;
@@ -1379,11 +1382,13 @@ async function runStackActionFromModal(action) {
     up: "Deploying stack…",
     down: "Stopping and removing stack services…",
     redeploy: "Pulling images and redeploying stack…",
+    restart: "Restarting stack services…",
   };
   const successLabels = {
     up: "Stack deployed successfully.",
     down: "Stack services stopped and removed.",
     redeploy: "Stack redeployed successfully.",
+    restart: "Stack restarted successfully.",
   };
   setStackModalOperation(action, "Saving stack configuration…", "progress");
   const ok = await saveStackFromModal({ closeOnSuccess: false, notifyOnSuccess: false });
@@ -2990,27 +2995,9 @@ function applyExperimentalFeatures(cfg) {
   if (flags.containers) {
     updateContainersServerOptions();
   }
-  if (topbarContainersShellBtn) {
-    topbarContainersShellBtn.classList.toggle("hidden", !(flags.container_shell && flags.containers));
-  }
-  if (topbarContainersLogsBtn) {
-    topbarContainersLogsBtn.classList.toggle("hidden", !(flags.container_logs && flags.containers));
-  }
-  if (topbarContainersResourcesBtn) {
-    topbarContainersResourcesBtn.classList.toggle("hidden", !(flags.container_resources && flags.containers));
-  }
-  if (topbarContainersStacksBtn) {
-    topbarContainersStacksBtn.classList.toggle("hidden", !(flags.stacks && flags.containers));
-  }
-  if (topbarContainersImagesBtn) {
-    topbarContainersImagesBtn.classList.toggle("hidden", !(flags.images && flags.containers));
-  }
-  if (topbarContainersVolumesBtn) {
-    topbarContainersVolumesBtn.classList.toggle("hidden", !(flags.volumes && flags.containers));
-  }
-  if (topbarContainersNetworksBtn) {
-    topbarContainersNetworksBtn.classList.toggle("hidden", !(flags.networks && flags.containers));
-  }
+  containersModeButtons().forEach(({ button, feature }) => {
+    button.classList.toggle("hidden", !(flags.containers && (!feature || flags[feature])));
+  });
   if (!flags.container_shell && containersViewMode === "shell") {
     setContainersViewMode("table");
   }
@@ -3039,6 +3026,23 @@ function applyExperimentalFeatures(cfg) {
   updateContainersExperimentalToggles();
   updateSidebarNavActive(currentView);
   scheduleMobileNavAffordanceUpdate();
+}
+
+/**
+ * Header buttons that switch the Containers workspace. Each button selects its
+ * own view; `feature` is the Menu visibility flag that must be enabled.
+ */
+function containersModeButtons() {
+  return [
+    { mode: "table", button: topbarContainersTableBtn, feature: "", label: "Containers" },
+    { mode: "stacks", button: topbarContainersStacksBtn, feature: "stacks", label: "Container stacks" },
+    { mode: "images", button: topbarContainersImagesBtn, feature: "images", label: "Container images" },
+    { mode: "networks", button: topbarContainersNetworksBtn, feature: "networks", label: "Container networks" },
+    { mode: "volumes", button: topbarContainersVolumesBtn, feature: "volumes", label: "Container volumes" },
+    { mode: "logs", button: topbarContainersLogsBtn, feature: "container_logs", label: "Container logs" },
+    { mode: "resources", button: topbarContainersResourcesBtn, feature: "container_resources", label: "Container resources" },
+    { mode: "shell", button: topbarContainersShellBtn, feature: "container_shell", label: "Container shell" },
+  ].filter((item) => item.button);
 }
 
 function isExperimentalEnabled(view) {
@@ -3907,6 +3911,30 @@ function getScopeInfo(scope) {
   return { type, name, server, status, maintenance, checking };
 }
 
+function isSelectedScope(scope) {
+  return scope === containersSelectedScope;
+}
+
+/**
+ * Runs a refresh bound to the currently selected server without overlapping
+ * requests of the same kind. Responses for a server that is no longer selected
+ * are ignored by the task, and a follow-up run is started when the selection
+ * changed mid-flight, so the view never stays on the previous server's data.
+ */
+async function runScopedRefresh(state, rerun, task) {
+  if (state.inFlight) return;
+  state.inFlight = true;
+  const scope = containersSelectedScope;
+  try {
+    await task(scope);
+  } finally {
+    state.inFlight = false;
+    if (!isSelectedScope(scope)) {
+      rerun().catch(() => {});
+    }
+  }
+}
+
 function updateContainersStatus(scope, errorMessage) {
   if (!topbarContainersStatusEl) return;
   if (!scope) {
@@ -4133,27 +4161,11 @@ function setContainersViewMode(mode) {
   if (containersResourcesLayout) {
     containersResourcesLayout.classList.toggle("hidden", next !== "resources");
   }
-  if (topbarContainersShellBtn) {
-    topbarContainersShellBtn.classList.toggle("is-active", next === "shell");
-  }
-  if (topbarContainersLogsBtn) {
-    topbarContainersLogsBtn.classList.toggle("is-active", next === "logs");
-  }
-  if (topbarContainersResourcesBtn) {
-    topbarContainersResourcesBtn.classList.toggle("is-active", next === "resources");
-  }
-  if (topbarContainersStacksBtn) {
-    topbarContainersStacksBtn.classList.toggle("is-active", next === "stacks");
-  }
-  if (topbarContainersImagesBtn) {
-    topbarContainersImagesBtn.classList.toggle("is-active", next === "images");
-  }
-  if (topbarContainersVolumesBtn) {
-    topbarContainersVolumesBtn.classList.toggle("is-active", next === "volumes");
-  }
-  if (topbarContainersNetworksBtn) {
-    topbarContainersNetworksBtn.classList.toggle("is-active", next === "networks");
-  }
+  containersModeButtons().forEach(({ mode, button }) => {
+    const active = mode === next;
+    button.classList.toggle("is-active", active);
+    button.setAttribute("aria-pressed", active ? "true" : "false");
+  });
   if (next === "shell") {
     closeContainersLogsSession("switch to shell");
     setContainersLogsPaused(false);
@@ -5441,13 +5453,14 @@ function updateContainersServerOptions() {
     nameEl.className = "containers-server-name";
     nameEl.textContent = item.label;
     const typeIcon = buildServerTypeIcon(item.type, statusLabel);
-	    button.append(statusIcon, nameEl, typeIcon);
-      button.addEventListener("click", async () => {
-        containersSelectedScope = item.scope;
-        topbarContainersServerMenu.querySelectorAll(".containers-server-option").forEach((el) => {
-          el.classList.remove("active");
-        });
-        button.classList.add("active");
+    button.append(statusIcon, nameEl, typeIcon);
+    button.addEventListener("click", async () => {
+      const changed = containersSelectedScope !== item.scope;
+      containersSelectedScope = item.scope;
+      topbarContainersServerMenu.querySelectorAll(".containers-server-option").forEach((el) => {
+        el.classList.remove("active");
+      });
+      button.classList.add("active");
       renderContainersServerButton(info);
       closeContainersServerMenu();
       updateContainersLogsStreamIndicator();
@@ -5456,16 +5469,10 @@ function updateContainersServerOptions() {
         containersResourcesData = new Map();
         updateContainersResourcesPlaceholder("Select containers to view resources.");
       }
-      if (containersViewMode === "stacks") {
-        await refreshStacks({ silent: true });
-      } else if (containersViewMode === "images") {
-        await refreshImages({ silent: true });
-      } else {
-        await refreshContainers({ silent: true });
-        if (containersViewMode === "resources") {
-          await refreshContainersResources({ silent: true });
-        }
+      if (changed) {
+        clearContainersViewForServerSwitch();
       }
+      await refreshSelectedServerView();
     });
     topbarContainersServerMenu.appendChild(button);
   });
@@ -5479,15 +5486,42 @@ function updateContainersServerOptions() {
     renderContainersServerButton(null);
   }
   if (currentView === "containers") {
-    if (containersViewMode === "stacks") {
-      refreshStacks({ silent: true }).catch(() => {});
-    } else if (containersViewMode === "images") {
-      refreshImages({ silent: true }).catch(() => {});
-    } else {
-      refreshContainers({ silent: true }).catch(() => {});
-      if (containersViewMode === "resources") {
-        refreshContainersResources({ silent: true }).catch(() => {});
-      }
+    refreshSelectedServerView().catch(() => {});
+  }
+}
+
+/**
+ * Drops the previous server's rows as soon as another server is picked, so a
+ * slow response never leaves the old list (or its search filter) on screen.
+ */
+function clearContainersViewForServerSwitch() {
+  const loading = "Loading…";
+  if (containersViewMode === "stacks") {
+    clearStacksTable(loading);
+  } else if (containersViewMode === "images") {
+    clearImagesTable(loading);
+  } else if (containersViewMode === "networks") {
+    clearNetworksTable(loading);
+  } else if (containersViewMode === "volumes") {
+    clearVolumesTable(loading);
+  } else {
+    clearContainersTable(loading);
+  }
+}
+
+async function refreshSelectedServerView() {
+  if (containersViewMode === "stacks") {
+    await refreshStacks({ silent: true });
+  } else if (containersViewMode === "images") {
+    await refreshImages({ silent: true });
+  } else if (containersViewMode === "networks") {
+    await refreshNetworks({ silent: true });
+  } else if (containersViewMode === "volumes") {
+    await refreshVolumes({ silent: true });
+  } else {
+    await refreshContainers({ silent: true });
+    if (containersViewMode === "resources") {
+      await refreshContainersResources({ silent: true });
     }
   }
 }
@@ -5804,24 +5838,29 @@ function renderContainers(list, scope) {
   } else if (containersViewMode === "resources") {
     renderContainersResourcesList(sorted);
   }
-  updateContainersSearchCount();
+  // New rows are created unfiltered, so re-apply the active search query.
+  if (sidebarSearch && sidebarSearch.value.trim()) {
+    applySidebarFilter(sidebarSearch.value);
+  } else {
+    updateContainersSearchCount();
+  }
 }
 
 async function refreshContainers(options = {}) {
   if (!containersTableBody) return;
-  if (containersUpdateInProgress) return;
-  containersUpdateInProgress = true;
-  const scope = containersSelectedScope;
+  await runScopedRefresh(containersRefreshState, () => refreshContainers(options), (scope) => loadContainers(scope));
+}
+
+async function loadContainers(scope) {
   if (!scope) {
     clearContainersTable("No servers configured. Add one in Servers.");
     updateContainersStatus("", "");
-    containersUpdateInProgress = false;
     return;
   }
-  containersSelectedScope = scope;
   updateContainersStatus(scope, "");
   try {
     const payload = await fetchJSON(`/api/containers?scope=${encodeURIComponent(scope)}`);
+    if (!isSelectedScope(scope)) return;
     if (!payload || payload.error) {
       const errorMessage = payload && payload.error ? payload.error : "Unable to load containers.";
       clearContainersTable("No containers data available.");
@@ -5839,10 +5878,9 @@ async function refreshContainers(options = {}) {
     }
     updateContainersStatus(scope, "");
   } catch (err) {
+    if (!isSelectedScope(scope)) return;
     clearContainersTable("No containers data available.");
     updateContainersStatus(scope, err.message);
-  } finally {
-    containersUpdateInProgress = false;
   }
 }
 
@@ -6232,19 +6270,19 @@ function renderStacks(list) {
 
 async function refreshStacks(options = {}) {
   if (!stacksTableBody) return;
-  if (stacksUpdateInProgress) return;
-  stacksUpdateInProgress = true;
-  const scope = containersSelectedScope;
+  await runScopedRefresh(stacksRefreshState, () => refreshStacks(options), (scope) => loadStacks(scope));
+}
+
+async function loadStacks(scope) {
   if (!scope) {
     clearStacksTable("No servers configured. Add one in Servers.");
     updateContainersStatus("", "");
-    stacksUpdateInProgress = false;
     return;
   }
-  containersSelectedScope = scope;
   updateContainersStatus(scope, "");
   try {
     const payload = await fetchJSON(`/api/stacks?scope=${encodeURIComponent(scope)}`);
+    if (!isSelectedScope(scope)) return;
     const list = payload && Array.isArray(payload.stacks) ? payload.stacks : [];
     if (payload && payload.error) {
       renderStacks(list);
@@ -6259,10 +6297,9 @@ async function refreshStacks(options = {}) {
     renderStacks(list);
     updateContainersStatus(scope, "");
   } catch (err) {
+    if (!isSelectedScope(scope)) return;
     clearStacksTable("No stacks data available.");
     updateContainersStatus(scope, err.message);
-  } finally {
-    stacksUpdateInProgress = false;
   }
 }
 
@@ -6625,19 +6662,19 @@ function renderImages(list) {
 
 async function refreshImages(options = {}) {
   if (!imagesTableBody) return;
-  if (imagesUpdateInProgress) return;
-  imagesUpdateInProgress = true;
-  const scope = containersSelectedScope;
+  await runScopedRefresh(imagesRefreshState, () => refreshImages(options), (scope) => loadImages(scope));
+}
+
+async function loadImages(scope) {
   if (!scope) {
     clearImagesTable("No servers configured. Add one in Servers.");
     updateContainersStatus("", "");
-    imagesUpdateInProgress = false;
     return;
   }
-  containersSelectedScope = scope;
   updateContainersStatus(scope, "");
   try {
     const payload = await fetchJSON(`/api/images?scope=${encodeURIComponent(scope)}`);
+    if (!isSelectedScope(scope)) return;
     if (!payload || payload.error) {
       const errorMessage = payload && payload.error ? payload.error : "Unable to load images.";
       clearImagesTable("No images data available.");
@@ -6648,10 +6685,9 @@ async function refreshImages(options = {}) {
     renderImages(list, scope);
     updateContainersStatus(scope, "");
   } catch (err) {
+    if (!isSelectedScope(scope)) return;
     clearImagesTable("No images data available.");
     updateContainersStatus(scope, err.message);
-  } finally {
-    imagesUpdateInProgress = false;
   }
 }
 
@@ -6863,16 +6899,15 @@ function renderNetworks(list) {
 
 async function refreshNetworks(options = {}) {
   if (!networksTableBody) return;
-  if (networksUpdateInProgress) return;
-  networksUpdateInProgress = true;
-  const scope = containersSelectedScope;
+  await runScopedRefresh(networksRefreshState, () => refreshNetworks(options), (scope) => loadNetworks(scope));
+}
+
+async function loadNetworks(scope) {
   if (!scope) {
     clearNetworksTable("No servers configured. Add one in Servers.");
     updateContainersStatus("", "");
-    networksUpdateInProgress = false;
     return;
   }
-  containersSelectedScope = scope;
   updateContainersStatus(scope, "");
   if (networksRefreshAbort) {
     networksRefreshAbort.abort();
@@ -6882,7 +6917,7 @@ async function refreshNetworks(options = {}) {
   networksRefreshAbort = controller;
   try {
     const payload = await fetchJSON(`/api/networks?scope=${encodeURIComponent(scope)}`, { signal: controller.signal });
-    if (requestId !== networksRefreshRequestId) return;
+    if (requestId !== networksRefreshRequestId || !isSelectedScope(scope)) return;
     if (!payload || payload.error) {
       const errorMessage = payload && payload.error ? payload.error : "Unable to load networks.";
       clearNetworksTable("No networks data available.");
@@ -6894,10 +6929,9 @@ async function refreshNetworks(options = {}) {
     updateContainersStatus(scope, "");
   } catch (err) {
     if (err && err.name === "AbortError") return;
+    if (!isSelectedScope(scope)) return;
     clearNetworksTable("No networks data available.");
     updateContainersStatus(scope, err.message);
-  } finally {
-    networksUpdateInProgress = false;
   }
 }
 
@@ -7642,19 +7676,19 @@ function renderVolumes(list) {
 
 async function refreshVolumes(options = {}) {
   if (!volumesTableBody) return;
-  if (volumesUpdateInProgress) return;
-  volumesUpdateInProgress = true;
-  const scope = containersSelectedScope;
+  await runScopedRefresh(volumesRefreshState, () => refreshVolumes(options), (scope) => loadVolumes(scope));
+}
+
+async function loadVolumes(scope) {
   if (!scope) {
     clearVolumesTable("No servers configured. Add one in Servers.");
     updateContainersStatus("", "");
-    volumesUpdateInProgress = false;
     return;
   }
-  containersSelectedScope = scope;
   updateContainersStatus(scope, "");
   try {
     const payload = await fetchJSON(`/api/volumes?scope=${encodeURIComponent(scope)}`);
+    if (!isSelectedScope(scope)) return;
     if (!payload || payload.error) {
       const errorMessage = payload && payload.error ? payload.error : "Unable to load volumes.";
       clearVolumesTable("No volumes data available.");
@@ -7665,10 +7699,9 @@ async function refreshVolumes(options = {}) {
     renderVolumes(list);
     updateContainersStatus(scope, "");
   } catch (err) {
+    if (!isSelectedScope(scope)) return;
     clearVolumesTable("No volumes data available.");
     updateContainersStatus(scope, err.message);
-  } finally {
-    volumesUpdateInProgress = false;
   }
 }
 
@@ -7923,11 +7956,12 @@ async function runStackAction(name, action) {
   }
   try {
     clearStacksActionConfirmations();
-    await fetchJSON("/api/stacks/action", {
+    const job = await fetchJSON("/api/stacks/jobs", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ scope, name, action }),
     });
+    await waitForStackJob(job, name, action);
     markStackStatusOverrideCompleted(name);
     await refreshStacks({ silent: true });
     const normalized = String(action || "").toLowerCase();
@@ -7949,6 +7983,98 @@ async function runStackAction(name, action) {
     stackStatusOverrides.delete(name);
     notify({ type: "error", message: err.message || "Stack action failed." });
     return false;
+  }
+}
+
+const STACK_JOB_POLL_INTERVAL_MS = 2000;
+const STACK_JOB_SLOW_WARNING_MS = 90 * 1000;
+const STACK_JOB_MAX_POLL_FAILURES = 10;
+
+function delay(ms) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
+function formatDurationShort(ms) {
+  const totalSeconds = Math.max(0, Math.round(ms / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (minutes === 0) return `${seconds}s`;
+  return seconds === 0 ? `${minutes} min` : `${minutes} min ${seconds}s`;
+}
+
+/**
+ * Polls a background stack job until it finishes. Shortly before the job's
+ * deadline a warning toast offers to extend it; if nobody extends it the
+ * server-side timeout ends the action. Throws with the job error on failure.
+ */
+async function waitForStackJob(initialJob, name, action) {
+  const tracker = { job: initialJob, warnedDeadline: "" };
+  const warningId = `stack-job-slow-${initialJob.id}`;
+  let failures = 0;
+  try {
+    while (tracker.job.status === "running") {
+      maybeWarnSlowStackJob(tracker, warningId, name, action);
+      await delay(STACK_JOB_POLL_INTERVAL_MS);
+      try {
+        tracker.job = await fetchJSON(`/api/stacks/jobs?id=${encodeURIComponent(initialJob.id)}`);
+        failures = 0;
+      } catch (err) {
+        if (err.status === 404 || err.code === "pin_required") {
+          throw new Error(err.status === 404
+            ? `Stack ${name}: ${action} status was lost (Contiwatch restarted?). Check the stack state.`
+            : err.message);
+        }
+        failures += 1;
+        if (failures >= STACK_JOB_MAX_POLL_FAILURES) throw err;
+      }
+    }
+  } finally {
+    removeToast(warningId);
+  }
+  if (tracker.job.status !== "succeeded") {
+    throw new Error(tracker.job.error || "Stack action failed.");
+  }
+  return tracker.job;
+}
+
+function maybeWarnSlowStackJob(tracker, warningId, name, action) {
+  const job = tracker.job;
+  const remainingMs = Number(job.remaining_ms) || 0;
+  if (remainingMs > STACK_JOB_SLOW_WARNING_MS || tracker.warnedDeadline === job.deadline) return;
+  tracker.warnedDeadline = job.deadline;
+  const base = `Stack ${name}: ${action} is taking longer than usual (slow host or network). It will time out in ${formatDurationShort(remainingMs)}.`;
+  if (!job.extendable) {
+    notify({
+      id: warningId,
+      type: "warning",
+      message: `${base} Update the remote agent to allow extending the timeout.`,
+      timeoutMs: remainingMs,
+    });
+    return;
+  }
+  const extendLabel = `Extend +${formatDurationShort(Number(job.extend_ms) || 0)}`;
+  notify({
+    id: warningId,
+    type: "warning",
+    message: base,
+    timeoutMs: remainingMs,
+    actions: [{ label: extendLabel, onClick: () => extendStackJob(tracker, name, action) }],
+  });
+}
+
+async function extendStackJob(tracker, name, action) {
+  try {
+    tracker.job = await fetchJSON("/api/stacks/jobs/extend", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: tracker.job.id }),
+    });
+    notify({
+      type: "info",
+      message: `Stack ${name}: ${action} timeout extended. New limit in ${formatDurationShort(Number(tracker.job.remaining_ms) || 0)}.`,
+    });
+  } catch (err) {
+    notify({ type: "error", message: err.message || "Unable to extend stack action timeout." });
   }
 }
 
@@ -8583,9 +8709,12 @@ function notify(payload) {
     type,
     message,
     timeoutMs: Number.isFinite(timeoutMs) ? Math.max(1000, timeoutMs) : (toastDefaults[type] || 4500),
+    actions: Array.isArray(payload.actions) ? payload.actions : [],
   };
+  removeToast(entry.id);
   toastQueue.push(entry);
   drainToastQueue();
+  return entry.id;
 }
 
 function drainToastQueue() {
@@ -8616,6 +8745,22 @@ function renderToast(entry) {
   message.className = "toast__message";
   message.textContent = entry.message;
   content.appendChild(message);
+  if (entry.actions.length > 0) {
+    const actions = document.createElement("div");
+    actions.className = "toast__actions";
+    entry.actions.forEach((action) => {
+      const actionBtn = document.createElement("button");
+      actionBtn.type = "button";
+      actionBtn.className = "secondary toast__action";
+      actionBtn.textContent = action.label;
+      actionBtn.addEventListener("click", () => {
+        removeToast(entry.id);
+        action.onClick();
+      });
+      actions.appendChild(actionBtn);
+    });
+    content.appendChild(actions);
+  }
   const closeBtn = document.createElement("button");
   closeBtn.className = "toast__close";
   closeBtn.type = "button";
@@ -8686,6 +8831,10 @@ function resumeToast(id) {
 }
 
 function removeToast(id) {
+  const queuedIndex = toastQueue.findIndex((item) => item.id === id);
+  if (queuedIndex !== -1) {
+    toastQueue.splice(queuedIndex, 1);
+  }
   const state = toastVisible.get(id);
   if (!state || !state.el) return;
   if (state.timerId) {
@@ -9561,6 +9710,63 @@ if (stackModalRedeploy) {
   });
 }
 
+const settingsTabStorageKey = "contiwatch_settings_tab";
+const settingsTabs = Array.from(document.querySelectorAll("[data-settings-tab]"));
+
+function selectSettingsTab(name, { focus = false } = {}) {
+  const target = settingsTabs.find((tab) => tab.dataset.settingsTab === name) || settingsTabs[0];
+  if (!target) return;
+  settingsTabs.forEach((tab) => {
+    const selected = tab === target;
+    tab.setAttribute("aria-selected", selected ? "true" : "false");
+    tab.tabIndex = selected ? 0 : -1;
+    const panel = document.getElementById(tab.getAttribute("aria-controls"));
+    if (panel) panel.classList.toggle("hidden", !selected);
+  });
+  if (focus) target.focus();
+  try {
+    localStorage.setItem(settingsTabStorageKey, target.dataset.settingsTab);
+  } catch (err) {
+    // Storage may be unavailable (private mode); the tab still switches.
+  }
+}
+
+function initSettingsTabs() {
+  if (settingsTabs.length === 0) return;
+  let saved = "";
+  try {
+    saved = localStorage.getItem(settingsTabStorageKey) || "";
+  } catch (err) {
+    saved = "";
+  }
+  selectSettingsTab(saved);
+  settingsTabs.forEach((tab, index) => {
+    tab.addEventListener("click", () => selectSettingsTab(tab.dataset.settingsTab));
+    tab.addEventListener("keydown", (event) => {
+      const offsets = { ArrowRight: 1, ArrowLeft: -1 };
+      let nextIndex = null;
+      if (event.key in offsets) {
+        nextIndex = (index + offsets[event.key] + settingsTabs.length) % settingsTabs.length;
+      } else if (event.key === "Home") {
+        nextIndex = 0;
+      } else if (event.key === "End") {
+        nextIndex = settingsTabs.length - 1;
+      }
+      if (nextIndex === null) return;
+      event.preventDefault();
+      selectSettingsTab(settingsTabs[nextIndex].dataset.settingsTab, { focus: true });
+    });
+  });
+}
+
+initSettingsTabs();
+
+if (stackModalRestart) {
+  stackModalRestart.addEventListener("click", () => {
+    runStackActionFromModal("restart");
+  });
+}
+
 if (stackModalCancel) {
   stackModalCancel.addEventListener("click", () => {
     closeStackModal();
@@ -10119,90 +10325,18 @@ async function init() {
     }
   });
 }
-  if (topbarContainersShellBtn) {
-    topbarContainersShellBtn.addEventListener("click", () => {
-      const enabled = currentConfig && currentConfig.experimental_features
-        ? Boolean(currentConfig.experimental_features.container_shell)
-        : false;
-      if (!enabled) {
-        showToast("Container shell is disabled in Experimental features.");
+  containersModeButtons().forEach(({ mode, button, feature, label }) => {
+    button.addEventListener("click", () => {
+      const flags = currentConfig && currentConfig.experimental_features ? currentConfig.experimental_features : {};
+      if (feature && !flags[feature]) {
+        showToast(`${label} is hidden in Settings → Menu visibility.`);
         return;
       }
-      setContainersViewMode(containersViewMode === "shell" ? "table" : "shell");
-    });
-  }
-  if (topbarContainersLogsBtn) {
-    topbarContainersLogsBtn.addEventListener("click", () => {
-      const enabled = currentConfig && currentConfig.experimental_features
-        ? Boolean(currentConfig.experimental_features.container_logs)
-        : false;
-      if (!enabled) {
-        showToast("Container logs is disabled in Experimental features.");
-        return;
+      if (containersViewMode !== mode) {
+        setContainersViewMode(mode);
       }
-      setContainersViewMode(containersViewMode === "logs" ? "table" : "logs");
     });
-  }
-  if (topbarContainersResourcesBtn) {
-    topbarContainersResourcesBtn.addEventListener("click", () => {
-      const enabled = currentConfig && currentConfig.experimental_features
-        ? Boolean(currentConfig.experimental_features.container_resources)
-        : false;
-      if (!enabled) {
-        showToast("Container resources is disabled in Experimental features.");
-        return;
-      }
-      setContainersViewMode(containersViewMode === "resources" ? "table" : "resources");
-    });
-  }
-  if (topbarContainersStacksBtn) {
-    topbarContainersStacksBtn.addEventListener("click", () => {
-      const enabled = currentConfig && currentConfig.experimental_features
-        ? Boolean(currentConfig.experimental_features.stacks)
-        : false;
-      if (!enabled) {
-        showToast("Container stacks is disabled in Experimental features.");
-        return;
-      }
-      setContainersViewMode(containersViewMode === "stacks" ? "table" : "stacks");
-    });
-  }
-  if (topbarContainersImagesBtn) {
-    topbarContainersImagesBtn.addEventListener("click", () => {
-      const enabled = currentConfig && currentConfig.experimental_features
-        ? Boolean(currentConfig.experimental_features.images)
-        : false;
-      if (!enabled) {
-        showToast("Container images is disabled in Experimental features.");
-        return;
-      }
-      setContainersViewMode(containersViewMode === "images" ? "table" : "images");
-    });
-  }
-  if (topbarContainersNetworksBtn) {
-    topbarContainersNetworksBtn.addEventListener("click", () => {
-      const enabled = currentConfig && currentConfig.experimental_features
-        ? Boolean(currentConfig.experimental_features.networks)
-        : false;
-      if (!enabled) {
-        showToast("Container networks is disabled in Experimental features.");
-        return;
-      }
-      setContainersViewMode(containersViewMode === "networks" ? "table" : "networks");
-    });
-  }
-  if (topbarContainersVolumesBtn) {
-    topbarContainersVolumesBtn.addEventListener("click", () => {
-      const enabled = currentConfig && currentConfig.experimental_features
-        ? Boolean(currentConfig.experimental_features.volumes)
-        : false;
-      if (!enabled) {
-        showToast("Container volumes is disabled in Experimental features.");
-        return;
-      }
-      setContainersViewMode(containersViewMode === "volumes" ? "table" : "volumes");
-    });
-  }
+  });
 
   if (imagesPullBtn) {
     imagesPullBtn.addEventListener("click", openImagesPullModal);

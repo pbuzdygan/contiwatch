@@ -309,6 +309,18 @@ textarea {
   word-break: break-word;
 }
 
+.toast__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-2);
+  margin-top: var(--s-2);
+}
+
+.toast__action {
+  min-height: 32px;
+  font-size: 0.85rem;
+}
+
 .toast__close {
   border: none;
   background: transparent;
@@ -5552,8 +5564,50 @@ input::placeholder {
 
 .settings-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: var(--s-4);
+  max-width: 760px;
+}
+
+.settings-tabs-wrap {
+  justify-content: flex-start;
+}
+
+.settings-tabs {
+  display: flex;
+  gap: var(--s-1);
+  padding: var(--s-1);
+  border: 1px solid var(--color-border);
+  border-radius: var(--r-card);
+  background: var(--color-surface);
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.settings-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.settings-tab {
+  flex-shrink: 0;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--color-text-muted);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.settings-tab:hover {
+  background: var(--row-hover);
+  border-color: transparent;
+  color: var(--color-text);
+}
+
+.settings-tab[aria-selected="true"] {
+  background: color-mix(in srgb, var(--color-primary), transparent 86%);
+  border-color: color-mix(in srgb, var(--color-primary), transparent 60%);
+  color: var(--color-primary);
 }
 
 .settings-card {
@@ -5571,7 +5625,7 @@ input::placeholder {
   font-weight: 600;
 }
 
-.notifications-card .toggle-row {
+.general-card .toggle-row {
   margin-bottom: var(--s-2);
 }
 

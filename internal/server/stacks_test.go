@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -116,7 +117,7 @@ esac
 	}
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
-	err := runComposeFromPayload(stackActionRequest{
+	err := runComposeFromPayload(context.Background(), stackActionRequest{
 		Name:       "database",
 		Action:     "up",
 		ComposeYml: "services:\n  db:\n    image: postgres\n    env_file:\n      - .env\n",

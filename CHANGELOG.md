@@ -1,5 +1,24 @@
 # Changelog
 
+## v1.3.4
+
+## Bug fixes
+- Container stacks: fixed Compose up/down/redeploy on slow hosts (e.g. Raspberry Pi Zero 2 W, slow SD cards or networks) failing with `context deadline exceeded (Client.Timeout exceeded while awaiting headers)` because the controller waited for the agent in a single HTTP request.
+- Container stacks: remote agent errors now show the agent's message instead of a bare HTTP status code.
+- Containers: fixed switching servers sometimes leaving the previous server's containers (or its filtered search results) on screen until the next auto-refresh; responses for a no-longer-selected server are now ignored and the view reloads for the new selection.
+- Containers: the active search filter is now re-applied to newly rendered container rows.
+- Containers: switching servers in the Networks and Volumes views now reloads their lists.
+
+## Improvements
+- Container stacks: stack actions run as background jobs that the UI polls, so slow image pulls and container processing are no longer bound to one HTTP request.
+- Container stacks: shortly before an action times out, a disappearing warning offers to extend the timeout by 10 minutes; without an extension the action times out as before. Extension is forwarded end-to-end to remote agents.
+- Container stacks: a second action for the same stack is rejected while one is still running.
+- Containers: the list is cleared with a loading placeholder immediately after picking another server.
+- Containers: added a Containers button to the header toolbar; every header button now selects its view directly instead of toggling back to Containers when clicked again.
+- Container stacks: added Restart stack to the New/Edit stack window, next to Redeploy.
+- Settings: sections are now tabs (General, Notifications, Menu visibility, About) instead of a grid of uneven cards; the selected tab is remembered.
+- Settings: renamed “Experimental features” to “Menu visibility”, since these switches control which sections appear in the menus. The `experimental_features` config key is unchanged.
+
 ## v1.3.3
 
 ## Bug fixes
