@@ -28,6 +28,15 @@ The editor does not add or remove service-level `env_file` entries. Add `env_fil
 
 Validation evaluates the interpolated Compose model. Stack `.env` variables take precedence over same-named variables inherited from the Contiwatch process, preventing controller configuration from changing a managed stack accidentally.
 
+In New stack and Edit stack, clicking outside the editor, Close, or Escape keeps the editor open when Name, Compose, or `.env` has unsaved changes. The warning lists the changed fields. Save validates and persists the configuration; Cancel discards unsaved edits and leaves the previously saved files intact. Saving with the toolbar icon keeps the editor open. Closing and editing are disabled while loading, saving, or running an editor action.
+
+The editor's Compose up, Compose down, Redeploy, and Restart stack buttons all validate and save the current configuration first. If validation or saving fails, the operation does not start. Once saving succeeds, the configuration remains saved even if the subsequent operation fails; Cancel cannot undo that save. The corresponding buttons on the stacks list operate on the saved files directly.
+
+- **Compose up** runs `docker compose up -d`, creating, starting, or recreating services as needed to apply the saved configuration.
+- **Compose down** runs `docker compose down`, stopping and removing the stack's containers and networks without requesting volume deletion.
+- **Redeploy** runs `docker compose pull` followed by `docker compose up -d`; it does not force recreation of unchanged containers.
+- **Restart stack** runs `docker compose restart` for existing containers. Restart does not apply changed service settings or environment variables to those containers; use Compose up or Redeploy to apply such changes.
+
 ### Background actions and timeouts
 
 Stack actions run as background jobs polled by the UI. A second action for the same stack is rejected while one runs. Limits are 10 minutes for `up`/`pull`, 20 minutes for `redeploy`, and 3 minutes for other actions.

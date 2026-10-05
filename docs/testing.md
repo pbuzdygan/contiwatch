@@ -29,6 +29,15 @@ npm run build:cm6
 
 The generated bundle at `web/static/vendor/cm6/compose.bundle.js` is ignored by Git. Do not commit it or dependency caches. There are no `npm test` or `npm run lint` scripts in the current package.
 
+The stack editor regression tests run with Node.js and mocked DOM/API fixtures, without dependencies or Docker access:
+
+```bash
+node --test web/tests/stack-modal.test.cjs
+node --check web/static/app.js
+```
+
+These checks cover dirty fields, cancellation, saves, loading and save failures, and saving before stack operations. They do not replace browser checks.
+
 For changes to the image build, verify the Dockerfile with:
 
 ```bash

@@ -1,5 +1,18 @@
 # Changelog
 
+## v1.3.5
+
+### Bug fixes
+
+- Container stacks: New/Edit stack no longer loses unsaved edits when clicking outside the window, Close, or Escape. A warning lists the changed Name, Compose, and `.env` fields and directs users to Save or Cancel; Cancel preserves the previously saved configuration.
+- Container stacks: editing and closing are disabled while loading, saving, or running an editor action, and duplicate saves are prevented.
+- Container stacks: saving an explicit `.env` deletion now clears the editor content so a later save does not recreate the deleted file unintentionally.
+
+### Improvements
+
+- Container stacks: editor action tooltips now explain that Compose up/down, Redeploy, and Restart stack save changes before running. The user guide documents each operation, including that Restart does not apply changed service settings or environment variables to existing containers.
+- Tests: added stack editor regression coverage for unsaved changes, cancellation, saving, loading/save failures, and saving before stack operations.
+
 ## v1.3.4
 
 ### Bug fixes

@@ -410,8 +410,10 @@ let stackEnvExists = false;
 let stackEnvDeletePending = false;
 let stackEnvDeleteConfirming = false;
 let stackModalLoading = false;
+let stackModalSaving = false;
 let stackModalLoadFailed = false;
 let stackModalActionInProgress = "";
+let stackModalSavedValues = null;
 let serverHealthAbort = null;
 let pinGuardEnabled = false;
 let pinGuardUnlocked = true;
@@ -1185,10 +1187,19 @@ function setStackModalLoading(loading) {
 }
 
 function updateStackModalBusyState() {
-  const isBusy = stackModalLoading || Boolean(stackModalActionInProgress);
+  const isBusy = stackModalLoading || stackModalSaving || Boolean(stackModalActionInProgress);
   [stackModalSave, stackModalSaveIcon, stackModalComposeUp, stackModalComposeDown, stackModalRedeploy, stackModalRestart]
     .filter(Boolean)
     .forEach((button) => { button.disabled = isBusy || stackModalLoadFailed; });
+  [stackModalClose, stackModalCancel].filter(Boolean)
+    .forEach((button) => { button.disabled = isBusy; });
+  if (stackNameInput) stackNameInput.disabled = isBusy || stackModalLoadFailed || Boolean(editingStackName);
+  [stackComposeInput, stackEnvInput].filter(Boolean)
+    .forEach((input) => { input.disabled = isBusy || stackModalLoadFailed; });
+  [composeEditor, envEditor].filter(Boolean).forEach((editor) => {
+    if (typeof editor.setReadOnly === "function") editor.setReadOnly(isBusy || stackModalLoadFailed);
+  });
+  updateStackEnvDeleteButton();
   [
     [stackModalComposeUp, "up"],
     [stackModalComposeDown, "down"],
@@ -1213,7 +1224,8 @@ function setStackModalOperation(action, message, variant = "") {
 
 function updateStackEnvDeleteButton() {
   if (!stackEnvDeleteBtn) return;
-  stackEnvDeleteBtn.disabled = !stackEnvExists && getEnvValue().trim() === "";
+  stackEnvDeleteBtn.disabled = stackModalLoading || stackModalSaving || stackModalLoadFailed || Boolean(stackModalActionInProgress)
+    || (!stackEnvExists && getEnvValue().trim() === "");
   if (stackEnvDeletePending) {
     stackEnvDeleteBtn.textContent = "Undo deletion";
     stackEnvDeleteBtn.classList.add("is-active");
@@ -1261,6 +1273,7 @@ async function openStackModal(name = "") {
   if (!stackModalActionInProgress) setStackModalOperation("", "");
   updateStackEnvDeleteButton();
   clearStackModalError();
+  stackModalSavedValues = getStackModalValues();
   setStackEditorView(window.matchMedia("(max-width: 960px)").matches ? "compose" : stackEditorView);
   stackModal.classList.remove("hidden");
   stackModal.setAttribute("aria-hidden", "false");
@@ -1272,6 +1285,7 @@ async function openStackModal(name = "") {
         setComposeValue(payload.compose_yaml || "");
         setEnvValue(payload.env || "");
         stackEnvExists = Boolean(payload.has_env);
+        stackModalSavedValues = getStackModalValues();
         updateStackEnvDeleteButton();
         if (composeEditor && typeof composeEditor.forceLint === "function") composeEditor.forceLint();
         clearStackModalError();
@@ -1288,8 +1302,34 @@ async function openStackModal(name = "") {
   }
 }
 
-function closeStackModal() {
+function getStackModalValues() {
+  return {
+    name: stackNameInput ? stackNameInput.value : "",
+    compose: getComposeValue(),
+    env: getEnvValue(),
+    useEnv: shouldSaveStackEnv(),
+  };
+}
+
+function getStackModalChangedFields() {
+  if (!stackModalSavedValues) return [];
+  const current = getStackModalValues();
+  const fields = [];
+  if (current.name !== stackModalSavedValues.name) fields.push("Name");
+  if (current.compose !== stackModalSavedValues.compose) fields.push("Compose (docker-compose.yml)");
+  if (current.env !== stackModalSavedValues.env || current.useEnv !== stackModalSavedValues.useEnv) fields.push(".env");
+  return fields;
+}
+
+function closeStackModal({ discardChanges = false } = {}) {
   if (!stackModal) return;
+  if (stackModalLoading || stackModalSaving || stackModalActionInProgress) return;
+  const changedFields = getStackModalChangedFields();
+  if (!discardChanges && changedFields.length > 0) {
+    showStackModalError(`Unsaved changes in: ${changedFields.join(", ")}. Click Save to save them, or Cancel to discard them and keep the previously saved configuration.`);
+    if (stackModalSave) stackModalSave.focus();
+    return;
+  }
   if (document.activeElement && stackModal.contains(document.activeElement)) {
     try {
       document.activeElement.blur();
@@ -1300,10 +1340,11 @@ function closeStackModal() {
   stackModal.classList.add("hidden");
   stackModal.setAttribute("aria-hidden", "true");
   editingStackName = "";
+  stackModalSavedValues = null;
 }
 
 async function saveStackFromModal({ closeOnSuccess, notifyOnSuccess = true } = {}) {
-  if (stackModalLoading || stackModalLoadFailed) return false;
+  if (stackModalLoading || stackModalSaving || stackModalLoadFailed) return false;
   const scope = containersSelectedScope;
   if (!scope) {
     showToast("Select server first.");
@@ -1332,6 +1373,8 @@ async function saveStackFromModal({ closeOnSuccess, notifyOnSuccess = true } = {
   }
   const useEnv = shouldSaveStackEnv();
   const env = useEnv ? getEnvValue() : "";
+  stackModalSaving = true;
+  updateStackModalBusyState();
   try {
     const validation = await fetchJSON("/api/stacks/validate", {
       method: "POST",
@@ -1349,13 +1392,17 @@ async function saveStackFromModal({ closeOnSuccess, notifyOnSuccess = true } = {
       body: JSON.stringify({ scope, name, compose_yaml: composeYml, env, use_env: useEnv }),
     });
     stackEnvExists = useEnv;
+    if (stackEnvDeletePending) setEnvValue("");
     stackEnvDeletePending = false;
     stackEnvDeleteConfirming = false;
     updateStackEnvDeleteButton();
+    stackModalSavedValues = getStackModalValues();
+    await refreshStacks({ silent: true });
+    stackModalSaving = false;
+    updateStackModalBusyState();
     if (closeOnSuccess !== false) {
       closeStackModal();
     }
-    await refreshStacks({ silent: true });
     if (notifyOnSuccess !== false) {
       notify({ type: "success", message: `Stack saved: ${name}` });
     }
@@ -1363,11 +1410,14 @@ async function saveStackFromModal({ closeOnSuccess, notifyOnSuccess = true } = {
   } catch (err) {
     showStackModalError(err.message || "Stack save failed.");
     return false;
+  } finally {
+    stackModalSaving = false;
+    updateStackModalBusyState();
   }
 }
 
 async function runStackActionFromModal(action) {
-  if (stackModalActionInProgress) return;
+  if (stackModalLoading || stackModalSaving || stackModalLoadFailed || stackModalActionInProgress) return;
   const scope = containersSelectedScope;
   if (!scope) {
     showToast("Select server first.");
@@ -9769,7 +9819,7 @@ if (stackModalRestart) {
 
 if (stackModalCancel) {
   stackModalCancel.addEventListener("click", () => {
-    closeStackModal();
+    closeStackModal({ discardChanges: true });
   });
 }
 
@@ -10618,6 +10668,9 @@ async function init() {
     }
     if (event.key === "Escape" && remoteModal && !remoteModal.classList.contains("hidden")) {
       closeRemoteModal();
+    }
+    if (event.key === "Escape" && stackModal && !stackModal.classList.contains("hidden")) {
+      closeStackModal();
     }
   });
   document.addEventListener(
