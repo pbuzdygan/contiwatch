@@ -15,6 +15,7 @@
 
 ### Security
 
+- Images: upgrade inherited Alpine packages during runtime builds and bypass the runtime-stage cache in checks/releases, so pinned base images do not retain outdated OpenSSL libraries flagged by CVE-2026-14456.
 - Config: GET and successful PUT responses redact nested agent tokens without modifying stored credentials or controller-to-agent bearer authentication.
 - Shell/Logs: bound message sizes, active connections, and stalled writes; use standard WebSocket ping/pong and close session-bound streams on logout. SSE also ends on session revocation, with subscription broadcasts synchronized against closure.
 - Agents: bound HTTP response bodies and reject HTTPS-to-HTTP redirects while retaining private-network HTTP, existing tokens, legacy stack endpoints, and long operation timeouts.
