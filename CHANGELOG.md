@@ -10,6 +10,7 @@
 
 ### Improvements
 
+- CI: pin checks and release runners to Ubuntu 24.04 and update Trivy Action to v0.36.0 with Node.js 24-compatible cache dependencies, retaining commit pinning and existing vulnerability gates.
 - Container stacks: editor action tooltips now explain that Compose up/down, Redeploy, and Restart stack save changes before running. The user guide documents each operation, including that Restart does not apply changed service settings or environment variables to existing containers.
 - Tests: added stack editor regression coverage for unsaved changes, cancellation, saving, loading/save failures, and saving before stack operations.
 
