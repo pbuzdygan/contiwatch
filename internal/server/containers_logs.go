@@ -11,6 +11,8 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
+	"unicode/utf8"
 
 	"contiwatch/internal/config"
 	"contiwatch/internal/dockerwatcher"
@@ -35,6 +37,11 @@ func (s *Server) handleContainerLogs(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
+	release, ok := s.reserveContainerStream(w)
+	if !ok {
+		return
+	}
+	defer release()
 	cfg := s.store.Get()
 	if !s.agentMode && (!cfg.ExperimentalFeatures.Containers || !cfg.ExperimentalFeatures.ContainerLogs) {
 		w.WriteHeader(http.StatusNotFound)
@@ -86,6 +93,7 @@ func (s *Server) handleLocalContainerLogs(w http.ResponseWriter, r *http.Request
 		return
 	}
 	defer conn.Close()
+	defer s.protectContainerStream(r, conn, clientStreamMessageLimit)()
 
 	follow := parseBoolQuery(r, "follow", true)
 	timestamps := parseBoolQuery(r, "timestamps", false)
@@ -159,6 +167,7 @@ func (s *Server) handleRemoteContainerLogs(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	defer clientConn.Close()
+	defer s.protectContainerStream(r, clientConn, clientStreamMessageLimit)()
 
 	endpoint := strings.TrimSuffix(remote.URL, "/") + "/api/containers/logs"
 	wsURL, err := url.Parse(endpoint)
@@ -191,7 +200,7 @@ func (s *Server) handleRemoteContainerLogs(w http.ResponseWriter, r *http.Reques
 	if remote.Token != "" {
 		headers.Set("Authorization", "Bearer "+remote.Token)
 	}
-	dialer := websocket.Dialer{}
+	dialer := websocket.Dialer{HandshakeTimeout: 30 * time.Second}
 	remoteConn, _, err := dialer.Dial(wsURL.String(), headers)
 	if err != nil {
 		log.Printf("logs: remote websocket dial failed: %v", err)
@@ -199,6 +208,7 @@ func (s *Server) handleRemoteContainerLogs(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	defer remoteConn.Close()
+	defer s.protectContainerStream(r, remoteConn, agentStreamMessageLimit)()
 
 	proxyWebSockets(clientConn, remoteConn)
 }
@@ -211,10 +221,26 @@ func (w *wsTextWriter) Write(p []byte) (int, error) {
 	if len(p) == 0 || w.conn == nil {
 		return len(p), nil
 	}
-	if err := w.conn.WriteMessage(websocket.TextMessage, p); err != nil {
-		return 0, err
+	// Chunk output independently of Docker's log frame size. Old controllers can
+	// consume these ordinary text messages without a coordinated agent upgrade.
+	written := 0
+	for len(p) > 0 {
+		size := min(len(p), 32*1024)
+		if size < len(p) {
+			for size > 0 && !utf8.RuneStart(p[size]) {
+				size--
+			}
+			if size == 0 {
+				return written, errors.New("invalid UTF-8 log output")
+			}
+		}
+		if err := writeStreamMessage(w.conn, websocket.TextMessage, p[:size]); err != nil {
+			return written, err
+		}
+		written += size
+		p = p[size:]
 	}
-	return len(p), nil
+	return written, nil
 }
 
 func parseBoolQuery(r *http.Request, key string, fallback bool) bool {
@@ -255,5 +281,5 @@ func sendLogsError(conn *websocket.Conn, message string) {
 		return
 	}
 	payload, _ := json.Marshal(logsErrorMessage{Type: "error", Message: message})
-	_ = conn.WriteMessage(websocket.TextMessage, payload)
+	_ = writeStreamMessage(conn, websocket.TextMessage, payload)
 }

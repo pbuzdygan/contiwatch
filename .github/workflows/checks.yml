@@ -1,0 +1,76 @@
+name: checks
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+  workflow_call:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 6 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  code-and-dependencies:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version: '1.26.8'
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Test and build
+        run: |
+          go test -race ./...
+          go vet ./...
+          go build -mod=readonly -o "$RUNNER_TEMP/contiwatch" ./cmd/contiwatch
+          node --test web/tests/*.test.cjs
+          node --check web/static/app.js
+          python3 .github/scripts/security_checks_test.py
+      - name: Audit and build frontend
+        run: |
+          npm ci --no-fund
+          npm audit --audit-level=low
+          npm run build:cm6
+          python3 .github/scripts/check-vendor.py --audit
+      - name: Audit Go dependencies
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@v1.8.0
+          govulncheck -json ./... > "$RUNNER_TEMP/go-vulnerabilities.json"
+          python3 .github/scripts/check-go-vulnerabilities.py "$RUNNER_TEMP/go-vulnerabilities.json"
+
+  container-packages:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+      - name: Build isolated scan image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
+        with:
+          context: .
+          load: true
+          platforms: linux/amd64
+          tags: contiwatch-security-check:local
+          no-cache-filters: runtime
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Audit runtime OS packages
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: contiwatch-security-check:local
+          version: v0.69.3
+          scanners: vuln
+          vuln-type: os
+          severity: HIGH,CRITICAL
+          exit-code: '1'

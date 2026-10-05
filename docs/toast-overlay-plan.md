@@ -1,10 +1,28 @@
 # Toast overlay notifications (bottom-right) — implementation plan
 
-This document describes a **universal**, app-agnostic plan for implementing modern, non-blocking notifications as an **overlay stack** in the bottom-right corner of the UI.
+Status: **Core implemented; original design guidance retained below.** Contiwatch introduced toast overlays in `1.2.4`. This record is not a pending instruction to rebuild the notification system. The current implementation is in [app.js](../web/static/app.js), [style.css](../web/static/style.css), and [index.html](../web/static/index.html).
 
-Naming in examples (`toast-stack`, `toast`, `notify`) is illustrative — keep whatever naming fits your app conventions.
+## Current implementation
+
+- `notify(payload)` uses `toastQueue`, `toastVisible`, and a maximum of three visible notifications; additional entries wait in FIFO order.
+- Defaults are 3000 ms for success, 4500 ms for info, 6000 ms for warning, and 10000 ms for error. Explicit finite timeouts have a 1000 ms minimum.
+- `showToast(message, timeoutMs)` remains an info wrapper, with an 8000 ms default.
+- Messages and action labels use `textContent`. Errors have `role="alert"`; other types have `role="status"`. The stack has a polite live region.
+- Each toast has a dismiss button and progress bar. Hover pauses its timer; removal clears the timer and drains the queue.
+- A supplied ID replaces an existing visible/queued toast through removal and requeueing; it does not update the existing DOM card in place.
+- Payloads also support trusted application callbacks in `actions`, including the stack timeout Extend action. Dismissal occurs before an action callback runs. No Undo workflow is implemented.
+- Styling uses existing surface/theme tokens, an icon bubble, type accents, and fixed bottom-right placement. The earlier optional glass effect is not a required pending feature.
+
+## Remaining validation
+
+The checklist at the end remains a set of browser acceptance checks, not recorded test results. Verify screen-reader announcements, keyboard dismissal, safe-area placement, small-screen widths, timer/progress continuity after hover, reduced motion, and flooding when changing this subsystem. Static inspection alone does not establish those runtime results. Keep destructive confirmations as explicit confirmation controls; a notification cannot replace consent for an action.
+
+## Original design guidance
+
+The following sections retain the original general design intent and illustrative markup. Where they differ, the implementation summary above describes Contiwatch's current behavior.
 
 ## Goal
+
 - Notifications do **not** take layout space (no toolbar/topbar displacement).
 - Notifications appear **above all UI** (overlay) and work like “real app” notifications.
 - Support typed variants: `success`, `info`, `warning`, `error`.
@@ -16,6 +34,7 @@ Naming in examples (`toast-stack`, `toast`, `notify`) is illustrative — keep w
 - Optional: show a **progress bar** indicating remaining time until auto-dismiss.
 
 ## UX principles
+
 - Short, scannable text (avoid paragraphs).
 - Errors stay long enough to be noticed, but don’t block user interaction.
 - Consistent placement, spacing, and animation timing.
@@ -32,6 +51,7 @@ type ToastPayload = {
   type: ToastType;
   message: string;         // required, trimmed
   timeoutMs?: number;      // optional override; otherwise defaults per type
+  actions?: { label: string; onClick: () => void }[]; // trusted application callbacks
 };
 ```
 
@@ -100,7 +120,7 @@ Implementation notes:
 ## Runtime behavior (JS)
 
 ### Public API
-Expose a single function:
+The implementation exposes a single function:
 
 ```js
 notify({ type, message, timeoutMs })
@@ -111,11 +131,12 @@ Optionally keep backward compatibility:
   - implement `showToast()` as a thin wrapper that calls `notify({ type: "info", ... })`
 
 ### Defaults
-Define default timeouts per type (example values):
-- `success`: 2500–3500ms
-- `info`: 3500–5000ms
-- `warning`: 5000–6500ms
-- `error`: 9000–12000ms (still auto-dismisses)
+Current default timeouts per type:
+
+- `success`: 3000ms
+- `info`: 4500ms
+- `warning`: 6000ms
+- `error`: 10000ms (still auto-dismisses)
 
 ### Queue + concurrency
 - Maintain:
@@ -165,13 +186,13 @@ Implementation options:
 - Render notification text via `textContent` (or equivalent) and avoid injecting raw HTML in `message`.
 - If rich content is required, define a safe, explicit schema and sanitize inputs.
 
-### Deduplication (optional)
-If needed in future:
-- If `payload.id` is provided:
-  - if a toast with same id exists (visible or queued), update it instead of adding a new one.
+### Replacement by ID
+
+The original design suggested updating a matching notification in place. Contiwatch currently removes a matching visible or queued ID and enqueues the new payload, restarting its lifetime.
 
 ## Integration checklist
-- Replace “system” dialogs (`alert/confirm/prompt`) with `notify(...)`.
+
+- Replace informational `alert()` dialogs with `notify(...)`. Preserve required confirmations and text input through explicit application controls; a toast does not replace `confirm()` or `prompt()` semantics.
 - Replace any inline topbar “toast” placeholders that occupy layout space.
 - Map error sources to `type="error"`:
   - network failures, validation failures, server errors.
@@ -179,6 +200,7 @@ If needed in future:
 - Internationalization: keep messages short and translatable; avoid hard-coded punctuation-heavy strings.
 
 ## Validation checklist
+
 - Keyboard: close button focusable; doesn’t trap focus.
 - Screen readers: message announced (polite vs assertive).
 - Reduced motion: animations disabled.

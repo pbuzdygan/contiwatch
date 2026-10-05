@@ -183,7 +183,7 @@ func (s *Server) listRemoteContainers(cfg config.Config, name string) ([]dockerw
 	if remote.Token != "" {
 		req.Header.Set("Authorization", "Bearer "+remote.Token)
 	}
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := newAgentHTTPClient(10 * time.Second)
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
@@ -259,7 +259,7 @@ func (s *Server) applyRemoteContainerAction(cfg config.Config, name, containerID
 	if remote.Token != "" {
 		req.Header.Set("Authorization", "Bearer "+remote.Token)
 	}
-	client := &http.Client{Timeout: 15 * time.Second}
+	client := newAgentHTTPClient(15 * time.Second)
 	resp, err := client.Do(req)
 	if err != nil {
 		return dockerwatcher.ContainerInfo{}, err

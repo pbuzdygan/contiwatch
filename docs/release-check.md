@@ -1,259 +1,64 @@
-# Release Check - uniwersalny schemat
+# Release checks and image tagging
 
-Ten dokument opisuje uniwersalny mechanizm sprawdzania nowej wersji aplikacji, z rozdzieleniem kanałów wydań (np. `main` / `dev`, `stable` / `beta`, `prod` / `staging`).
+This is the Contiwatch implementation guide. It replaces the earlier generic examples; the [release workflow](../.github/workflows/release-image.yml), [Dockerfile](../Dockerfile), [backend](../internal/server/release_check.go), and [frontend](../web/static/app.js) define the behavior.
 
-Zawiera przykładową implementację dla:
-- Backend: Go (HTTP API, scheduler, logi)
-- Frontend: statyczne HTML/CSS + vanilla JS
+## Build versions and channels
 
-## 1) Konwencje wersji i kanałów
+Publishing a GitHub release triggers the image workflow. `target_commitish` must be exactly `main` or `dev`; other targets fail the tag-resolution step. Images are published under `ghcr.io/${github.repository}` for `linux/amd64`, `linux/arm/v7`, and `linux/arm64`.
 
-Ustal zasady nazewnictwa wydań tak, aby dało się je rozdzielić między kanały:
-- **kanał stabilny**: tagi semver, np. `v1.2.3`
-- **kanał niestabilny**: tagi dev/beta/rc, np. `dev12`, `beta-3`, `rc.1`
+| Release target | Image tags | Embedded `VERSION` |
+| --- | --- | --- |
+| `main` | `latest`, the exact release tag | Exact release tag. |
+| `dev` | `dev_latest`, `dev_<release-tag>` | Exact tag when it starts with `dev`; otherwise `dev` followed by the tag. |
 
-Wymagania:
-- Kanał musi być rozpoznawalny po tagu/nazwie release albo po `target_commitish`.
-- Jeśli kanałów jest więcej niż dwa, zdefiniuj reguły priorytetu i fallback.
+For example, a `main` release tagged `1.3.4` produces `latest` and `1.3.4`; a `dev` release tagged `12` produces `dev_latest` and `dev_12`, with embedded version `dev12`.
 
-## 2) Pipeline (build i tagowanie artefaktów)
+The Docker build argument `VERSION` is passed to Go as `-ldflags="-X main.Version=${VERSION}"`. The workflow does not inject runtime `APP_VERSION`, `APP_REPO`, or `APP_CHANNEL` variables. Use the [configuration reference](configuration.md#environment-variables) for runtime overrides and compatibility aliases.
 
-W pipeline ustawiasz:
-- `APP_VERSION` (np. tag release)
-- `APP_REPO` (np. `org/app`)
-- `APP_CHANNEL` (np. `main`, `dev`, `beta`)
-- Tag artefaktu/obrazu: `latest` dla kanału stabilnego, osobny tag dla innych kanałów (np. `dev_latest`)
+Keep stable tags suitable for semantic version comparison and development tags consistent. Metadata infers `dev` from versions starting with `dev` or `vdev`; otherwise it infers `main`. `CONTIWATCH_CHANNEL` explicitly overrides this inference. The runtime strips a leading `v` from embedded versions. `release_tag` is derived from the resolved version, not a separately stored original workflow tag.
 
-Minimalny pseudokod (GitHub Actions):
+## Backend metadata and release API
 
-```yaml
-on:
-  release:
-    types: [ published ]
+`GET /api/meta` returns `version`, `repo`, `channel`, and optional `release_tag`. `GET /api/release` returns:
 
-jobs:
-  build:
-    if: github.event.release.target_commitish == 'main' || github.event.release.target_commitish == 'dev'
-    steps:
-      - checkout
-      - set VERSION = tag
-      - set CHANNEL = (target_commitish == dev ? dev : main)
-      - set PRIMARY_TAG = (CHANNEL == dev ? dev_latest : latest)
-      - build artifact with APP_VERSION/APP_REPO/APP_CHANNEL
-      - publish artifact tagged with PRIMARY_TAG
-```
-
-## 3) Backend - API meta
-
-Backend jest źródłem prawdy o wersji i kanale. Wystaw endpoint:
-
-`GET /api/meta` -> `{ version, repo, channel }`
-
-Opcjonalnie dodaj:
-- `release_tag` (dokładny tag release do linków)
-- `release_check_enabled` (flaga do wyłączenia w instalacjach offline)
-
-W praktyce warto **nie odpytywać GitHuba bezpośrednio z przeglądarki** (CORS, rate limit, prywatne repo). Zalecane jest proxy w backendzie z cachem/ETag.
-
-### Minimalny kod (Go)
-
-```go
-package main
-
-import (
-  "encoding/json"
-  "log"
-  "net/http"
-  "os"
-)
-
-type MetaResponse struct {
-  Version string `json:"version"`
-  Repo    string `json:"repo"`
-  Channel string `json:"channel"`
-}
-
-func metaHandler(w http.ResponseWriter, r *http.Request) {
-  resp := MetaResponse{
-    Version: getenv("APP_VERSION", "dev"),
-    Repo:    getenv("APP_REPO", "org/app"),
-    Channel: getenv("APP_CHANNEL", "main"),
-  }
-  w.Header().Set("Content-Type", "application/json")
-  _ = json.NewEncoder(w).Encode(resp)
-}
-
-func getenv(k, fallback string) string {
-  v := os.Getenv(k)
-  if v == "" {
-    return fallback
-  }
-  return v
-}
-
-func main() {
-  mux := http.NewServeMux()
-  mux.HandleFunc("/api/meta", metaHandler)
-
-  log.Println("HTTP on :8080")
-  _ = http.ListenAndServe(":8080", mux)
+```json
+{
+  "meta": {
+    "version": "1.3.4",
+    "repo": "pbuzdygan/contiwatch",
+    "channel": "main",
+    "release_tag": "1.3.4"
+  },
+  "latest": {
+    "version": "1.3.4",
+    "tag": "1.3.4",
+    "url": "https://github.com/pbuzdygan/contiwatch/releases/tag/1.3.4"
+  },
+  "update_available": false,
+  "checked_at": "2026-10-05T10:00:00Z"
 }
 ```
 
-## 4) Frontend (vanilla JS) - pobieranie i filtrowanie release
+This is an illustrative response, not a claim about the latest published release. Responses may include `error`. Metadata is public on controllers; agents require their bearer token for these endpoints.
 
-Frontend robi dwa kroki:
-1) `GET /api/meta` -> ustawia `appVersion` i `releaseChannel`
-2) pobiera release (najlepiej z backendu) i wybiera odpowiedni wg kanału
+The backend fetches up to 30 releases from `https://api.github.com/repos/<owner>/<name>/releases?per_page=30`, using a 10-second HTTP timeout and `If-None-Match`/ETag caching. The controller monitor checks at startup and every six hours. Agents do not start the background monitor, but their release endpoint can refresh data on demand.
 
-### Struktura danych release (GitHub API)
+An endpoint request refreshes absent or older-than-six-hours state. A `304` keeps the previous result and advances its check time. A fetch failure preserves the previous release/update state and records an error and check time, so consumers must not interpret stale data as a successful fresh check.
 
-`GET https://api.github.com/repos/<repo>/releases?per_page=30`
+Setting either `CONTIWATCH_RELEASE_CHECK` or the legacy `APP_RELEASE_CHECK` to false disables checks. The endpoint then returns HTTP `200`, `update_available=false`, and `error="release check disabled"`. GitHub credentials stay in the backend, with `CONTIWATCH_GITHUB_TOKEN` taking precedence over `GITHUB_TOKEN`.
 
-Ważne pola:
-- `tag_name`
-- `name`
-- `target_commitish`
-- `html_url`
+## Release selection and comparison
 
-### Logika wyboru release (kanały)
+A release is classified as development when its tag or name starts with `dev`, or its `target_commitish` is `dev`. The first filtering pass skips drafts and selects the requested channel; releases are sorted by the backend version comparator. The `prerelease` flag alone does not define the development channel.
 
-```js
-function isDevRelease(rel) {
-  const tag = (rel.tag_name || "").toLowerCase();
-  const name = (rel.name || "").toLowerCase();
-  const branch = (rel.target_commitish || "").toLowerCase();
-  return tag.startsWith("dev") || name.startsWith("dev") || branch === "dev";
-}
+If filtering produces no candidates, the current implementation falls back to the entire fetched list and sorts it. This fallback can cross channels and also bypass the first-pass draft exclusion. Do not describe channel isolation as guaranteed or silently change this compatibility behavior during documentation work.
 
-function selectReleaseForChannel(releases, channel) {
-  const normalized = (channel || "main").toLowerCase();
-  const filtered = releases.filter((r) => (normalized === "dev" ? isDevRelease(r) : !isDevRelease(r)));
-  if (!filtered.length) return releases[0] || null;
-  filtered.sort((a, b) => compareVersions(releaseVersion(b), releaseVersion(a)));
-  return filtered[0];
-}
+Version comparison normalizes a leading `v`, compares semantic versions numerically, and handles development versions through the existing comparator, including numeric development indices. Stable and development versions have distinct ordering. The [release tests](../internal/server/release_check_test.go) cover stable, development semantic, numeric development, and channel-selection cases.
 
-function releaseVersion(rel) {
-  return rel.tag_name || rel.name || null;
-}
-```
+## Frontend behavior
 
-### Porównywanie wersji (semver + niestabilne tagi)
+The browser loads metadata and obtains release status through `/api/release`; it does not implement a second GitHub release-fetching/selection pipeline. The sidebar update indication and Settings About view use the backend result. If modifying the presentation, use text nodes for external version text and validate the protocol/destination before assigning a release link. Do not interpolate external release data into raw `innerHTML`.
 
-```js
-function normalizeVersion(v) {
-  if (!v) return null;
-  return v.trim().replace(/^v/i, "");
-}
+## Verification and maintenance
 
-function isDevVersion(v) {
-  return !!v && /^dev/i.test(v);
-}
-
-function extractDevIndex(v) {
-  if (!v) return 0;
-  const m = v.match(/^dev[-_]?(\d+)/i);
-  return m ? Number(m[1]) || 0 : 0;
-}
-
-function compareVersions(a, b) {
-  const left = normalizeVersion(a);
-  const right = normalizeVersion(b);
-  const leftIsDev = isDevVersion(left);
-  const rightIsDev = isDevVersion(right);
-
-  if (leftIsDev || rightIsDev) {
-    if (leftIsDev && !rightIsDev) return -1;
-    if (!leftIsDev && rightIsDev) return 1;
-    const diff = extractDevIndex(left) - extractDevIndex(right);
-    if (diff > 0) return 1;
-    if (diff < 0) return -1;
-    return (left || "").localeCompare(right || "");
-  }
-
-  if (!left && !right) return 0;
-  if (!left) return -1;
-  if (!right) return 1;
-  const l = left.split(".").map((p) => Number(p) || 0);
-  const r = right.split(".").map((p) => Number(p) || 0);
-  const len = Math.max(l.length, r.length);
-  for (let i = 0; i < len; i++) {
-    const la = l[i] || 0;
-    const rb = r[i] || 0;
-    if (la > rb) return 1;
-    if (la < rb) return -1;
-  }
-  return 0;
-}
-```
-
-### Przykładowy skrypt (frontend)
-
-```html
-<div id="release-status">Loading...</div>
-<script>
-  const statusEl = document.getElementById("release-status");
-  const POLL_MS = 1000 * 60 * 60 * 6;
-
-  async function fetchMeta() {
-    const res = await fetch("/api/meta");
-    if (!res.ok) throw new Error("meta failed");
-    return await res.json();
-  }
-
-  async function fetchReleases(repo) {
-    // Wersja bezpośrednia (GitHub API).
-    // W produkcji preferuj backend-proxy (CORS, rate limit, prywatne repo).
-    const res = await fetch(`https://api.github.com/repos/${repo}/releases?per_page=30`, {
-      headers: { Accept: "application/vnd.github+json" },
-    });
-    if (!res.ok) throw new Error("releases failed");
-    const data = await res.json();
-    return Array.isArray(data) ? data : [];
-  }
-
-  function render(appVersion, latestVersion, latestUrl) {
-    if (!appVersion) {
-      statusEl.textContent = "Dev build";
-      return;
-    }
-    if (latestVersion && compareVersions(appVersion, latestVersion) < 0) {
-      statusEl.innerHTML = `Update available: ${latestVersion} <a href="${latestUrl}" target="_blank" rel="noreferrer">release</a>`;
-      return;
-    }
-    statusEl.textContent = `Version: ${appVersion}`;
-  }
-
-  async function refresh() {
-    try {
-      const meta = await fetchMeta();
-      const releases = await fetchReleases(meta.repo);
-      const release = selectReleaseForChannel(releases, meta.channel);
-      const latestVersion = release ? (release.tag_name || release.name) : null;
-      const latestUrl = release ? release.html_url : null;
-      render(meta.version, latestVersion, latestUrl);
-    } catch (e) {
-      statusEl.textContent = "Release check unavailable";
-    }
-  }
-
-  refresh();
-  setInterval(refresh, POLL_MS);
-</script>
-```
-
-## 5) Podsumowanie logiki (flow)
-
-1) Pipeline buduje artefakt z `APP_CHANNEL=<kanał>` i publikuje go z odpowiednim tagiem.
-2) Backend `/api/meta` zwraca aktualną wersję, repo i kanał.
-3) Backend lub frontend pobiera release, filtruje wg kanału.
-4) `compareVersions` ustala, czy jest nowsza wersja.
-5) UI pokazuje "Update available" tylko w odpowiednim kanale.
-
-## 6) Wskazówki wdrożeniowe
-
-- Nie mieszaj tagów semver i tagów niestabilnych w tym samym kanale.
-- Dla kanału niestabilnego utrzymuj spójną numerację (`dev1`, `dev2`, `rc.1`, itp.).
-- Jeśli brak release dla kanału, UI może pokazać brak aktualizacji lub fallback do najnowszego release.
-- Przy prywatnym repo użyj tokena w backendzie i proxy zamiast bezpośredniego GitHub API w przeglądarce.
+When changing release behavior, compare the workflow tag mapping, embedded version, metadata, selected release, and UI result together. Test no releases, no matching channel, disabled checks, transport failures, version prefixes, and older cached data with isolated fixtures. See [testing](testing.md) for commands and [installation](installation.md#published-images-and-upgrades) for image usage.

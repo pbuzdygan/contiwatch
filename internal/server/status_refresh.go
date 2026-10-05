@@ -68,7 +68,7 @@ func fetchRemoteScanStatus(ctx context.Context, remote config.RemoteServer) (doc
 	if remote.Token != "" {
 		req.Header.Set("Authorization", "Bearer "+remote.Token)
 	}
-	client := &http.Client{Timeout: 5 * time.Second}
+	client := newAgentHTTPClient(5 * time.Second)
 	resp, err := client.Do(req)
 	if err != nil {
 		return result, err

@@ -1,15 +1,41 @@
 # Changelog
 
+## v1.3.5
+
+### Bug fixes
+
+- Container stacks: New/Edit stack no longer loses unsaved edits when clicking outside the window, Close, or Escape. A warning lists the changed Name, Compose, and `.env` fields and directs users to Save or Cancel; Cancel preserves the previously saved configuration.
+- Container stacks: editing and closing are disabled while loading, saving, or running an editor action, and duplicate saves are prevented.
+- Container stacks: saving an explicit `.env` deletion now clears the editor content so a later save does not recreate the deleted file unintentionally.
+
+### Improvements
+
+- CI: pin checks and release runners to Ubuntu 24.04 and update Trivy Action to v0.36.0 with Node.js 24-compatible cache dependencies, retaining commit pinning and existing vulnerability gates.
+- Container stacks: editor action tooltips now explain that Compose up/down, Redeploy, and Restart stack save changes before running. The user guide documents each operation, including that Restart does not apply changed service settings or environment variables to existing containers.
+- Tests: added stack editor regression coverage for unsaved changes, cancellation, saving, loading/save failures, and saving before stack operations.
+
+### Security
+
+- Images: upgrade inherited Alpine packages during runtime builds and bypass the runtime-stage cache in checks/releases, so pinned base images do not retain outdated OpenSSL libraries flagged by CVE-2026-14456.
+- Config: GET and successful PUT responses redact nested agent tokens without modifying stored credentials or controller-to-agent bearer authentication.
+- Shell/Logs: bound message sizes, active connections, and stalled writes; use standard WebSocket ping/pong and close session-bound streams on logout. SSE also ends on session revocation, with subscription broadcasts synchronized against closure.
+- Agents: bound HTTP response bodies and reject HTTPS-to-HTTP redirects while retaining private-network HTTP, existing tokens, legacy stack endpoints, and long operation timeouts.
+- Stacks: exclude Contiwatch credentials from inherited Compose environment, retain Docker/TLS/proxy/custom settings, cap diagnostic output without interrupting pulls, and confine stored stack-file access using filesystem roots.
+- Builds: exclude local credential files, pin base-image digests and CI action revisions, and update the Go builder to 1.26.8. Release metadata now passes through validated environment values rather than shell interpolation.
+- Verification: gate image publication on tests, static checks, dependency audits, vendor inventory checks, and runtime OS-package scanning. Add regression coverage for controller/agent compatibility, legacy Docker API negotiation, secret redaction, stream revocation/limits, and stack-file confinement.
+
 ## v1.3.4
 
-## Bug fixes
+### Bug fixes
+
 - Container stacks: fixed Compose up/down/redeploy on slow hosts (e.g. Raspberry Pi Zero 2 W, slow SD cards or networks) failing with `context deadline exceeded (Client.Timeout exceeded while awaiting headers)` because the controller waited for the agent in a single HTTP request.
 - Container stacks: remote agent errors now show the agent's message instead of a bare HTTP status code.
 - Containers: fixed switching servers sometimes leaving the previous server's containers (or its filtered search results) on screen until the next auto-refresh; responses for a no-longer-selected server are now ignored and the view reloads for the new selection.
 - Containers: the active search filter is now re-applied to newly rendered container rows.
 - Containers: switching servers in the Networks and Volumes views now reloads their lists.
 
-## Improvements
+### Improvements
+
 - Container stacks: stack actions run as background jobs that the UI polls, so slow image pulls and container processing are no longer bound to one HTTP request.
 - Container stacks: shortly before an action times out, a disappearing warning offers to extend the timeout by 10 minutes; without an extension the action times out as before. Extension is forwarded end-to-end to remote agents.
 - Container stacks: a second action for the same stack is rejected while one is still running.
@@ -21,7 +47,8 @@
 
 ## v1.3.3
 
-## Bug fixes
+### Bug fixes
+
 - Updates: removed the two-minute whole-batch deadline that cancelled servers waiting behind slow remote image pulls.
 - Updates: remote image pulls now use a long per-operation timeout while manual stop remains available for cancelling the batch.
 - Updates: fixed remote Contiwatch containers being mistaken for the running agent solely because of their image name.
@@ -33,13 +60,15 @@
 - Updates UI: `Latest` no longer includes updated or failed containers, and a separate `Failed` counter makes operation errors visible.
 - Discord: scan notifications now distinguish detected updates, successfully updated containers, and containers that remain outdated.
 
-## Improvements
+### Improvements
+
 - Updates UI: the final batch notification reports updated, remaining, failed, and cancelled totals.
 - Updates: live scan results now carry their terminal state before being broadcast to the UI.
 
 ## v1.3.2
 
-## Bug fixes
+### Bug fixes
+
 - Mobile UI: fixed Servers and Events filter dropdowns being clipped by their single-row toolbars.
 - Containers: fixed CPU/RAM columns staying empty or showing only previously selected resource cards when the resource cache contained a partial snapshot.
 - Containers: resource metrics are now fetched in bounded batches and merged without discarding the last valid values after a transient error.
@@ -48,10 +77,12 @@
 - Container stacks: stack `.env` values can no longer be shadowed by same-named variables inherited from the Contiwatch process.
 - Container stacks: validation now checks the interpolated Compose model instead of disabling interpolation.
 
-## New features
+### New features
+
 - Servers: added an on-demand Health check with Docker Engine details, container health counts, host capacity, and Docker storage/reclaimable summaries for local and remote servers.
 
-## Improvements
+### Improvements
+
 - Mobile UI: moved search into the header grid to prevent overlap, kept Servers and Events controls on one row, and prevented iOS focus zoom on form fields.
 - Mobile navigation: moved contextual Containers shortcuts into the primary swipeable navigation with visible edge indicators and automatic active-item reveal.
 - Mobile Servers: new installations now default to the card layout while preserving an existing saved preference.
@@ -62,19 +93,22 @@
 
 ## v1.3.1
 
-## Bug fixes
+### Bug fixes
+
 - Security: fixed PIN lockout bypass through spoofed `X-Forwarded-For`; forwarded addresses are now accepted only from explicitly configured trusted proxies.
 - Security: bounded PIN attempt tracking, added a global attempt limiter, and limited request bodies, headers, and HTTP connection lifetimes to reduce memory and slow-client exhaustion risks.
 - Security: browser Shell/Logs WebSockets now use short-lived, single-use tickets instead of exposing the long-lived PIN session token in the URL.
 - Security: fixed theme initialization being blocked by CSP by moving the startup script to a same-origin asset; tightened WebSocket origin matching and response caching policy.
 - Security: prevented Discord transport errors from leaking webhook URLs and enforced private, atomic writes for controller config and stack files.
 
-## New features
+### New features
+
 - UI/Containers: added compact mobile container pickers for Logs, Shell, and Resources.
 - UI/Containers: added a mobile focus mode that expands Logs, Shell, or Resources to nearly the full viewport and can be exited from the workspace or with Escape.
 - Security: added `CONTIWATCH_TRUSTED_PROXIES` for explicit reverse-proxy IP/CIDR trust configuration.
 
-## Improvements
+### Improvements
+
 - UI/Mobile: compressed the Containers top bar, added horizontal action scrolling, safe-area and visual-viewport handling, compact resource cards, and 44 px minimum touch targets.
 - Security: agent tokens are compared in constant time; short legacy tokens and existing HTTP agent URLs stay compatible but now emit actionable security warnings.
 - Dependencies: upgraded Go, Alpine, Docker client, WebSocket, OpenTelemetry, and frontend dependencies; added a reproducible npm lockfile and read-only Go module build.
@@ -84,7 +118,8 @@
 
 ## v1.3.0
 
-## Bug fixes
+### Bug fixes
+
 - Security: fixed unsecured-by-default controller startup by requiring PIN in controller mode (`APP_PIN`).
 - Security: fixed secrets exposure in read APIs (`GET /api/config`, `GET /api/servers`) by hiding sensitive values and exposing only `*_configured` flags.
 - Security: fixed permissive WebSocket origin policy (`container shell/logs`) by validating origin.
@@ -93,12 +128,14 @@
 - Security: fixed missing UI/API lock layer by adding PIN session enforcement for protected controller API endpoints.
 - Security: fixed insecure setup examples by removing predictable default PIN values from shipped controller examples.
 
-## New features
+### New features
+
 - Security: added HTTP response hardening headers (CSP, `X-Frame-Options`, `nosniff`, `Referrer-Policy`, `Permissions-Policy`).
 - API: added safe secret update semantics using sentinels for webhook (`__keep__`, `__clear__`) and token-preserve on empty value for existing remote servers.
 - Security: added PIN guard (`APP_PIN`) with secure server-side PIN verification, per-window session token flow, lockout/backoff protection, and `/api/pin/*` endpoints.
 
-## Improvements
+### Improvements
+
 - UI/Settings: Discord webhook value is now treated as hidden server-side secret (UI shows configured state instead of full value).
 - UI/Servers: remote token handling updated for hidden tokens (`token_configured`) with safe “leave empty to keep” behavior.
 - Security: removed controller HTTP Basic Auth path in favor of required PIN gate in controller mode.
@@ -109,7 +146,8 @@
 
 ## v1.2.5
 
-## Bug fixes
+### Bug fixes
+
 - UI: mobile and responsive view improvements, among other things:
     - horizontal scrolling now works properly on mobile
     - a bit more space for Logs, Shell and Resources content
@@ -118,27 +156,32 @@
 - Update notifier: UI update check and notification was in "no update loop" due to logic misconfiguration - now fixed
 - Webhook notification: correcting starting notification to reflect correct scheduler plan: basic, advanced (cron) and legacy
 
-## New features
+### New features
+
 - Containers: added Remove action (docker rm) - now possible to remove stopped container directly from UI.
 - Containers: added Volumes view (list, details modal, safe remove with blockers, and prune unused).
 - Containers: added Networks view (list, details, safe remove, prune, connect/disconnect).
 - Scheduler: new Basic and Advanced options to schedule update/update check. Basic: simple day and hour picker, Advanced: cron expression syntax
 
-## Improvements
+### Improvements
+
 - UI: Container Networks - improving UI ergonomy
 - UI: Settings - improving menu ergonomy
 - Webhook notification: unifying notification content and merging them to avoid frequent and detailed notification "spam"
 
 ## v1.2.4
 
-## Bug fixes
+### Bug fixes
+
 - UI: fix tooltip positioning near the bottom edge of the screen (no longer rendered outside viewport).
 
-## New features
+### New features
+
 - Stacks: added Redeploy action (docker compose pull + docker compose up -d) in the stacks table and stack editor.
 - UI: toast notifications are now overlay stack (bottom-right) with queueing, auto-dismiss, and per-type styling.
 
-## Improvements
+### Improvements
+
 - UI: topbar Search input gently pulses when a filter is active, so it’s easier to notice that results are filtered.
 - Images: correcting UI to have consistent fonts and icons size
 - UI: removed browser `alert()` dialogs in favor of in-app feedback (toast/inline modal error).
@@ -150,25 +193,25 @@
 
 ## v1.2.3
 
-## Bug fixes
+### Bug fixes
+
 - Images: fixed remote agent mode requests (no longer incorrectly passing server=<remote name> which could cause local server not found).
 
-## New features
+### New features
+
 - UI: Update notification in UI - sidebar's footer can show an update badge when a newer release is available.
 - Settings: added About card with current version, update status and few more details like channel, repo, release tag.
 
-## Improvements
+### Improvements
+
 - Containers: IP/Port columns now populate immediately on first load (no need to wait for /api/containers/resources).
 - Containers: CPU/RAM now load in a 2-step way (server-side cache returned immediately when available, then refreshed in background).
 - Containers: adjusted table column order + narrower RAM column (999 MB max) to free space for wider Uptime.
 
 ## v1.2.2
 
-## Bug fixes
+### Improvements
 
-## New features
-
-## Improvements
 - Container Stacks: UI adjustment, space using optimisation.
 - Container Stacks: New/Edit stack modal now includes quick actions (Save, Compose up/down) in the header row.
 - UI: Improving user experience by icon-action increase (without changing button size).
@@ -186,18 +229,21 @@
 
 ## v1.2.1
 
-## Bug fixes
+### Bug fixes
+
 - Container stacks: `docker compose` actions no longer fail when stack name contains uppercase letters (project name is normalized to lowercase).
 - Container stacks: validation markers now point to the offending line more reliably (includes `Line N` in the tooltip; best-effort mapping for Compose config errors).
 
-## New features
+### New features
+
 - Container stacks: Compose/.env editor migrated to CodeMirror 6 (bundled in the image; no CDN).
 - Container stacks: inline validation while editing (Compose via `/api/stacks/validate`, `.env` via local lint rules).
 - Container stacks: destructive actions (Remove/Kill) now use an inline confirm click (no browser `confirm()` popup).
 - Container stacks: optimistic per-action status labels while an operation is in progress (Deploying/Teardown/Restarting/Killing/Removing).
 - Container images: new images view with repository grouping, manual refresh, pull, prune (unused/dangling), and remove-by-image-id.
 
-## Improvements
+### Improvements
+
 - Container stacks: removed row expand/collapse (container list under a stack) to simplify the table UX (API `/api/stacks/containers` removed as well).
 - Editor UX: YAML-friendly defaults (2-space indent, word wrap, folding, indent guides) plus basic autocomplete for common Compose keys/values.
 - Dark mode: improved editor theming (gutter/cursor/tooltips/autocomplete are theme-aware).
@@ -209,7 +255,8 @@
 
 ## v1.2.0
 
-## New features
+### New features
+
 - UI ergonomy improvements
 - Containers feature (experimental):
     - settings: Experimental features toggle section (Containers + Container shell/logs/stacks/images)
@@ -222,7 +269,8 @@
     - create/edit stack compose files without deploying.
     - stack containers expansion with downed containers highlighted.
 
-## Improvements
+### Improvements
+
 - Containers feature:
     - auto-refresh every 5s with in-place row updates (no list reset), manual refresh, and sort by name/state
     - action buttons use colored icons with hover backgrounds; state column uses badge-style labels
@@ -233,26 +281,26 @@
 - Server reachability: checking state no longer overrides online/offline once known.
 - Remote shell/logs proxy: improved WebSocket close handling when switching sessions.
 
-## Bug fixes
+### Bug fixes
+
 - Settings: Containers-dependent experimental toggles are disabled when Containers is off.
 - Servers/Updates: fixed cases where remote servers could remain stuck in Checking in the UI.
 
 ## v1.1.2
 
-## New features
+### Improvements
 
-## Improvements
 - Mobile and responsive view: improvements and adjustments. Now mobile view is usable.
 - UI: further icons implementations and UI ergonomy fixes.
 
-## Bug fixes
-
 ## v1.1.1
 
-## New features
+### New features
+
 - Update API now returns `old_image_id`, `new_image_id`, and `applied_image_id` for troubleshooting.
 
-## Improvements
+### Improvements
+
 - Status cards: Details action now uses an icon button.
 - Settings: Renamed “Global policy” to “Global update policy”.
 - Update logs now include the old/new/applied image IDs.
@@ -262,7 +310,8 @@
 - Status: Update checks no longer pull images; they compare registry vs local digest and keep pulls for updates only.
 - Logs: Scan now reports “digest unknown”/registry digest issues in API logs for easier troubleshooting.
 
-## Bug fixes
+### Bug fixes
+
 - Update action now verifies the recreated container uses the pulled image and retries once using the resolved image ID if needed.
 - Servers: Remove flow no longer changes Edit into Cancel; clicking outside Confirm now cancels the remove confirmation.
 - Status: Selective scan mode now auto-clears after a scan completes or after “Check connection”.
@@ -271,13 +320,15 @@
 
 ## v1.1.0
 
-## New features
+### New features
+
 - Live server status updates via server stream (SSE) with on-demand reachability checks.
 - New CHECKING state for servers awaiting reachability confirmation.
 - Maintenance mode for local/remote servers, reflected in status and scan targeting.
 - New add/edit modals for local and remote servers, including token + compose copy for agents.
 
-## Improvements
+### Improvements
+
 - Servers view rebuilt with table/cards layout, active/maintenance filters, and view toggle.
 - Sidebar search now filters the Servers list.
 - Server list renders immediately; health/status updates arrive asynchronously.
@@ -291,7 +342,8 @@
 - Added `POST /api/status/refresh` to repopulate remote scan snapshots after controller restarts.
 - Added `POST /api/self-update` for safe agent self-updates.
 
-## Bug fixes
+### Bug fixes
+
 - Offline servers no longer block the initial Servers view render.
 - Newly added offline servers appear immediately while status checks run.
 - Remove-confirm state no longer resets on background refresh.
@@ -307,23 +359,26 @@
 
 ## v1.0.0
 
-## :fire: First main release after initial development phase
+### :fire: First main release after initial development phase
 
-## New features
+### New features
+
 - Status view redesigned with server cards, inline actions, and richer scan state badges.
 - Details modal rebuilt with collapsible groups and container cards for updates and scanned items.
 - Persistent local scan state across restarts.
 - New notification toggles in Settings for update events.
 - Remote agent support improvements: clearer server list indicators and diagnostics.
 
-## Improvements
+### Improvements
+
 - Unified icon system across sidebar, status, servers list, and settings.
 - Custom tooltips with better positioning and theme-aware styling.
 - Theme toggle simplified to light/dark with icon indicators.
 - Status summary metrics updated with clearer labels and icons.
 - Global scheduler indicators added to status and server cards.
 
-## Bug fixes
+### Bug fixes
+
 - Scan state handling corrected (pending/scanning visibility and cleanup).
 - Local/remote status handling refined during scan cancel and restart.
 - Self-update flow stabilized and helper logs surfaced for troubleshooting.

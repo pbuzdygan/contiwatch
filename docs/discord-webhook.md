@@ -1,98 +1,58 @@
-# Discord webhook — powiadomienia (treść i scenariusze)
+# Discord webhook notifications
 
-Contiwatch wysyła powiadomienia na Discord jako **embed** (pole `embeds[]`). Stały kolor embeda to `0x3498DB`.
+Contiwatch sends notification embeds with color `0x3498DB` (`3447003`). `SendEmbedWithLogo()` uses the message title as the webhook `username` and leaves the embed title empty. If `CONTIWATCH_PUBLIC_URL` is set, the avatar URL is `<PUBLIC_URL>/icons/contiwatch_logo_small.png`.
 
-Logo:
-- Contiwatch ustawia `username=<tytuł komunikatu>` (np. `Contiwatch started`, `Contiwatch updates`) — to jest “duży nagłówek” po lewej, obok avatara webhooka.
-- Jeśli ustawisz `CONTIWATCH_PUBLIC_URL` (np. `https://contiwatch.example.com`), to do payload dodawane jest `avatar_url=<PUBLIC_URL>/icons/contiwatch_logo_small.png`.
+Sources: [Discord transport](../internal/notify/discord.go), [startup notification](../cmd/contiwatch/main.go), [scan/update notifications](../internal/server/server.go), and [configuration defaults](../internal/config/config.go).
 
-## Warunki globalne (kiedy Contiwatch w ogóle wysyła)
+## Global conditions
 
-Wysyłka powiadomień z serwera (runtime) zachodzi tylko gdy:
-- `discord_webhook_url` jest ustawione (niepusty string),
-- `discord_notifications_enabled=true`,
-- oraz odpowiednia flaga per-scenariusz jest włączona.
+Runtime notifications require a non-empty `discord_webhook_url`, `discord_notifications_enabled=true`, and the relevant scenario switch. All Discord switches default to false, so unconfigured installations send no runtime notifications. The explicit test endpoint is independent of these saved switches.
 
-Domyślnie (wg `internal/config/config.go`) wszystkie flagi Discord są ustawione na `false`, więc bez konfiguracji **nic nie jest wysyłane**.
+See [configuration](configuration.md#secret-reads-and-updates) for hidden webhook reads, preservation, and clearing. Use an isolated webhook destination for delivery testing; it sends a real message.
 
-## Typy komunikatów webhook (embed)
+## Webhook test
 
-Poniżej: **co** jest wysyłane i **kiedy** (scenariusze).
+`POST /api/notifications/test` accepts a webhook URL in the request body rather than using the saved one. The endpoint requires the appropriate controller session or agent bearer credential and validates an official Discord HTTPS webhook URL.
 
-### 1) Test webhooka (UI/API)
-
-**Kiedy:** `POST /api/notifications/test` (nie zależy od zapisanego configu — URL webhooka jest przekazywany w body).
-
-**Tytuł:** `Contiwatch test`  
-**Opis:** `Webhook verified.`  
-**Kolor:** `0x3498DB`
-
-Body żądania:
 ```json
-{ "webhook_url": "https://discord.com/api/webhooks/..." }
+{"webhook_url": "https://discord.com/api/webhooks/<id>/<token>"}
 ```
 
-### 2) Start aplikacji (startup)
+The URL above is a placeholder; replace it only in a private request, never in committed examples. The resulting username is `Contiwatch test`, with description `Webhook verified.`.
 
-**Kiedy:** przy starcie procesu `contiwatch`, jeśli:
-- `discord_webhook_url` jest ustawione,
-- `discord_notifications_enabled=true`,
-- `discord_notify_on_start=true`.
+## Controller startup
 
-**Tytuł:** `Contiwatch started`  
-**Kolor:** `0x3498DB`
+The controller sends `Contiwatch started` when the process starts and all global conditions plus `discord_notify_on_start=true` hold. Agents do not enter the controller startup-notification branch.
 
-**Opis (linie, przykładowy kształt):**
-- `Scheduler: disabled` **lub** `Scheduler: enabled` / `Scheduler: enabled (every <duration>)`
-- `Global policy: <...>`
-- `Update stopped containers: <true|false>`
-- `Discord notifications: <true|false>`
-- `Remote servers: none configured` **lub** `Remote servers: <N>` + (opcjonalnie lista nazw w formie „- name”)
-- `Local servers: none configured` **lub** `Local servers: <N>` + (opcjonalnie lista nazw w formie „- name”)
+The description contains:
 
-### 3) Podsumowanie skanu (wykryte aktualizacje i/lub zaktualizowane kontenery)
+- Scheduler state: disabled, legacy interval (`Scheduler: enabled (every <duration>)`), Basic (`Scheduler: enabled (basic: <days> at <HH:MM>)`), or Cron (`Scheduler: enabled (cron: <expression>)`). Invalid plans are reported as invalid by the scheduler description helper.
+- `Global policy: <policy>`.
+- `Update stopped containers: <true|false>`.
+- `Discord notifications: <true|false>`.
+- `Remote servers: none configured` or a count and non-empty server names.
+- `Local servers: none configured` or a count and non-empty server names.
 
-**Kiedy:** po zakończeniu procesu dla danego serwera (skan + ewentualne auto-update), jeśli:
-- `discord_notify_on_update_detected=true` **i** wykryto przynajmniej 1 aktualizację (`detected > 0`), **lub**
-- `discord_notify_on_container_updated=true` **i** w wyniku skanu przynajmniej 1 kontener ma `updated > 0`.
+See [scheduler configuration](configuration.md#scheduler) for plan formats and timezone behavior.
 
-Uwaga: w trybie auto-update Contiwatch **nie wysyła** osobnych powiadomień per-kontener (pkt 4). Zamiast tego, wynik aktualizacji agreguje do tego jednego powiadomienia.
+## Scan summary and automatic updates
 
-**Tytuł:** `Contiwatch updates`  
-**Kolor:** `0x3498DB`
+After a server scan and its automatic updates, Contiwatch sends `Contiwatch updates` when either:
 
-**Opis (linie):**
-- `Server: <serverLabel> (local|remote)`
-- `Scanned images: <total>`
-- jeśli `discord_notify_on_update_detected=true`:
-  - `Updates detected: <detected>`
-  - `Remaining outdated: <remaining>`
-- jeśli `discord_notify_on_container_updated=true`:
-  - `Updated: <updated>`
-- jeśli wystąpiły błędy operacji:
-  - `Failed: <failed>`
+- `discord_notify_on_update_detected=true` and at least one update was detected; or
+- `discord_notify_on_container_updated=true` and at least one container was updated.
 
-**Dodatkowe sekcje (doklejane, gdy > 0):**
-- `Containers still outdated:` + lista `- <containerName>`
-- `Containers updated:` + lista `- <containerName>`
+The description includes `Server: <name> (local|remote)` and `Scanned images: <total>`. When detection notifications are enabled it adds `Updates detected: <detected>` and `Remaining outdated: <remaining>`. When update-result notifications are enabled it adds `Updated: <updated>`. Nonzero failures add `Failed: <failed>`.
 
-### 4) Wynik aktualizacji pojedynczego kontenera (manual lub auto-update)
+The `Containers still outdated:` list is included when detection notifications are enabled and remaining outdated containers exist. The `Containers updated:` list is included when update-result notifications are enabled and updates succeeded.
 
-**Kiedy:** po każdej próbie aktualizacji kontenera (manualnej lub automatycznej), jeśli:
-- `discord_notify_on_container_updated=true`.
+Automatic local and remote updates are aggregated into this scan summary; they do not generate a separate notification for each container. Failures alone do not satisfy the summary's notification trigger when no update was detected or completed.
 
-Dotyczy m.in.:
-- manualnego update przez API/UI,
-- (opcjonalnie) auto-update lokalnego po skanie,
-- (opcjonalnie) auto-update zdalnego po skanie.
+## Manual container update result
 
-Uwaga: w obecnej implementacji Contiwatch **agreguje** wyniki auto-update do powiadomienia skanowego (pkt 3), więc powiadomienia per-kontener pojawiają się głównie przy manualnym update.
+The manual update handler sends a per-container `Contiwatch updates` result when global conditions and `discord_notify_on_container_updated=true` hold and the operation reaches result processing. An error returned earlier by the handler is not a guaranteed per-container delivery.
 
-**Tytuł:** `Contiwatch updates`  
-**Kolor:** `0x3498DB`
-
-**Opis:**
-```
+```text
 Server: <serverName>
 Container: <containerName>
 Result: <status>
@@ -100,23 +60,16 @@ Previous state: <previous>
 Current state: <current>
 ```
 
-Gdzie `Result` przyjmuje:
-- `updated` (gdy `Updated=true`),
-- w przeciwnym razie `Message` z wyniku update (np. „update triggered; agent restarting”),
-- a jeśli brak `Message`: `not updated`.
+`Result` is `updated` when `Updated=true`; otherwise it is the non-empty result `Message` (for example `update triggered; agent restarting`), or `not updated` if there is no message. Scheduled/automatic updates use the scan summary above.
 
-## Format payload (embed)
+## Payload and failures
 
-Każdy z powyższych komunikatów jest wysyłany jako embed, np.:
 ```json
 {
   "username": "Contiwatch started",
   "avatar_url": "https://contiwatch.example.com/icons/contiwatch_logo_small.png",
-  "embeds": [
-    {
-      "description": "...",
-      "color": 3447003
-    }
-  ]
+  "embeds": [{"description": "...", "color": 3447003}]
 }
 ```
+
+The avatar field is omitted when no public URL is configured. The transport uses a 10-second timeout; request/transport errors do not expose the webhook URL. Non-success HTTP responses are reported as notification failures. Delivery is not a durable queued/retried workflow: some runtime call sites ignore transport errors, while startup and explicit tests report failures. Use the explicit test to confirm intentional delivery, not as a production fixture.

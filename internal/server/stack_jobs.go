@@ -571,7 +571,7 @@ func doRemoteStackRequest(ctx context.Context, remote config.RemoteServer, metho
 	if remote.Token != "" {
 		req.Header.Set("Authorization", "Bearer "+remote.Token)
 	}
-	return (&http.Client{}).Do(req)
+	return newAgentHTTPClient(0).Do(req)
 }
 
 // remoteStackResponseError surfaces the agent's error message instead of a

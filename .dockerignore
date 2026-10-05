@@ -5,3 +5,17 @@ web/static/vendor/cm6
 coverage
 *.test
 contiwatch
+.ai
+.agents
+.codex
+.aws
+.env
+.env.*
+**/.env
+**/.env.*
+**/*.pem
+**/*.key
+**/credentials
+**/config.json
+!**/.env.example
+!**/.env.sample

@@ -375,132 +375,50 @@ func (s *Server) listContainersByScope(cfg config.Config, serverType, serverName
 }
 
 func listStacksOnDisk(serverName string) ([]stackSummary, error) {
-	base := stacksServerDir(serverName)
-	entries, err := os.ReadDir(base)
-	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return []stackSummary{}, nil
-		}
+	if err := validateStackSegment(serverName, "server"); err != nil {
 		return nil, err
 	}
-	var result []stackSummary
+	base, err := os.OpenRoot(stacksBaseDir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return []stackSummary{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer base.Close()
+	root, err := base.OpenRoot(serverName)
+	if errors.Is(err, fs.ErrNotExist) {
+		return []stackSummary{}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer root.Close()
+	directory, err := root.Open(".")
+	if err != nil {
+		return nil, err
+	}
+	defer directory.Close()
+	entries, err := directory.ReadDir(-1)
+	if err != nil {
+		return nil, err
+	}
+	result := []stackSummary{}
 	for _, entry := range entries {
-		if !entry.IsDir() {
+		if !entry.IsDir() || validateStackSegment(entry.Name(), "stack") != nil {
 			continue
 		}
-		name := entry.Name()
-		if err := validateStackSegment(name, "stack"); err != nil {
-			continue
-		}
-		composePath := filepath.Join(base, name, "docker-compose.yml")
-		stat, err := os.Stat(composePath)
-		if err != nil {
+		stat, err := root.Stat(filepath.Join(entry.Name(), "docker-compose.yml"))
+		if err != nil || !stat.Mode().IsRegular() {
 			continue
 		}
 		updatedAt := stat.ModTime()
-		if envStat, err := os.Stat(filepath.Join(base, name, ".env")); err == nil {
-			if envStat.ModTime().After(updatedAt) {
-				updatedAt = envStat.ModTime()
-			}
+		if envStat, err := root.Stat(filepath.Join(entry.Name(), ".env")); err == nil && envStat.Mode().IsRegular() && envStat.ModTime().After(updatedAt) {
+			updatedAt = envStat.ModTime()
 		}
-		result = append(result, stackSummary{
-			Name:      name,
-			UpdatedAt: updatedAt.Format(time.RFC3339),
-		})
+		result = append(result, stackSummary{Name: entry.Name(), UpdatedAt: updatedAt.Format(time.RFC3339)})
 	}
 	return result, nil
-}
-
-func loadStackDetail(serverName, stackName string) (stackDetailResponse, error) {
-	dir := stackDir(serverName, stackName)
-	if err := os.Chmod(dir, 0o700); err != nil {
-		return stackDetailResponse{}, err
-	}
-	composePath := filepath.Join(dir, "docker-compose.yml")
-	if err := os.Chmod(composePath, 0o600); err != nil {
-		return stackDetailResponse{}, err
-	}
-	content, err := os.ReadFile(composePath)
-	if err != nil {
-		return stackDetailResponse{}, err
-	}
-	detail := stackDetailResponse{
-		Name:       stackName,
-		ComposeYml: string(content),
-	}
-	envPath := filepath.Join(dir, ".env")
-	if _, err := os.Stat(envPath); err == nil {
-		if err := os.Chmod(envPath, 0o600); err != nil {
-			return stackDetailResponse{}, err
-		}
-	}
-	if envBytes, err := os.ReadFile(envPath); err == nil {
-		detail.Env = string(envBytes)
-		detail.HasEnv = true
-	}
-	if stat, err := os.Stat(composePath); err == nil {
-		detail.UpdatedAt = stat.ModTime().Format(time.RFC3339)
-	}
-	return detail, nil
-}
-
-func saveStackFiles(serverName, stackName, composeYml, env string, useEnv bool) error {
-	dir := stackDir(serverName, stackName)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return err
-	}
-	if err := os.Chmod(dir, 0o700); err != nil {
-		return err
-	}
-	composePath := filepath.Join(dir, "docker-compose.yml")
-	if err := writePrivateFileAtomically(composePath, []byte(composeYml)); err != nil {
-		return err
-	}
-	envPath := filepath.Join(dir, ".env")
-	if useEnv {
-		if err := writePrivateFileAtomically(envPath, []byte(env)); err != nil {
-			return err
-		}
-	} else {
-		if err := os.Remove(envPath); err != nil && !errors.Is(err, fs.ErrNotExist) {
-			return err
-		}
-	}
-	return nil
-}
-
-func writePrivateFileAtomically(path string, data []byte) error {
-	dir := filepath.Dir(path)
-	file, err := os.CreateTemp(dir, ".contiwatch-stack-*.tmp")
-	if err != nil {
-		return err
-	}
-	tempPath := file.Name()
-	cleanup := func() {
-		_ = file.Close()
-		_ = os.Remove(tempPath)
-	}
-	if err := file.Chmod(0o600); err != nil {
-		cleanup()
-		return err
-	}
-	if _, err := file.Write(data); err != nil {
-		cleanup()
-		return err
-	}
-	if err := file.Sync(); err != nil {
-		cleanup()
-		return err
-	}
-	if err := file.Close(); err != nil {
-		_ = os.Remove(tempPath)
-		return err
-	}
-	if err := os.Rename(tempPath, path); err != nil {
-		_ = os.Remove(tempPath)
-		return err
-	}
-	return os.Chmod(path, 0o600)
 }
 
 // buildRemoteStackActionRequest resolves the remote agent and embeds the stored
@@ -606,12 +524,12 @@ func runComposeSingleAction(ctx context.Context, dir, projectName, action string
 	cmd := exec.CommandContext(ctx, "docker", args...)
 	cmd.Dir = dir
 	cmd.Env = mergeComposeEnv(env, envFile)
-	output, err := cmd.CombinedOutput()
+	output, err := boundedComposeOutput(cmd)
 	if ctx.Err() != nil {
 		return stackContextError(ctx, ctx.Err())
 	}
 	if err != nil {
-		return fmt.Errorf("compose failed: %s", strings.TrimSpace(string(output)))
+		return fmt.Errorf("compose failed: %s", strings.TrimSpace(output))
 	}
 	return nil
 }
@@ -691,12 +609,12 @@ func runComposeConfig(dir, envFile string) error {
 	cmd := exec.CommandContext(ctx, "docker", args...)
 	cmd.Dir = dir
 	cmd.Env = mergeComposeEnv(nil, envFile)
-	output, err := cmd.CombinedOutput()
+	output, err := boundedComposeOutput(cmd)
 	if ctx.Err() == context.DeadlineExceeded {
 		return errors.New("compose config timed out")
 	}
 	if err != nil {
-		return fmt.Errorf("compose config failed: %s", strings.TrimSpace(string(output)))
+		return fmt.Errorf("compose config failed: %s", strings.TrimSpace(output))
 	}
 	return nil
 }
@@ -753,6 +671,12 @@ func mergeComposeEnv(overrides map[string]string, envFile string) []string {
 	for _, item := range os.Environ() {
 		key, _, found := strings.Cut(item, "=")
 		if found {
+			// Strip application credentials, while preserving Docker, TLS, proxy,
+			// credential-helper and custom interpolation settings used by deployments.
+			switch key {
+			case "APP_PIN", "CONTIWATCH_APP_PIN", "CONTIWATCH_AGENT_TOKEN", "CONTIWATCH_GITHUB_TOKEN", "GITHUB_TOKEN":
+				continue
+			}
 			if _, shouldUseEnvFile := blocked[key]; shouldUseEnvFile {
 				continue
 			}
@@ -784,16 +708,18 @@ func validateStackSegment(value, label string) error {
 }
 
 func deleteStackDir(serverName, stackName string) error {
-	base := stacksServerDir(serverName)
-	target := stackDir(serverName, stackName)
-	rel, err := filepath.Rel(base, target)
+	if err := validateStackSegment(serverName, "server"); err != nil {
+		return err
+	}
+	if err := validateStackSegment(stackName, "stack"); err != nil {
+		return err
+	}
+	base, err := os.OpenRoot(stacksBaseDir)
 	if err != nil {
 		return err
 	}
-	if rel == "." || strings.HasPrefix(rel, "..") {
-		return errors.New("invalid stack path")
-	}
-	return os.RemoveAll(target)
+	defer base.Close()
+	return base.RemoveAll(filepath.Join(serverName, stackName))
 }
 
 func validateEnvContent(content string) error {
@@ -836,8 +762,12 @@ func sanitizeEnvContent(content string) (string, []string) {
 }
 
 func prepareEnvFileFromDisk(serverName, stackName string) (string, []string, error) {
-	envPath := filepath.Join(stackDir(serverName, stackName), ".env")
-	data, err := os.ReadFile(envPath)
+	root, err := openStackRoot(serverName, stackName, false)
+	if err != nil {
+		return "", nil, err
+	}
+	defer root.Close()
+	data, err := readStackFile(root, ".env")
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
 			return "", nil, nil

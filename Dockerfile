@@ -1,4 +1,4 @@
-FROM --platform=$BUILDPLATFORM golang:1.26.6-alpine3.24 AS builder
+FROM --platform=$BUILDPLATFORM golang:1.26.8-alpine3.24@sha256:8ac98ca534ac3f51e1f420a1dd2c15e74c75cfa0f23f3ad27eb5d7236c349a0c AS builder
 ARG VERSION=dev
 WORKDIR /src
 
@@ -23,9 +23,11 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     GOARM="${TARGETVARIANT#v}" \
     go build -mod=readonly -ldflags="-X main.Version=${VERSION}" -o /out/contiwatch ./cmd/contiwatch
 
-FROM alpine:3.24.1
+FROM alpine:3.24.1@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b AS runtime
 WORKDIR /app
-RUN apk add --no-cache su-exec tzdata docker-cli docker-cli-compose
+# Refresh packages inherited from the pinned base, including OpenSSL libraries.
+RUN apk upgrade --no-cache \
+    && apk add --no-cache su-exec tzdata docker-cli docker-cli-compose
 COPY --from=builder /out/contiwatch /app/contiwatch
 COPY --from=builder /src/web/static /app/web/static
 COPY entrypoint.sh /app/entrypoint.sh

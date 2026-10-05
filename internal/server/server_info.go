@@ -263,7 +263,7 @@ func (s *Server) handleServersRefresh(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) serverInfoWorker(ctx context.Context) {
-	client := &http.Client{Timeout: 5 * time.Second}
+	client := newAgentHTTPClient(5 * time.Second)
 	for {
 		select {
 		case <-ctx.Done():
@@ -375,12 +375,10 @@ func (s *Server) broadcastScanSnapshot(results []dockerwatcher.ScanResult) {
 
 func (s *Server) broadcastStreamEvent(event streamEvent) {
 	s.serverInfoMu.RLock()
-	subs := make([]chan streamEvent, 0, len(s.serverInfoSubs))
+	defer s.serverInfoMu.RUnlock()
+	// Keep subscriptions alive until these non-blocking sends finish. Logout
+	// can concurrently remove and close a stream's channel.
 	for ch := range s.serverInfoSubs {
-		subs = append(subs, ch)
-	}
-	s.serverInfoMu.RUnlock()
-	for _, ch := range subs {
 		select {
 		case ch <- event:
 		default:
@@ -422,10 +420,13 @@ func (s *Server) handleServersStream(w http.ResponseWriter, r *http.Request) {
 
 	keepAlive := time.NewTicker(20 * time.Second)
 	defer keepAlive.Stop()
+	sessionDone := s.pinSessionDone(r)
 
 	for {
 		select {
 		case <-r.Context().Done():
+			return
+		case <-sessionDone:
 			return
 		case event := <-ch:
 			if len(event.Data) == 0 {
@@ -442,27 +443,27 @@ func (s *Server) handleServersStream(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) sendStreamEvent(w http.ResponseWriter, event string, payload any) {
-  data, err := json.Marshal(payload)
-  if err != nil {
-    return
-  }
-  _, _ = fmt.Fprintf(w, "event: %s\n", event)
-  _, _ = fmt.Fprintf(w, "data: %s\n\n", data)
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return
+	}
+	_, _ = fmt.Fprintf(w, "event: %s\n", event)
+	_, _ = fmt.Fprintf(w, "data: %s\n\n", data)
 }
 
 func (s *Server) scanInProgress() bool {
-  s.scanMutex.Lock()
-  active := s.scanRunning || s.updateRunning
-  s.scanMutex.Unlock()
-  return active || s.remoteScanRunning.Load() > 0
+	s.scanMutex.Lock()
+	active := s.scanRunning || s.updateRunning
+	s.scanMutex.Unlock()
+	return active || s.remoteScanRunning.Load() > 0
 }
 
 func (s *Server) getServerInfoStatus(serverType, name string) string {
-  key := serverInfoKey(serverType, name)
-  s.serverInfoMu.RLock()
-  entry := s.serverInfo[key]
-  s.serverInfoMu.RUnlock()
-  return strings.ToLower(entry.Status)
+	key := serverInfoKey(serverType, name)
+	s.serverInfoMu.RLock()
+	entry := s.serverInfo[key]
+	s.serverInfoMu.RUnlock()
+	return strings.ToLower(entry.Status)
 }
 
 func (s *Server) buildAggregateResults(cfg config.Config) []dockerwatcher.ScanResult {
