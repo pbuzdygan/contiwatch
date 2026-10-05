@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
@@ -31,7 +32,10 @@ const (
 
 type pinSessionEntry struct {
 	LastSeen time.Time
+	Done     chan struct{}
 }
+
+type pinSessionContextKey struct{}
 
 type pinAttemptEntry struct {
 	Failures  int
@@ -153,14 +157,21 @@ func (s *Server) pinRequestAuthorized(r *http.Request) bool {
 	if r == nil {
 		return false
 	}
-	if s.pinSessionAuthorized(s.pinSessionTokenFromRequest(r)) {
+	token := s.pinSessionTokenFromRequest(r)
+	if s.pinSessionAuthorized(token) {
+		*r = *r.WithContext(context.WithValue(r.Context(), pinSessionContextKey{}, token))
 		return true
 	}
 	if !pinWebSocketAPIPath(r.URL.Path) {
 		return false
 	}
 	ticket := strings.TrimSpace(r.URL.Query().Get("ws_ticket"))
-	return s.consumePinWebSocketTicket(ticket)
+	token = s.consumePinWebSocketTicketSession(ticket)
+	if token == "" {
+		return false
+	}
+	*r = *r.WithContext(context.WithValue(r.Context(), pinSessionContextKey{}, token))
+	return true
 }
 
 func (s *Server) pinSessionAuthorized(token string) bool {
@@ -191,7 +202,7 @@ func (s *Server) createPinSession() (string, error) {
 		s.pinSessions = map[string]pinSessionEntry{}
 	}
 	s.pruneExpiredPinSessionsLocked(now)
-	s.pinSessions[token] = pinSessionEntry{LastSeen: now}
+	s.pinSessions[token] = pinSessionEntry{LastSeen: now, Done: make(chan struct{})}
 	s.pinMu.Unlock()
 	return token, nil
 }
@@ -201,6 +212,9 @@ func (s *Server) revokePinSession(token string) {
 		return
 	}
 	s.pinMu.Lock()
+	if entry, ok := s.pinSessions[token]; ok && entry.Done != nil {
+		close(entry.Done)
+	}
 	delete(s.pinSessions, token)
 	for ticket, entry := range s.pinWebSocketTickets {
 		if entry.SessionToken == token {
@@ -216,6 +230,9 @@ func (s *Server) pruneExpiredPinSessionsLocked(now time.Time) {
 	}
 	for token, entry := range s.pinSessions {
 		if entry.LastSeen.IsZero() || now.Sub(entry.LastSeen) > pinSessionIdleMaxAge {
+			if entry.Done != nil {
+				close(entry.Done)
+			}
 			delete(s.pinSessions, token)
 		}
 	}
@@ -249,8 +266,12 @@ func (s *Server) createPinWebSocketTicket(sessionToken string) (string, error) {
 }
 
 func (s *Server) consumePinWebSocketTicket(ticket string) bool {
+	return s.consumePinWebSocketTicketSession(ticket) != ""
+}
+
+func (s *Server) consumePinWebSocketTicketSession(ticket string) string {
 	if ticket == "" {
-		return false
+		return ""
 	}
 	now := time.Now()
 	s.pinMu.Lock()
@@ -259,11 +280,34 @@ func (s *Server) consumePinWebSocketTicket(ticket string) bool {
 	entry, ok := s.pinWebSocketTickets[ticket]
 	if !ok || !entry.ExpiresAt.After(now) {
 		delete(s.pinWebSocketTickets, ticket)
-		return false
+		return ""
 	}
 	delete(s.pinWebSocketTickets, ticket)
 	_, sessionExists := s.pinSessions[entry.SessionToken]
-	return sessionExists
+	if !sessionExists {
+		return ""
+	}
+	return entry.SessionToken
+}
+
+func (s *Server) pinSessionDone(r *http.Request) <-chan struct{} {
+	token, _ := r.Context().Value(pinSessionContextKey{}).(string)
+	if token == "" {
+		return nil
+	}
+	s.pinMu.Lock()
+	defer s.pinMu.Unlock()
+	entry, ok := s.pinSessions[token]
+	if !ok {
+		done := make(chan struct{})
+		close(done)
+		return done
+	}
+	if entry.Done == nil {
+		entry.Done = make(chan struct{})
+		s.pinSessions[token] = entry
+	}
+	return entry.Done
 }
 
 func requestRemoteIP(r *http.Request) netip.Addr {

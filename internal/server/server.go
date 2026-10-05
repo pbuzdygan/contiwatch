@@ -71,6 +71,8 @@ type Server struct {
 	version               string
 	remoteScanRunning     atomic.Int64
 	stackJobs             *stackJobManager
+	streamMu              sync.Mutex
+	activeStreams         int
 
 	serverInfoMu      sync.RWMutex
 	serverInfo        map[string]serverInfoSnapshot
@@ -322,7 +324,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 type configResponse struct {
 	config.Config
-	DiscordWebhookConfigured bool `json:"discord_webhook_configured"`
+	RemoteServers            []remoteServerResponse `json:"remote_servers"`
+	DiscordWebhookConfigured bool                   `json:"discord_webhook_configured"`
 }
 
 func sanitizeConfigForResponse(cfg config.Config) configResponse {
@@ -330,6 +333,7 @@ func sanitizeConfigForResponse(cfg config.Config) configResponse {
 	cfg.DiscordWebhookURL = ""
 	return configResponse{
 		Config:                   cfg,
+		RemoteServers:            sanitizeRemoteServersForResponse(cfg.RemoteServers),
 		DiscordWebhookConfigured: webhookConfigured,
 	}
 }
@@ -1617,7 +1621,7 @@ func (s *Server) scanRemoteServer(ctx context.Context, remote config.RemoteServe
 	if remote.Token != "" {
 		req.Header.Set("Authorization", "Bearer "+remote.Token)
 	}
-	client := &http.Client{Timeout: remoteScanTimeout}
+	client := newAgentHTTPClient(remoteScanTimeout)
 	resp, err := client.Do(req)
 	if err != nil {
 		return dockerwatcher.ScanResult{}, err
@@ -1651,7 +1655,7 @@ func (s *Server) updateRemoteContainer(ctx context.Context, remote config.Remote
 	if remote.Token != "" {
 		req.Header.Set("Authorization", "Bearer "+remote.Token)
 	}
-	client := &http.Client{Timeout: remoteUpdateTimeout}
+	client := newAgentHTTPClient(remoteUpdateTimeout)
 	resp, err := client.Do(req)
 	if err != nil {
 		return dockerwatcher.UpdateResult{}, err
@@ -1685,7 +1689,7 @@ func (s *Server) updateRemoteSelfUpdate(ctx context.Context, remote config.Remot
 	if remote.Token != "" {
 		req.Header.Set("Authorization", "Bearer "+remote.Token)
 	}
-	client := &http.Client{Timeout: remoteUpdateTimeout}
+	client := newAgentHTTPClient(remoteUpdateTimeout)
 	resp, err := client.Do(req)
 	if err != nil {
 		return dockerwatcher.UpdateResult{}, err
@@ -2124,7 +2128,7 @@ func (s *Server) syncRemotePolicy(ctx context.Context, cfg config.Config, remote
 		return false, errors.New("missing url")
 	}
 	configURL := strings.TrimSuffix(remote.URL, "/") + "/api/config"
-	client := &http.Client{Timeout: 10 * time.Second}
+	client := newAgentHTTPClient(10 * time.Second)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, configURL, nil)
 	if err != nil {
 		return false, err

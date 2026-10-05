@@ -181,7 +181,7 @@ func (s *Server) listRemoteContainersResources(cfg config.Config, name string, i
 	if remote.Token != "" {
 		req.Header.Set("Authorization", "Bearer "+remote.Token)
 	}
-	client := &http.Client{Timeout: 12 * time.Second}
+	client := newAgentHTTPClient(12 * time.Second)
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err

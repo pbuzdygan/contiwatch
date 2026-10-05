@@ -86,7 +86,7 @@ Create or update servers through `/api/locals` and `/api/servers`; `PUT /api/con
 
 Config, Compose, and stack environment files use atomic writes with `0600` permissions; stack directories use `0700`.
 
-`GET /api/config` hides `discord_webhook_url` and reports `discord_webhook_configured`. `GET /api/servers` omits remote tokens and reports `token_configured`.
+`GET /api/config` and successful `PUT /api/config` responses hide `discord_webhook_url` and report `discord_webhook_configured`. Both responses also omit every nested remote-server token and report `token_configured` for each remote. `GET /api/servers` uses the same remote-server representation. Redaction does not modify saved credentials or controller-to-agent bearer headers.
 
 For `PUT /api/config`, `discord_webhook_url="__keep__"` explicitly preserves the saved webhook, and an empty/omitted value also preserves an existing one. `"__clear__"` removes it; a new valid URL replaces it. Sending an empty `token` while updating an existing named remote server preserves its token.
 

@@ -13,6 +13,15 @@
 - Container stacks: editor action tooltips now explain that Compose up/down, Redeploy, and Restart stack save changes before running. The user guide documents each operation, including that Restart does not apply changed service settings or environment variables to existing containers.
 - Tests: added stack editor regression coverage for unsaved changes, cancellation, saving, loading/save failures, and saving before stack operations.
 
+### Security
+
+- Config: GET and successful PUT responses redact nested agent tokens without modifying stored credentials or controller-to-agent bearer authentication.
+- Shell/Logs: bound message sizes, active connections, and stalled writes; use standard WebSocket ping/pong and close session-bound streams on logout. SSE also ends on session revocation, with subscription broadcasts synchronized against closure.
+- Agents: bound HTTP response bodies and reject HTTPS-to-HTTP redirects while retaining private-network HTTP, existing tokens, legacy stack endpoints, and long operation timeouts.
+- Stacks: exclude Contiwatch credentials from inherited Compose environment, retain Docker/TLS/proxy/custom settings, cap diagnostic output without interrupting pulls, and confine stored stack-file access using filesystem roots.
+- Builds: exclude local credential files, pin base-image digests and CI action revisions, and update the Go builder to 1.26.8. Release metadata now passes through validated environment values rather than shell interpolation.
+- Verification: gate image publication on tests, static checks, dependency audits, vendor inventory checks, and runtime OS-package scanning. Add regression coverage for controller/agent compatibility, legacy Docker API negotiation, secret redaction, stream revocation/limits, and stack-file confinement.
+
 ## v1.3.4
 
 ### Bug fixes

@@ -1,0 +1,23 @@
+[
+  {
+    "name": "xterm",
+    "version": "5.3.0",
+    "source": "https://registry.npmjs.org/xterm/-/xterm-5.3.0.tgz",
+    "license": "MIT",
+    "sha256": {
+      "xterm.js": "f0aea0f75f48559013ae6643c2479dd737d26da42d5524e6d2b70915ae6523c7",
+      "xterm.css": "832f3f2c603b43ad4351ff04970150cc7a873014276db126a6065c6dd81e4872",
+      "LICENSE.xterm": "b569f629d00f2626a8100df2a1798210535621e42164dfd426a6fe5aac7b0ccd"
+    }
+  },
+  {
+    "name": "xterm-addon-fit",
+    "version": "0.8.0",
+    "source": "https://registry.npmjs.org/xterm-addon-fit/-/xterm-addon-fit-0.8.0.tgz",
+    "license": "MIT",
+    "sha256": {
+      "xterm-addon-fit.js": "10f3194c5f17c1786fb7d5db865c1ec8539b6736a318063fd38bdaaf7c46848f",
+      "LICENSE.xterm-addon-fit": "e256f01188af527e4d06d21d06fbf785ae9c50d4b328bf03cbe0ba7f0aa4228f"
+    }
+  }
+]

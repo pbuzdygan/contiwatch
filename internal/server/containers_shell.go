@@ -42,6 +42,11 @@ func (s *Server) handleContainerShell(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
+	release, ok := s.reserveContainerStream(w)
+	if !ok {
+		return
+	}
+	defer release()
 	cfg := s.store.Get()
 	if !s.agentMode && (!cfg.ExperimentalFeatures.Containers || !cfg.ExperimentalFeatures.ContainerShell) {
 		w.WriteHeader(http.StatusNotFound)
@@ -93,6 +98,7 @@ func (s *Server) handleLocalContainerShell(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	defer conn.Close()
+	defer s.protectContainerStream(r, conn, clientStreamMessageLimit)()
 
 	ctx := r.Context()
 	watcher, err := dockerwatcher.NewWithHost(dockerHostFromSocket(local.Socket))
@@ -121,7 +127,7 @@ func (s *Server) handleLocalContainerShell(w http.ResponseWriter, r *http.Reques
 		for {
 			n, readErr := hijacked.Reader.Read(buf)
 			if n > 0 {
-				if writeErr := conn.WriteMessage(websocket.BinaryMessage, buf[:n]); writeErr != nil {
+				if writeErr := writeStreamMessage(conn, websocket.BinaryMessage, buf[:n]); writeErr != nil {
 					log.Printf("shell: ws write failed: %v", writeErr)
 					break
 				}
@@ -179,6 +185,7 @@ func (s *Server) handleRemoteContainerShell(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	defer clientConn.Close()
+	defer s.protectContainerStream(r, clientConn, clientStreamMessageLimit)()
 
 	endpoint := strings.TrimSuffix(remote.URL, "/") + "/api/containers/shell"
 	wsURL, err := url.Parse(endpoint)
@@ -199,7 +206,7 @@ func (s *Server) handleRemoteContainerShell(w http.ResponseWriter, r *http.Reque
 	if remote.Token != "" {
 		headers.Set("Authorization", "Bearer "+remote.Token)
 	}
-	dialer := websocket.Dialer{}
+	dialer := websocket.Dialer{HandshakeTimeout: 30 * time.Second}
 	remoteConn, _, err := dialer.Dial(wsURL.String(), headers)
 	if err != nil {
 		log.Printf("shell: remote websocket dial failed: %v", err)
@@ -207,6 +214,7 @@ func (s *Server) handleRemoteContainerShell(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	defer remoteConn.Close()
+	defer s.protectContainerStream(r, remoteConn, agentStreamMessageLimit)()
 
 	proxyWebSockets(clientConn, remoteConn)
 }
@@ -268,5 +276,5 @@ func sendShellError(conn *websocket.Conn, message string) {
 		return
 	}
 	payload, _ := json.Marshal(shellErrorMessage{Type: "error", Message: message})
-	_ = conn.WriteMessage(websocket.TextMessage, payload)
+	_ = writeStreamMessage(conn, websocket.TextMessage, payload)
 }

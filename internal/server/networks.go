@@ -438,7 +438,7 @@ func (s *Server) listRemoteNetworks(cfg config.Config, name string) ([]dockerwat
 	if remote.Token != "" {
 		req.Header.Set("Authorization", "Bearer "+remote.Token)
 	}
-	client := &http.Client{Timeout: 15 * time.Second}
+	client := newAgentHTTPClient(15 * time.Second)
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
@@ -491,7 +491,7 @@ func (s *Server) getRemoteNetworkDetails(cfg config.Config, name, networkID stri
 	if remote.Token != "" {
 		req.Header.Set("Authorization", "Bearer "+remote.Token)
 	}
-	client := &http.Client{Timeout: 20 * time.Second}
+	client := newAgentHTTPClient(20 * time.Second)
 	resp, err := client.Do(req)
 	if err != nil {
 		return dockerwatcher.NetworkDetails{}, err
@@ -558,7 +558,7 @@ func (s *Server) removeRemoteNetwork(cfg config.Config, name, networkID string) 
 	if remote.Token != "" {
 		req.Header.Set("Authorization", "Bearer "+remote.Token)
 	}
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := newAgentHTTPClient(30 * time.Second)
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
@@ -613,7 +613,7 @@ func (s *Server) pruneRemoteNetworks(cfg config.Config, name string) ([]string, 
 	if remote.Token != "" {
 		req.Header.Set("Authorization", "Bearer "+remote.Token)
 	}
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := newAgentHTTPClient(30 * time.Second)
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
@@ -680,7 +680,7 @@ func (s *Server) connectRemoteNetwork(cfg config.Config, name, networkID, contai
 	if remote.Token != "" {
 		req.Header.Set("Authorization", "Bearer "+remote.Token)
 	}
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := newAgentHTTPClient(30 * time.Second)
 	resp, err := client.Do(req)
 	if err != nil {
 		return err
@@ -713,7 +713,7 @@ func (s *Server) disconnectRemoteNetwork(cfg config.Config, name, networkID, con
 	if remote.Token != "" {
 		req.Header.Set("Authorization", "Bearer "+remote.Token)
 	}
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := newAgentHTTPClient(30 * time.Second)
 	resp, err := client.Do(req)
 	if err != nil {
 		return err

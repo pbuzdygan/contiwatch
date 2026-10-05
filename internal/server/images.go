@@ -316,7 +316,7 @@ func (s *Server) listRemoteImages(cfg config.Config, name string) ([]dockerwatch
 	if remote.Token != "" {
 		req.Header.Set("Authorization", "Bearer "+remote.Token)
 	}
-	client := &http.Client{Timeout: 15 * time.Second}
+	client := newAgentHTTPClient(15 * time.Second)
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
@@ -377,7 +377,7 @@ func (s *Server) pullRemoteImage(cfg config.Config, name, repository, tag string
 	if remote.Token != "" {
 		req.Header.Set("Authorization", "Bearer "+remote.Token)
 	}
-	client := &http.Client{Timeout: 2 * time.Minute}
+	client := newAgentHTTPClient(2 * time.Minute)
 	resp, err := client.Do(req)
 	if err != nil {
 		return err
@@ -427,7 +427,7 @@ func (s *Server) pruneRemoteImages(cfg config.Config, name, mode string) (int, u
 	if remote.Token != "" {
 		req.Header.Set("Authorization", "Bearer "+remote.Token)
 	}
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := newAgentHTTPClient(30 * time.Second)
 	resp, err := client.Do(req)
 	if err != nil {
 		return 0, 0, err
@@ -481,7 +481,7 @@ func (s *Server) removeRemoteImage(cfg config.Config, name, imageID string) erro
 	if remote.Token != "" {
 		req.Header.Set("Authorization", "Bearer "+remote.Token)
 	}
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := newAgentHTTPClient(30 * time.Second)
 	resp, err := client.Do(req)
 	if err != nil {
 		return err

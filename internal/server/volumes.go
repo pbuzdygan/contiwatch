@@ -249,7 +249,7 @@ func (s *Server) listRemoteVolumes(cfg config.Config, name string) ([]dockerwatc
 	if remote.Token != "" {
 		req.Header.Set("Authorization", "Bearer "+remote.Token)
 	}
-	client := &http.Client{Timeout: 15 * time.Second}
+	client := newAgentHTTPClient(15 * time.Second)
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
@@ -319,7 +319,7 @@ func (s *Server) removeRemoteVolume(cfg config.Config, name, volumeName string) 
 	if remote.Token != "" {
 		req.Header.Set("Authorization", "Bearer "+remote.Token)
 	}
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := newAgentHTTPClient(30 * time.Second)
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
@@ -374,7 +374,7 @@ func (s *Server) pruneRemoteVolumes(cfg config.Config, name string) ([]string, u
 	if remote.Token != "" {
 		req.Header.Set("Authorization", "Bearer "+remote.Token)
 	}
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := newAgentHTTPClient(30 * time.Second)
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, 0, err

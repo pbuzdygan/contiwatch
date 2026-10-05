@@ -93,7 +93,7 @@ func collectRemoteServerHealth(parent context.Context, cfg config.Config, name s
 	if remote.Token != "" {
 		req.Header.Set("Authorization", "Bearer "+remote.Token)
 	}
-	resp, err := (&http.Client{Timeout: 35 * time.Second}).Do(req)
+	resp, err := (newAgentHTTPClient(35 * time.Second)).Do(req)
 	if err != nil {
 		return dockerwatcher.DockerHealthSnapshot{}, err
 	}

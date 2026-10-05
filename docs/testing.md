@@ -20,6 +20,23 @@ go build -mod=readonly -o /tmp/contiwatch-doc-check ./cmd/contiwatch
 
 The existing suites cover config permissions, PIN sessions and lockouts, trusted proxies, WebSocket tickets, release selection/version comparison, update summaries and self-detection, stack environments and background jobs, Docker storage summaries, and resource caching. HTTP integration tests use local `httptest` servers; Compose tests use temporary executable fixtures.
 
+Security/compatibility regressions also cover GET/PUT token redaction without credential mutation, bearer-authenticated controller/agent scans and updates, policy synchronization, all four stack actions, remote Shell proxying, Docker API 1.39 negotiation, logout/revocation for WebSockets and legacy SSE, stream limits, Unicode log chunking, bounded Compose diagnostics, environment preservation, and stack-file symlink confinement. They never connect to a real Docker daemon.
+
+## Security gates
+
+```bash
+python3 .github/scripts/security_checks_test.py
+python3 .github/scripts/check-vendor.py --audit
+npm audit --audit-level=low
+go install golang.org/x/vuln/cmd/govulncheck@v1.8.0
+govulncheck -json ./... > /tmp/contiwatch-go-vulnerabilities.json
+python3 .github/scripts/check-go-vulnerabilities.py /tmp/contiwatch-go-vulnerabilities.json
+```
+
+The vendor audit and dependency scanners require public network access. Omitting `--audit` verifies local vendor hashes only. govulncheck JSON mode exits successfully even with findings, so its review/gate script is required. Scanner/network errors fail the workflow. See [dependency and release maintenance](security.md#dependency-and-release-maintenance) for the exact dated SDK exceptions and host-daemon requirements.
+
+The [checks workflow](../.github/workflows/checks.yml) also runs `go test -race ./...` (requires a C compiler) and scans an isolated amd64 image's runtime OS packages before release publication. Local tests/builds do not establish that image scans, ARM runtime packages, real-agent deployments, or production TLS/firewall/volume settings passed verification.
+
 ## Frontend and image build
 
 ```bash

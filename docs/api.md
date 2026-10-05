@@ -31,7 +31,7 @@ Controller resource requests select a server with `scope=local:{name}` or `scope
 
 | Method | Route | Contract |
 | --- | --- | --- |
-| GET, PUT | `/api/config` | Read/update settings; hidden webhook and field-specific update semantics are documented in [configuration](configuration.md#secret-reads-and-updates). |
+| GET, PUT | `/api/config` | Read/update settings; hidden webhook/remote tokens and field-specific update semantics are documented in [configuration](configuration.md#secret-reads-and-updates). |
 | GET, POST | `/api/servers` | List or create/update a named remote server; tokens are hidden in responses. |
 | DELETE | `/api/servers/{name}` | Remove a remote server definition. |
 | GET, POST | `/api/locals` | List or create/update a named local Docker server. |

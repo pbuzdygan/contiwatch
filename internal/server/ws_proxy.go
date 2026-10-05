@@ -29,14 +29,27 @@ func proxyWebSockets(a, b *websocket.Conn) {
 	}
 
 	pump := func(dst, src *websocket.Conn) {
+		buffer := make([]byte, 32*1024)
 		for {
-			msgType, data, readErr := src.ReadMessage()
+			msgType, reader, readErr := src.NextReader()
 			if readErr != nil {
 				code, text := websocketCloseCode(readErr)
 				closeBoth(code, text)
 				return
 			}
-			if writeErr := dst.WriteMessage(msgType, data); writeErr != nil {
+			if err := dst.SetWriteDeadline(time.Now().Add(streamWriteTimeout)); err != nil {
+				closeBoth(websocket.CloseGoingAway, "")
+				return
+			}
+			writer, writeErr := dst.NextWriter(msgType)
+			if writeErr == nil {
+				_, writeErr = io.CopyBuffer(streamDeadlineWriter{conn: dst, writer: writer}, reader, buffer)
+				closeErr := writer.Close()
+				if writeErr == nil {
+					writeErr = closeErr
+				}
+			}
+			if writeErr != nil {
 				code, text := websocketCloseCode(writeErr)
 				closeBoth(code, text)
 				return
@@ -49,9 +62,24 @@ func proxyWebSockets(a, b *websocket.Conn) {
 	<-done
 }
 
+type streamDeadlineWriter struct {
+	conn   *websocket.Conn
+	writer io.Writer
+}
+
+func (w streamDeadlineWriter) Write(data []byte) (int, error) {
+	if err := w.conn.SetWriteDeadline(time.Now().Add(streamWriteTimeout)); err != nil {
+		return 0, err
+	}
+	return w.writer.Write(data)
+}
+
 func websocketCloseCode(err error) (int, string) {
 	if err == nil {
 		return websocket.CloseNormalClosure, ""
+	}
+	if errors.Is(err, websocket.ErrReadLimit) {
+		return websocket.CloseMessageTooBig, "message exceeds stream limit"
 	}
 	var closeErr *websocket.CloseError
 	if errors.As(err, &closeErr) {
@@ -66,4 +94,3 @@ func websocketCloseCode(err error) (int, string) {
 	}
 	return websocket.CloseGoingAway, ""
 }
-
