@@ -1,291 +1,58 @@
 # Contiwatch
 
 <p align="center">
-  <img src="branding/contiwatch_banner.png" alt="CONTIWATCH Banner" width="50%">
+  <img src="branding/contiwatch_banner.png" alt="Contiwatch banner" width="50%">
 </p>
 
-**Contiwatch** is minimal Docker image watcher inspired by Watchtower. Scans local containers, checks for new images, optionally recreates containers, and sends Discord webhook notifications.
+**Contiwatch** monitors Docker images, detects updates, optionally recreates containers, and sends Discord notifications. Its web UI manages local Docker hosts and token-authenticated remote agents.
 
 ## Features
-- ✅ Scan local Docker daemon for running containers
-- ✅ Remote agent support (token-authenticated)
-- ✅ Pull image tags and detect updates
-- ✅ Global and per-container policy (`contiwatch.policy` label)
-- ✅ Optional update (recreate container) or notify-only
-- ✅ Simple HTML UI for updates, servers, events, and settings
-- ✅ Server maintenance mode to pause scans and updates per server
-- ✅ Containers management UI: containers, stacks, images, networks, volumes, logs, resources and shell (each can be hidden in Settings → Menu visibility)
-- ✅ Discord webhook notifications
 
----
-## Demo / Screenshots
+- Compare registry and local image digests to detect updates.
+- Choose notification-only, automatic update, or skip policies per container.
+- Monitor local Docker daemons and remote agents from one controller.
+- Pause scans and updates per server with maintenance mode.
+- Manage containers, Compose stacks, images, networks, and volumes.
+- Inspect container logs, resource metrics, and interactive shells.
+- Schedule scans with Basic, Cron, or legacy interval plans.
+- Configure Discord notifications for startup, detected updates, and update results.
 
-### Main UI
+## Quick start
 
-## Policies
-Set on containers via label:
-- `contiwatch.policy=update`
-- `contiwatch.policy=notify_only`
-- `contiwatch.policy=skip`
+Install Docker Engine and Docker Compose, then work from a repository checkout. Edit [docker-compose.yml](docker-compose.yml) and replace the `APP_PIN` placeholder with a unique, non-trivial PIN containing **4–8 digits**. The controller will not start with the placeholder. Keep the named volume mounted at `/data` to retain configuration and stack files.
 
-Global default is `notify_only` unless changed in the UI or config.
+The Compose file publishes port 8080 on the host. Restrict access to a trusted private network or put the service behind an HTTPS reverse proxy. Docker socket access allows management of host containers; reserve access for trusted administrators. Automatic scans are disabled and the default policy is `notify_only`.
 
-Policy behavior:
-- `notify_only`: pulls image metadata, detects updates, sends notification only (no container changes).
-- `update`: pulls the image and recreates the container with the same config; it only starts the new container if it was running before. By default, non-running containers are skipped for updates (reported as `Skipped`); enable `update_stopped_containers` to update stopped containers but keep them stopped.
-- `skip`: ignores the container entirely.
-
-When using remote agents, the controller syncs `global_policy` to agents; per-container labels still override the global setting.
-Status summary includes a Skipped metric for containers that were intentionally skipped.
-
-## Run (container)
 ```bash
-docker build -t contiwatch .
-
-docker run -d \
-  --name contiwatch \
-  -p 8080:8080 \
-  -v /var/run/docker.sock:/var/run/docker.sock \
-  -v contiwatch-data:/data \
-  -e APP_PIN="SET_A_UNIQUE_4_TO_8_DIGIT_PIN" \
-  contiwatch
+docker compose up -d
 ```
 
-Open `http://localhost:8080`.
+Open `http://localhost:8080` and unlock the UI with your PIN. For remote hosts, configure `CONTIWATCH_AGENT=true` and a unique `CONTIWATCH_AGENT_TOKEN` of at least 32 random characters, using the [agent installation guide](docs/installation.md#remote-agent).
 
-For a production-like controller deployment, do not stop at the minimal example above. In practice you should enable at least:
-- required controller PIN gate for the whole interactive UI/API session
-- a non-default strong agent token for every remote agent
+Other startup settings, including `CONTIWATCH_ADDR`, `CONTIWATCH_CONFIG`, and `TZ`, are listed in the [configuration reference](docs/configuration.md#environment-variables). Alternative installation, upgrades, and permission troubleshooting are in the installation guide below.
 
-Example controller run with required PIN:
-```bash
-docker run -d \
-  --name contiwatch \
-  -p 8080:8080 \
-  -v /var/run/docker.sock:/var/run/docker.sock \
-  -v contiwatch-data:/data \
-  -e APP_PIN="SET_A_UNIQUE_4_TO_8_DIGIT_PIN" \
-  contiwatch
-```
+## Documentation
 
-## Agent mode (remote)
-Run on a remote host with Docker socket access and a token:
-```bash
-docker run -d \
-  --name contiwatch-agent \
-  -p 8080:8080 \
-  -v /var/run/docker.sock:/var/run/docker.sock \
-  -v contiwatch-agent-data:/data \
-  -e CONTIWATCH_AGENT=true \
-  -e CONTIWATCH_AGENT_TOKEN="<TOKEN>" \
-  contiwatch
-```
+- [Installation and operation](docs/installation.md) — Compose, local builds, agents, image tags, upgrades, and permissions.
+- [Configuration](docs/configuration.md) — environment variables, defaults, schedules, servers, and secret updates.
+- [User guide](docs/user-guide.md) — policies, scans, stack environments, server health, and agent updates.
+- [API reference](docs/api.md) — routes, authentication, controller/agent differences, and response contracts.
+- [Deployment security](docs/security.md) — PIN sessions, proxy trust, protected files, and compatibility boundaries.
+- [Discord notifications](docs/discord-webhook.md) — notification content and delivery conditions.
+- [Release checks](docs/release-check.md) — build versions, release channels, image tagging, and update detection.
+- [Development and verification](docs/testing.md) — build requirements, checks, and isolated test resources.
+- [Authentication ADR](docs/ADR/ADR-001-controller-authentication-boundaries.md) — accepted authentication and compatibility decisions.
+- [Toast implementation record](docs/toast-overlay-plan.md) — implemented behavior and remaining validation criteria.
+- [Debug filter proposal](docs/events-debug-filter-plan.md) — proposed Events filtering with configuration decisions still open.
 
-## Container images (GHCR)
-Main releases (multi-arch):
-```bash
-docker pull ghcr.io/<owner>/<repo>:latest
-docker pull ghcr.io/<owner>/<repo>:<version>
-```
+## Project links
 
-Dev releases (multi-arch):
-```bash
-docker pull ghcr.io/<owner>/<repo>:dev_latest
-docker pull ghcr.io/<owner>/<repo>:dev_<version>
-```
-
-## Environment
-- `CONTIWATCH_ADDR` (default `:8080`)
-- `CONTIWATCH_CONFIG` (default `/data/config.json`)
-- `TZ` (optional; e.g. `Europe/Warsaw` for local timestamps)
-- `APP_PIN` (required in controller mode; 4-8 digits)
-- `CONTIWATCH_APP_PIN` (optional backward-compatibility fallback for old deployments; use `APP_PIN` in new setup)
-- `CONTIWATCH_AGENT` (optional; set to `true` to run in agent mode)
-- `CONTIWATCH_AGENT_TOKEN` (required in agent mode; bearer token for API access)
-- `CONTIWATCH_TRUSTED_PROXIES` (optional; comma-separated proxy IPs or CIDRs allowed to supply `X-Forwarded-For`; unset by default)
-- `CONTIWATCH_REPO` (optional; GitHub repo in `owner/name` form for release links/checks)
-- `CONTIWATCH_CHANNEL` (optional; `main` or `dev` for release checks)
-- `CONTIWATCH_RELEASE_CHECK` (optional; set to `0`/`false` to disable release checks)
-- `CONTIWATCH_GITHUB_TOKEN` (optional; token for private repos or higher GitHub API limits)
-
-## Recommended security setup
-For the controller instance, the enforced baseline is:
-- set `APP_PIN` (controller will not start without it)
-- keep the default config volume mounted on `/data`
-- use a strong unique `CONTIWATCH_AGENT_TOKEN` on every remote agent
-- expose the controller and remote agents through HTTPS, or restrict plain HTTP endpoints to a trusted private network
-
-Example controller `docker-compose.yml` security block:
-
-```yaml
-environment:
-  CONTIWATCH_ADDR: ":8080"
-  CONTIWATCH_CONFIG: "/data/config.json"
-  TZ: Europe/Warsaw
-  APP_PIN: "SET_A_UNIQUE_4_TO_8_DIGIT_PIN"
-```
-
-Example remote agent `compose_agent.yml` security block:
-
-```yaml
-environment:
-  CONTIWATCH_AGENT: "true"
-  CONTIWATCH_AGENT_TOKEN: "PUT_LONG_RANDOM_TOKEN_HERE"
-  CONTIWATCH_ADDR: ":8080"
-  CONTIWATCH_CONFIG: "/data/config.json"
-  TZ: Europe/Warsaw
-```
-
-Important:
-- `APP_PIN` is for the controller only. Do not use it on remote agents.
-- Do not use predictable values such as `1234`, `1111`, or `0000`.
-- Basic Auth has been removed from controller mode.
-- Agent mode is protected by bearer token, not by PIN Guard.
-- Use at least 32 random characters for `CONTIWATCH_AGENT_TOKEN`. Existing shorter tokens remain accepted for upgrade compatibility, but emit a startup warning and should be rotated.
-- Leave `CONTIWATCH_TRUSTED_PROXIES` unset unless the controller is directly behind a trusted reverse proxy. Configure only that proxy's IP/CIDR; forwarded client IP headers from any other peer are ignored.
-- PIN session is per browser window/tab: refresh in the same tab keeps access, but opening a new tab/window requires PIN again.
-- Active work in the same tab is not interrupted by a short session TTL; stale server-side PIN tokens are only cleaned up after prolonged inactivity as a fallback safeguard.
-
-## Config file
-`/data/config.json` fields include:
-- `scan_interval_sec` (in seconds; UI shows minutes)
-- `scheduler_enabled` (if `true`, periodic scans run every `scan_interval_sec`)
-- `global_policy`
-- `discord_webhook_url`
-- `discord_notifications_enabled` (if `false`, no Discord notifications are sent)
-- `discord_notify_on_start`
-- `discord_notify_on_update_detected`
-- `discord_notify_on_container_updated`
-- `update_stopped_containers` (if `true`, `update` policy also updates stopped containers but keeps them stopped)
-- `prune_dangling_images` (if `true`, prune dangling images after updates)
-- `experimental_features` (menu visibility flags shown in Settings → Menu visibility; the config key keeps its historical name: `containers`, `containers_sidebar`, `stacks`, `images`, `networks`, `volumes`, `container_shell`, `container_logs`, `container_resources`)
-- `experimental_features.container_shell` (enables container shell UI)
-- `experimental_features.container_logs` (enables container logs UI)
-- `experimental_features.container_resources` (enables container resources UI)
-- `experimental_features.stacks` / `experimental_features.images` / `experimental_features.networks` / `experimental_features.volumes` (enables Container stacks/images/networks/volumes buttons in the Containers top bar)
-- `experimental_features.containers_sidebar` (shows enabled container subfeatures in the sidebar as shortcuts)
-- `local_servers` (list of local Docker daemons with `name`, `socket`, and optional `maintenance`)
-- `remote_servers` (list of remote servers with `name`, `url`, optional `token`, and optional `maintenance`)
-- `remote_servers[].public_ip` (optional public IP/host used for opening container services from the UI)
-- `local_servers[].public_ip` (optional public IP/host used for opening container services from the UI)
-
-Security notes:
-- Config, Compose and stack environment files are written atomically with restricted permissions (`0600`); stack directories use `0700`.
-- Sensitive values are not returned in full by controller read APIs:
-  - `GET /api/config` returns `discord_webhook_url` hidden and `discord_webhook_configured` flag.
-  - `GET /api/servers` returns remote token hidden and `token_configured` flag.
-- Controller hardening is environment-driven:
-  - `APP_PIN` is required for controller startup and enables session gating for protected controller API endpoints and browser UI.
-  - Remote agents stay token-protected through `CONTIWATCH_AGENT_TOKEN`.
-  - PIN attempts use bounded per-client lockouts plus a global limiter. Proxy headers affect client identity only when the direct peer matches `CONTIWATCH_TRUSTED_PROXIES`.
-  - Request bodies, headers and HTTP connection lifetimes are bounded to limit resource exhaustion.
-- To keep an existing secret when updating:
-  - send `discord_webhook_url="__keep__"` for config updates,
-  - send empty `token` for existing remote server updates.
-
-## Stack editor and `.env`
-
-The stack editor stores `docker-compose.yml` and an optional `.env` independently. The `.env` file is passed to Docker Compose for `${VARIABLE}` interpolation and is also placed next to the Compose file for local and remote operations.
-
-The editor does not add or remove service-level `env_file` entries. Add `env_file: .env` to a service only when all values from that file should also be injected into the container environment. It is not required for Compose interpolation. Removing `.env` is an explicit, confirmed editor action.
-
-Stack validation evaluates the interpolated Compose model. Variables defined in a stack's `.env` take precedence over same-named variables inherited from the Contiwatch process, preventing controller configuration from changing a managed stack accidentally.
-
-## Server health check
-
-The Servers view provides an on-demand Health check for local Docker daemons and remote Contiwatch agents. It reports Docker Engine/API versions, OS and architecture, CPU and memory capacity, container state and health counts, and Docker disk usage for images, containers, volumes, and build cache. Storage results include the amount that Docker considers potentially reclaimable.
-
-The check intentionally does not report live host CPU/RAM percentages or host filesystem free space. Those values require host-level metrics beyond Docker socket access. Health data is collected only when requested because Docker disk usage calculation can be relatively expensive.
-
-## API
-- `GET /api/version`
-- `GET /api/meta` (version/channel/repo metadata used by the UI)
-- `GET /api/release` (latest release info + update availability)
-- `GET /api/pin/status`
-- `POST /api/pin/verify`
-- `POST /api/pin/logout`
-- `POST /api/pin/ws-ticket` create a short-lived, single-use ticket for an authenticated browser WebSocket
-- `POST /api/scan` run scan
-- `POST /api/scan/stop` cancel scan
-- `GET /api/scan/state` scan running status
-- `GET /api/status` last scan (local or agent)
-- `GET /api/aggregate` local + remote status
-- `GET/PUT /api/config`
-- `GET/POST /api/servers` (remote servers)
-- `DELETE /api/servers/{name}`
-- `GET/POST /api/locals` (local servers)
-- `GET /api/servers/info` versions + reachability
-- `GET /api/servers/stream` live server info + scan updates (SSE)
-- `POST /api/servers/refresh` trigger on-demand reachability checks (updates stream + returns snapshot)
-- `GET /api/servers/health?scope=local:{name}|remote:{name}` collect an on-demand Docker health and storage summary
-- `POST /api/status/refresh` pull last scan snapshots from online agents (updates stream)
-- `GET /api/containers?scope=local:{name}|remote:{name}` list containers for a selected server
-- `POST /api/containers/action` run container action (`start`, `stop`, `restart`, `pause`, `unpause`, `kill`)
-- `GET /api/containers/shell` (WebSocket) interactive shell for a container
-- `GET /api/containers/logs` (WebSocket) stream logs for a container
-- `POST /api/containers/resources` fetch resource metrics for selected containers (`scope`, `container_ids`)
-- `GET /api/images?scope=local:{name}|remote:{name}` list images for a selected server
-- `POST /api/images/pull` pull image (`repository`, optional `tag`)
-- `POST /api/images/prune` prune images (`mode=unused|dangling`)
-- `POST /api/images/remove` remove image by `image_id`
-- `GET /api/stacks?scope=local:{name}|remote:{name}` list compose stacks stored on the controller
-- `GET /api/stacks/get?scope=local:{name}|remote:{name}&name={stack}` fetch compose + env content
-- `PUT /api/stacks/save` save compose + env without deploy
-- `POST /api/stacks/validate` validate compose yaml (Docker Compose config)
-- `POST /api/stacks/action` run stack action synchronously (`up`, `down`, `pull`, `redeploy`, `start`, `stop`, `restart`, `kill`, `rm`); kept for compatibility with older controllers
-- `POST /api/stacks/jobs` start a stack action in the background (same body as `/api/stacks/action`); returns `202` with the job (`id`, `status`, `remaining_ms`, `extendable`, …) or `409` when an action already runs for that stack
-- `GET /api/stacks/jobs?id={job}` job status: `running`, `succeeded` or `failed` (with `error`)
-- `POST /api/stacks/jobs/extend` body `{ "id": "{job}" }` pushes the job timeout back by 10 minutes (forwarded to the remote agent for remote stacks)
-
-Stack action timeouts: `up`/`pull` 10 min, `redeploy` 20 min, other actions 3 min. About 90 seconds before the limit the UI shows a warning with an **Extend** button; if nobody extends the job, the action is stopped when the timeout expires. Timeout extension for remote stacks requires the agent to run `1.3.4` or newer; older agents fall back to the synchronous call without extension.
-- `POST /api/update/{container_id}` update container
-- `POST /api/self-update?container={container_id}` update agent container via helper (agent mode only)
-- `GET/POST/DELETE /api/logs`
-- `POST /api/notifications/test` test Discord webhook
-
-Notes:
-- `POST /api/scan` is a one-off trigger; if a scan is already running it returns `409`.
-- `POST /api/update/{container_id}` returns `old_image_id`, `new_image_id`, and `applied_image_id` to help debug tag/image mismatches.
-- Scan container entries include `self=true` only for the container running the responding Contiwatch process; controllers use it to schedule that agent update last and verify its post-restart status.
-- Self detection uses Docker runtime metadata in addition to the container hostname, so a stale generated hostname cannot make an agent update itself through the regular in-process recreation path. Legacy agents without `self=true` are recognized conservatively by their Contiwatch image and agent-style container name.
-- A full manual or scheduled batch has no shared wall-clock deadline. Individual remote scan, update, and restart-verification operations remain bounded, and a manual batch can be stopped with `POST /api/scan/stop`.
-- Periodic scans are disabled by default; enable via `scheduler_enabled` in the config (UI).
-- Agent mode exposes a limited API surface (token required).
-- Controller mode requires `APP_PIN` and enforces an active PIN session for protected API endpoints. The public exceptions are `/api/health`, `/api/version`, `/api/meta`, `/api/release`, `/api/pin/status`, `/api/pin/verify`, and `/api/pin/logout`; `/api/pin/ws-ticket` is protected.
-- Browser Shell and Logs WebSockets use 30-second, single-use tickets so the long-lived PIN session token is not placed in a URL. Remote agent bearer authentication and controller-to-agent WebSocket proxying remain unchanged.
-- Discord webhook test endpoint validates official Discord webhook URLs (`https://.../api/webhooks/...`).
-
-UI timing:
-- `Last scan` refers to the last update-check scan (`/api/scan` / agent `/api/status`).
-- `Last checked` in server tooltips refers to the last reachability check (`POST /api/servers/refresh`), not the scan time.
-
-## Run (docker compose)
-```bash
-docker compose up -d --build
-```
-
-Before first start, edit [docker-compose.yml](/home/buzuser/github/contiwatch_dev/docker-compose.yml) and set:
-- `APP_PIN`
-
-For a remote agent, edit [compose_agent.yml](/home/buzuser/github/contiwatch_dev/compose_agent.yml) and set a long random `CONTIWATCH_AGENT_TOKEN`.
-
-Stop:
-```bash
-docker compose down
-```
-
-## Permissions
-If `/data/config.json` shows permission errors, set user IDs in compose:
-```yaml
-environment:
-  PUID: "${PUID}"
-  PGID: "${PGID}"
-```
-Use your host user IDs (from `id`).
-
-If you see `permission denied while trying to connect to the Docker daemon socket at unix:///var/run/docker.sock`, ensure the socket is mounted and the container user can access it. Contiwatch tries to detect the socket group ID automatically; if your setup needs it explicitly, set `DOCKER_GID` to the group id of `/var/run/docker.sock` on the host (e.g. from `stat -c '%g' /var/run/docker.sock`).
+- [Changelog](CHANGELOG.md)
+- [Source and issues](https://github.com/pbuzdygan/contiwatch)
+- [Releases](https://github.com/pbuzdygan/contiwatch/releases)
 
 ## Buy Me a Coffee
+
 If you like the results of this project, feel free to support it.
 
 [!["Buy Me A Coffee"](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://www.buymeacoffee.com/pbuzdygan)

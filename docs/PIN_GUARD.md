@@ -1,232 +1,93 @@
-# PIN Guard – analiza i wytyczne implementacyjne
+# PIN Guard — historical reference and implementation guidance
 
-Ten dokument opisuje jak w Mopay zbudowany jest mechanizm PIN Guard, jak dziala i jakie ma zabezpieczenia. Druga czesc to uniwersalne wytyczne wdrozenia podobnego mechanizmu w dowolnej aplikacji.
+Status: **Reference material from Mopay, not the Contiwatch authentication specification.** The original notes below describe another application's design and have not been verified against a Mopay checkout in this repository.
 
-Powiazane informacje znajduja sie tez w `docs/ARCHITECTURE.md` w sekcjach o szyfrowaniu i w opisie komponentu PinGuard.
+For Contiwatch, use [deployment security](security.md), [PIN/session API contracts](api.md#metadata-and-pin), and the accepted [controller authentication ADR](ADR/ADR-001-controller-authentication-boundaries.md). Its protected APIs require server-side sessions; the historical UI-only design must not replace that boundary.
 
-## 1. Jak PIN Guard jest zbudowany w Mopay
+## Contiwatch implementation references
 
-### Frontend (React)
+- [pin_guard.go](../internal/server/pin_guard.go): startup PIN validation, verification, sessions, lockouts, trusted proxies, and single-use WebSocket tickets.
+- [server.go](../internal/server/server.go): controller session enforcement and agent API allowlist/bearer authentication.
+- [app.js](../web/static/app.js): browser lock screen, session handling, and authenticated requests.
+- [PIN tests](../internal/server/pin_guard_test.go): activity refresh, expiration, lockout/proxy behavior, oversized bodies, and ticket reuse.
 
-Pliki kluczowe:
-- `frontend/src/components/PinGuard.tsx`
-- `frontend/src/App.tsx`
-- `frontend/src/store.ts`
-- `frontend/src/components/MainBar.tsx`
-- `frontend/src/components/modals/SettingsModal.tsx`
+Contiwatch validates a startup PIN of 4–8 digits from `APP_PIN`, with `CONTIWATCH_APP_PIN` as a legacy fallback. Its current implementation derives an in-memory salted SHA-256 value and compares candidates in constant time; it does not use Mopay's database, encryption key, or scrypt storage scheme. This describes the implementation, not an endorsement of SHA-256 as a password-storage algorithm. Changing credential derivation needs a separate security review and regression tests.
 
-Mechanizm UI:
-- `PinGuard` to pelnoekranowa nakladka blokujaca UI, renderowana zawsze w `App.tsx`.
-- Odblokowanie odbywa sie tylko po poprawnej weryfikacji PIN (API `/api/pin/verify`).
-- Stan sesji jest przechowywany w Zustand (`pinSession`) oraz w `sessionStorage` pod kluczem `pin-ok`.
-- Po odswiezeniu strony w tej samej sesji przegladarki PinGuard sprawdza `sessionStorage` i odblokowuje UI bez ponownego pytania o PIN.
-- Reczne zablokowanie sesji:
-  - ikona klodki w `MainBar` usuwa `sessionStorage` i zeruje `pinSession`.
-  - przelacznik „Screen Lock” w `SettingsModal` robi to samo po krotkim opoznieniu.
-- Komponent reaguje na klawiature mobilna i wylicza przesuniecie karty PIN przy pomocy `visualViewport`, zeby nie byla zaslonieta.
+Successful verification creates a cryptographically random server-side session token, rather than just a browser `pin-ok` flag. The [security guide](security.md#controller-sessions) owns the session lifecycle and compatibility details; do not copy the Mopay pseudocode into Contiwatch.
 
-Wejscie PIN:
-- `inputMode=numeric`, filtr tylko cyfry, do 8 znakow.
-- Minimalna dlugosc 4, maksymalna 8.
-- Bledy sa komunikowane lokalnie i blokowany jest szybki re-try przez 1.8s.
+## Historical Mopay frontend
 
-### Backend (Node/Express)
+The original notes identify a React `PinGuard` overlay rendered in `App.tsx`, Zustand state named `pinSession`, and `sessionStorage["pin-ok"]`. A successful `/api/pin/verify` request unlocks the UI. Refreshing the same tab keeps the browser flag; the intended lifecycle ends when the tab closes or the user locks it.
 
-Pliki kluczowe:
-- `backend/pin.js`
-- `backend/server.js`
-- `backend/encryption.js`
+The lock icon in `MainBar` clears state/storage; the Screen Lock control in `SettingsModal` does the same after a short delay. `visualViewport` adjusts the PIN card for mobile keyboards. Input uses numeric mode, allows 4–8 digits, reports local errors, clears failed input, and delays retry by about 1.8 seconds.
 
-Weryfikacja PIN:
-- Endpoint `POST /api/pin/verify` przyjmuje `{ pin }` i zwraca `{ ok: true }` albo HTTP 401.
-- `verifyPinValue` porownuje PIN z rekordem z tabeli `meta`.
+This overlay blocks interaction with the rendered UI. A client-side flag is not proof of server authorization, even when the overlay covers the entire page.
 
-Przechowywanie PIN:
-- PIN nie jest przechowywany w plain text.
-- Podczas startu aplikacji `initializePin`:
-  - waliduje PIN z `APP_PIN` (4–8 cyfr),
-  - tworzy rekord `{ salt, hash }`, gdzie `hash = scrypt(pin, salt)`,
-  - rekord jest szyfrowany (`AES-256-GCM`) i zapisywany w `meta.key = 'pin_hash'`.
-- Przy kazdym starcie, gdy `APP_PIN` sie zmieni, rekord jest nadpisywany nowa wartoscia.
-- Porownanie hasha odbywa sie w stalej dlugosci z `crypto.timingSafeEqual`.
+## Historical Mopay backend and storage
 
-Szyfrowanie rekordu PIN:
-- Do szyfrowania uzywany jest klucz `APP_ENC_KEY`.
-- Ten sam mechanizm szyfruje dane finansowe w bazie.
+The original Node/Express notes describe `POST /api/pin/verify` accepting `{ pin }`, returning `{ ok: true }` or HTTP `401`, and comparing the candidate against a `meta` table record.
 
-## 2. Jak to dziala z perspektywy uzytkownika
+On startup, `initializePin` validates `APP_PIN`, creates a salt and `scrypt(pin, salt)` hash, encrypts the record with AES-256-GCM, and stores it as `meta.key = 'pin_hash'`. A changed startup PIN replaces the record. Verification uses `crypto.timingSafeEqual`. `APP_ENC_KEY` supplies the encryption key, also used for financial data in that application.
 
-- Po otwarciu aplikacji pojawia sie overlay PIN.
-- Po poprawnym PIN, UI odblokowuje sie do konca sesji przegladarki (do zamkniecia karty lub recznego „Lock”).
-- PIN nie jest wymagany przy kazdym odswiezeniu, o ile sesja trwa.
+These database, encryption, and framework details belong to Mopay. There is no `APP_ENC_KEY` setting or equivalent `meta` table contract in Contiwatch.
 
-## 2.1 Logiczne zachowanie i granice sesji (Mopay)
+## Historical limitations
 
-Opisuje kiedy PIN Guard sie aktywuje i co realnie blokuje:
+The original Mopay design protects casual access to the browser UI but does not require a PIN session on other backend APIs. A caller with network access can therefore bypass the overlay. The notes also describe no backend rate limit/lockout and no session TTL, despite mandatory startup PIN configuration.
 
-- Nowa karta / nowe okno przegladarki: zawsze zobaczysz overlay PIN, bo `sessionStorage` jest per-karta i nie dziedziczy sie na nowe okna.
-- Odswiezenie strony w tej samej karcie: nie pyta ponownie o PIN, bo `sessionStorage["pin-ok"]` zostaje.
-- Reczne zablokowanie (ikona klodki / Screen Lock): natychmiast wymusza ponowne podanie PIN.
-- Overlay blokuje caly UI aplikacji: nie da sie kliknac nic pod spodem, dopoki PIN nie zostanie zaakceptowany.
-- Nie ma sposobu „obejscia” modalu/overlaya z poziomu UI, bo jest renderowany na wierzchu i sterowany przez stan sesji.
+Do not treat local or self-hosted deployment as sufficient reason to rely on a UI lock for sensitive operations. Contiwatch's accepted design protects the underlying controller API as well.
 
-Uwaga: to logika UI. Backendowe API nie jest blokowane przez PIN Guard (patrz sekcja 4).
+## General design guidance
 
-## 3. Co realnie chroni PIN Guard w Mopay
+For a new PIN/session implementation, define the server trust boundary before building the lock screen:
 
-- Chroni dostep do UI w przegladarce przed przypadkowym lub prostym wejsciem.
-- PIN jest bezpiecznie przechowywany po stronie backendu (hash + salt + szyfrowanie), wiec nie wycieka z bazy w postaci jawnej.
-- PIN nie jest przechowywany w frontendzie ani w localStorage.
+1. Validate PIN format and use an established adaptive password-hashing mechanism with a salt, such as scrypt, Argon2, or bcrypt. Never persist plaintext PINs.
+2. Protect stored credentials and any encryption keys separately. Additional record encryption may be appropriate, but does not replace password hashing or key management.
+3. Verify candidates on the server and establish an authenticated session with cryptographically random credentials.
+4. Enforce that session on every protected operation; a frontend flag alone is insufficient.
+5. Apply backend rate limiting and lockouts, then add a short UI retry cooldown for feedback.
+6. Define idle expiration, revocation, logout, browser/tab lifecycle, and restart behavior explicitly.
+7. Make the overlay accessible and mobile-friendly, clear failed input, and provide Clear, Unlock, and Lock actions.
+8. Keep PINs and session credentials out of logs and public URLs; choose storage/transport appropriate to the architecture.
 
-## 4. Ograniczenia i ryzyka w Mopay
+The original alternatives included per-tab `sessionStorage`, longer-lived storage, optional server sessions, and optional TTL. Those were generic design choices, not accepted changes for Contiwatch. Do not add a short active-session timeout or change the agent protocol to match a template.
 
-- PIN Guard nie blokuje backendu jako takiego. API poza `/api/pin/verify` nie wymaga tokenu ani sesji. Oznacza to, ze atakujacy majacy dostep do hosta lub sieci moze wywolac API bez PIN.
-- Brak rate limitu lub lockout po wielu nieudanych probach.
-- `APP_PIN` musi byc ustawione, inaczej backend przerywa start (to wymaga sensownego ustawienia w srodowisku).
+## Historical pseudocode
 
-Wniosek: to jest mechanizm UI-lock, a nie pelna autoryzacja API.
+The following is a sketch of the original Mopay mechanism, not executable code or a supported Contiwatch API:
 
-## 5. Uniwersalne wytyczne implementacji PIN Guard (dla innych aplikacji)
+```text
+initializePin(appPin, encryptionKey):
+  require appPin to contain 4–8 digits
+  if stored record is missing or no longer matches:
+    salt = randomBytes(16)
+    hash = scrypt(appPin, salt)
+    save encrypted {salt, hash} using AES-256-GCM
 
-Ponizej masz schemat, ktory da sie przeniesc do praktycznie kazdej aplikacji web, desktop lub mobile.
-
-### 5.1 Backend: model bezpiecznego PIN
-
-Rekomendowane zasady:
-- Nigdy nie przechowuj PIN w postaci jawnej.
-- Uzywaj silnego hashu z sola (scrypt, Argon2 lub bcrypt). Scrypt w Mopay jest wystarczajacy i prosty do wdrozenia.
-- Rekord przechowuj jako `{ salt, hash }`.
-- Jesli mozesz, dodatkowo zaszyfruj rekord (np. AES-256-GCM) kluczem aplikacyjnym lub kluczem z HSM.
-
-Minimalna implementacja serwerowa:
-- Endpoint `POST /pin/verify`:
-  - waliduje format PIN,
-  - liczy hash i porownuje w czasie stalym,
-  - zwraca `ok: true/false`.
-
-Dodatkowe zabezpieczenia, ktore warto dodac:
-- rate limiting (np. 5-10 prob / minute),
-- czasowa blokada po X bledach,
-- logowanie i alarmowanie nieudanych prob,
-- opcjonalny TTL sesji po udanym PIN.
-
-### 5.2 Frontend: blokada UI
-
-Wzorzec UI:
-- Pelnoekranowy overlay blokujacy interfejs.
-- Stan odblokowania przechowywany w pamieci aplikacji oraz w storage per-sesja.
-- Po odblokowaniu sesji, mozna utrzymac stan w `sessionStorage` lub analogicznym mechanizmie (np. secure storage w mobile).
-
-Wymagane elementy UX:
-- Czyszczenie pola PIN po bledzie.
-- Maly cooldown (np. 1-2 sekundy) po bledzie.
-- Przyciski „Clear” i „Unlock”.
-- Akcja „Lock” dostepna zawsze (ikona klodki).
-
-### 5.3 Sesja i TTL
-
-Decyzje projektowe:
-- Czy PIN ma dzialac tylko w danej karcie (sessionStorage), czy pomiedzy sesjami (localStorage lub token)?
-- Czy po okresie bezczynnosci automatycznie blokowac UI?
-
-W Mopay:
-- stan jest tylko w `sessionStorage`, brak TTL.
-
-### 5.4 Bezpieczenstwo realne vs UX
-
-- Jezeli aplikacja jest lokalna lub self-hosted (jak Mopay), PIN Guard jest glownie bariera UX.
-- Jezeli aplikacja jest zdalna i dostepna publicznie, konieczna jest realna warstwa autoryzacji API (token, session, OAuth, cookie + CSRF itp.).
-- PIN Guard moze byc dobrym „screen lock”, ale nie powinien byc jedynym mechanizmem ochrony danych.
-
-### 5.5 Wzorzec API + pseudo-kod (do przeniesienia)
-
-Minimalny kontrakt API:
-- `POST /pin/verify` → `{ pin: "<4-8 digit PIN>" }` → `{ ok: true }` lub HTTP 401 `{ ok: false }`
-
-Opcjonalnie (jesli chcesz sesje serwerowa):
-- `POST /pin/session` → tworzy sesje i zwraca token/cookie
-- `DELETE /pin/session` → uniewaznia sesje
-- Middleware `requirePinSession` chroni wszystkie API poza `/pin/verify`
-
-#### Backend (pseudo-kod)
-
-```pseudo
-// Inicjalizacja PIN (np. przy starcie aplikacji)
-function initializePin(appPin, encKey):
-  assert appPin matches /^[0-9]{4,8}$/
-  if meta.pin_hash missing OR hash not match appPin:
-     salt = randomBytes(16)
-     hash = scrypt(appPin, salt)
-     record = { salt, hash }
-     encrypted = aes256gcm_encrypt(JSON.stringify(record), encKey)
-     save meta.pin_hash = encrypted
-
-function verifyPin(candidatePin, encKey):
-  if candidatePin not string: return false
-  encrypted = read meta.pin_hash
-  if missing: return false
-  record = JSON.parse(aes256gcm_decrypt(encrypted, encKey))
+verifyPin(candidatePin, encryptionKey):
+  reject invalid input or a missing record
+  decrypt the stored record
   computed = scrypt(candidatePin, record.salt)
   return timingSafeEqual(computed, record.hash)
 
 POST /pin/verify:
-  if verifyPin(body.pin): return { ok: true }
-  else return 401 { ok: false }
+  if verifyPin(body.pin): return {ok: true}
+  otherwise: return HTTP 401 {ok: false}
+
+onBrowserStartup:
+  restore the local pin-ok flag
+
+onSuccessfulVerification:
+  save the local pin-ok flag and show the UI
+
+onLock:
+  remove the local flag and display the overlay
 ```
 
-#### Frontend (pseudo-kod)
+A secure API design additionally issues/revokes a server session and requires it in middleware. The historical generic examples suggested session creation/deletion endpoints and a `requirePinSession` middleware; these are not Contiwatch route names. Its actual routes are listed in the [API reference](api.md).
 
-```pseudo
-state.pinOk = false
+## Original source paths outside this repository
 
-onAppStart():
-  if sessionStorage.get("pin-ok") == "1":
-     state.pinOk = true
+The Mopay notes refer to `frontend/src/components/PinGuard.tsx`, `frontend/src/App.tsx`, `frontend/src/store.ts`, `frontend/src/components/MainBar.tsx`, `frontend/src/components/modals/SettingsModal.tsx`, `backend/pin.js`, `backend/server.js`, and `backend/encryption.js`.
 
-render():
-  if !state.pinOk:
-     show PinOverlay()
-  else:
-     show AppUI()
-
-PinOverlay.submit(pin):
-  if pin.length < 4 or pin.length > 8: return
-  res = POST /pin/verify { pin }
-  if res.ok:
-     sessionStorage.set("pin-ok", "1")
-     state.pinOk = true
-  else:
-     showError("Wrong PIN")
-     clearInput()
-     cooldown(1-2s)
-
-LockButton.onClick():
-  sessionStorage.remove("pin-ok")
-  state.pinOk = false
-```
-
-Uwagi do rozszerzenia:
-- Dodaj rate limit w `/pin/verify` (np. 5 prob / minute / IP).
-- Dodaj TTL w `sessionStorage` (np. znacznik czasu i auto-lock po X minutach).
-- Jesli chcesz twardej ochrony API, dodaj server-side session + middleware.
-
-## 6. Minimalny przepis wdrozenia (checklista)
-
-1. Wygeneruj PIN i przechowuj go tylko w backendzie jako hash + salt.
-2. Dodaj endpoint weryfikacji PIN.
-3. Dodaj frontendowy overlay blokujacy UI.
-4. Po poprawnej weryfikacji zapisz stan sesji.
-5. Dodaj przycisk „Lock”, ktory usuwa stan sesji.
-6. (Opcjonalnie) Dodaj rate limit i blokady przy bledach.
-7. (Opcjonalnie) Dodaj TTL i auto-lock po bezczynnosci.
-
-## 7. Powiazane pliki w Mopay
-
-- `frontend/src/components/PinGuard.tsx`
-- `frontend/src/components/MainBar.tsx`
-- `frontend/src/components/modals/SettingsModal.tsx`
-- `frontend/src/store.ts`
-- `backend/pin.js`
-- `backend/server.js`
-- `backend/encryption.js`
-- `docs/ARCHITECTURE.md`
+They also mention a Mopay `docs/ARCHITECTURE.md` covering encryption and PinGuard. These are external historical references, not links to files in this repository.

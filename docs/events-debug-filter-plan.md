@@ -1,72 +1,59 @@
-# Events: filtr logów `Debug` — plan wdrożenia
+# Events Debug filter — implementation proposal
 
-Cel: dodać w menu **Events** (UI) opcję filtra logów `Debug`, która pozwoli wyświetlić wpisy logów o poziomie debugowania.
+Status: **Proposed; configuration decisions remain open.** The current Events menu supports All, Info, Warn, and Error. None of the debug environment variables or config fields suggested below is an implemented setting.
 
-## Stan obecny (referencje w kodzie)
-- UI w **Events** filtruje logi client-side po `entry.level`, ale menu ma tylko `All/Info/Warn/Error` (zob. `web/static/app.js`, funkcje związane z `logsLevelMode`).
-- Backend `/api/logs` przyjmuje i zwraca listę logów z polami m.in. `level` i `message` (zob. `internal/server/server.go`, handler `handleLogs`).
-- CSS ma już styl `.log-level-debug` (zob. `web/static/style.css`), ale obecnie w praktyce rzadko generujemy logi o poziomie `debug`.
+## Goal and current evidence
 
-## Proponowane zachowanie (kontrakt)
-- Filtr `Debug` w UI:
-  - Pokazuje tylko wpisy z `level === "debug"` (case-insensitive; po normalizacji).
-  - Domyślnie aplikacja nie “spamuje” debugami — debug logi pojawiają się dopiero po włączeniu trybu debug (env/config).
-- Jeśli user wybierze `Debug`, a wpisów brak:
-  - UI pokazuje czytelny komunikat, np. `No debug logs (enable debug mode)`.
+Add a Debug level filter to Events so users can inspect diagnostic entries without flooding normal logs.
 
-## Decyzja do podjęcia (konfiguracja)
-Wybierz jeden z wariantów:
-1) **ENV (rekomendowane)**: `CONTIWATCH_LOG_LEVEL=debug|info` albo uproszczone `CONTIWATCH_DEBUG=true`.
-2) **config.json**: np. pole `debug_logs: true` / `log_level: "debug"`.
+- [app.js](../web/static/app.js): `logsLevelMode`, `getLogsLevelLabel()`, and `updateLogsLevelMenu()` filter client-side by `entry.level`; there is no Debug menu option.
+- [server.go](../internal/server/server.go): `/api/logs` reads/appends entries with fields including `level` and `message`.
+- [style.css](../web/static/style.css): `.log-level-debug` already exists. Its presence does not mean a debug-mode switch is implemented.
 
-## Plan wdrożenia
+## Proposed behavior
 
-### 1) Backend: normalizacja poziomów logów
-Cel: spójne poziomy i brak “śmieciowych” wartości.
-- Dodać whitelistę poziomów: `debug`, `info`, `warn`, `error`.
-- Normalizować `level` (trim + `strings.ToLower`).
-- Wszystko spoza listy mapować na `info` (lub odrzucać — do decyzji).
-- Zastosować to zarówno w:
-  - `addLog(level, message)`
-  - `POST /api/logs` (w `handleLogs`)
+The Debug filter shows normalized `level === "debug"` entries. Debug generation is off by default and requires an explicit debug-mode switch. When no matching entries exist, show a useful hint such as `No debug logs (enable debug mode)` using the configuration mechanism eventually selected.
 
-### 2) Backend: tryb debug (gating)
-Cel: debug logi pojawiają się tylko, gdy debug jest aktywny.
-- Wprowadzić przełącznik debug (zgodnie z decyzją: ENV vs config).
-- Dodać pomocnicze API w serwerze, np.:
-  - `s.isDebugEnabled()` oraz `s.debugf(...)`/`s.addDebug(...)`
-- Reguła: jeśli debug jest OFF, to `addLog("debug", ...)` nie zapisuje wpisu.
+## Open decisions
 
-### 3) Backend: gdzie i co logować w debug (bez sekretów)
-Cel: debug ma pomagać diagnozować, nie wyciekać danych.
-- Logować informacje diagnostyczne typu:
-  - czasy odpowiedzi / timeouty dla wywołań do agentów (remote),
-  - liczby: ile serwerów, ile kontenerów, ile rekordów,
-  - kontekst błędów (endpoint, scope), bez tokenów i bez wrażliwych payloadów.
-- Unikać:
-  - tokenów, nagłówków auth, pełnych URL zawierających sekrety,
-  - dumpów całych konfiguracji.
+1. Configuration location: an environment setting (recommended), such as `CONTIWATCH_LOG_LEVEL=debug|info` or `CONTIWATCH_DEBUG=true`, versus a config field such as `debug_logs` or `log_level`.
+2. Unknown log levels: normalize to `info` or reject them. Choose deliberately rather than silently changing the API contract.
+3. Whether to persist the selected Events filter in `localStorage`.
 
-### 4) UI: dodać opcję `Debug` w filtrze Events
-Cel: user ma wybór `Debug` obok `Info/Warn/Error`.
-- W `updateLogsLevelMenu()` dodać opcję `{ value: "debug", label: "Debug" }`.
-- W `getLogsLevelLabel()` obsłużyć `"debug" -> "Debug"`.
-- Upewnić się, że filtr działa tak samo jak pozostałe (client-side po `entry.level`).
-- Opcjonalnie: zapisać wybór w `localStorage`, żeby filtr nie resetował się po odświeżeniu (jeśli to pożądane).
+These are alternatives, not settings to add to a deployment today.
 
-### 5) UX: komunikat przy braku debug logów
-Cel: brak logów debug nie wygląda jak błąd.
-- Jeśli filtr `Debug` jest aktywny i wyników 0:
-  - wyświetlić hint: jak włączyć debug (konkretna instrukcja zależna od wariantu konfiguracji).
+## Implementation steps
 
-### 6) Dokumentacja
-Cel: użytkownik wie jak włączyć i do czego służy debug.
-- `README.md`: dodać opis `CONTIWATCH_LOG_LEVEL` / `CONTIWATCH_DEBUG` (albo config.json) i przykłady.
-- Jeśli wybierzemy `config.json`: dopisać pole do sekcji “Config file”.
+### Normalize levels at the backend boundary
 
-## Kryteria akceptacji
-- W Events w filtrze poziomu logów jest opcja `Debug`.
-- Przy aktywnym debug mode pojawiają się wpisy `debug` (w tym z backendu, nie tylko z UI).
-- Przy braku debug mode `debug` nie zalewa logów (opcjonalnie: w ogóle nie jest zapisywany).
-- Debug logi nie zawierają sekretów (tokenów / auth / wrażliwych payloadów).
+Allow `debug`, `info`, `warn`, and `error`; trim and lowercase levels. Apply the chosen unknown-level policy consistently in `addLog()` and `POST /api/logs`.
 
+### Gate debug generation
+
+Implement the selected switch and helpers such as `s.isDebugEnabled()` and `s.debugf()` or `s.addDebug()`. When debug mode is off, `addLog("debug", ...)` should not store diagnostic entries.
+
+### Add useful diagnostics without secrets
+
+Log remote operation durations/timeouts, server/container/record counts, and error context such as endpoint and scope. Do not log tokens, authorization headers, complete credential-bearing URLs, sensitive payloads, or full configuration dumps.
+
+### Add the UI option
+
+Add `{ value: "debug", label: "Debug" }` in `updateLogsLevelMenu()` and the corresponding label in `getLogsLevelLabel()`. Keep filtering consistent with the other levels. If persistence is chosen, restore only a supported filter value.
+
+### Explain empty results
+
+When Debug is selected and there are no entries, explain how to enable it using the final chosen setting. Do not display instructions for an unimplemented alternative.
+
+### Update documentation and examples
+
+Document the implemented setting in [configuration](configuration.md), link it from the README when useful, and update the relevant safe deployment example. Mark the decisions resolved only after implementation and verification.
+
+## Acceptance criteria
+
+- Events offers Debug alongside the existing filters.
+- Explicitly enabled debug mode produces backend diagnostic entries.
+- Debug mode off suppresses diagnostic generation.
+- Normalization and malformed/unknown levels follow the selected policy consistently.
+- Debug messages contain no credentials or sensitive payloads.
+- Empty results explain the actual enablement mechanism.
+- Tests cover switch behavior, filtering, normalization, and secret-safe diagnostic content with isolated fixtures.
